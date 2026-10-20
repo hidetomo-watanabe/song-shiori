@@ -345,11 +345,9 @@ button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 
 .share-buttons .two button { justify-content: center; }
 button.line { background: #06a849; border-color: #06a849; color: #fff; font-weight: 700; }
 button.line:hover:not(:disabled) { background: #05923f; border-color: #05923f; }
-/* PC では「LINEで送る」を出さず、コピーを横幅いっぱいにする（閲覧ページの共有ボタンは残す） */
+/* PC では「LINEで送る」を出さず、コピーを横幅いっぱいにする */
 .pc .share-buttons .line { display: none; }
 .pc .share-buttons .two { grid-template-columns: 1fr; }
-/* 閲覧ページの「共有（LINE など）」：構成表のすぐ下に横幅いっぱいで置く */
-button.view-share { display: flex; width: 100%; justify-content: center; min-height: 48px; font-size: 15px; margin: 4px 0 14px; }
 
 /* 画面下の通知（コピー・共有の結果） */
 #toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 10px; background: var(--text); color: var(--card); font-size: 14px; line-height: 1.6; box-shadow: var(--shadow-lg); transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }

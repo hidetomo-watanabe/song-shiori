@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { api, randomHex, type MemoInfo } from '../api';
 import * as L from '../storage/local';
 import { ShareButtons } from './ShareButtons';
-import { copy, fmtDay, memberMessage, shareMessage, shareTitle, viewUrl } from './util';
+import { copy, fmtDay, memberMessage, shareMessage, viewUrl } from './util';
 
 type Props = {
   id: string;
@@ -51,7 +51,7 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
           </div>
         ) : <p class="warn">共有は無効になっています。</p>}
         {/* 見てもらうだけのときは、曲名と閲覧 URL を送る（編集キーは入れない） */}
-        {url && <ShareButtons text={() => shareMessage(title, artist, url)} title={shareTitle(title)} />}
+        {url && <ShareButtons text={() => shareMessage(title, artist, url)} />}
         <div class="actions">
           {confirm === 'reshare' ? (
             <>
@@ -104,7 +104,7 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
             </div>
             {/* 編集もしてほしいメンバーには、閲覧 URL と編集キーを送る。キーの操作とは行を分ける */}
             {meta.editKey && keys.edit && url && (
-              <ShareButtons text={() => memberMessage(title, artist, url, keys.edit!)} title={shareTitle(title)} copyLabel="メンバーに送る文をコピー" copied="閲覧URLと編集キーをコピーしました。" />
+              <ShareButtons text={() => memberMessage(title, artist, url, keys.edit!)} copyLabel="メンバーに送る文をコピー" copied="閲覧URLと編集キーをコピーしました。" />
             )}
           </>
         )}

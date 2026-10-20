@@ -7,7 +7,8 @@ import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
-import { fmt, fmtDate, fmtDay, groupTone, shareMessage, shareTitle, timeSignature, viewShare, viewUrl } from './util';
+import { fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
+import { ShareButtons } from './ShareButtons';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
 export function View({ viewId }: { viewId: string }) {
@@ -75,7 +76,7 @@ export function View({ viewId }: { viewId: string }) {
     return () => { document.title = before; };
   }, [data?.song.title]);
 
-  // 共有の文（曲名・アーティスト・閲覧 URL）。LINE で送る・ほかのアプリで送る・コピーで同じ文を使う
+  // 共有の文（曲名・アーティスト・閲覧 URL）。コピー・LINE で送るで同じ文を使う
   const shareText = () => (data ? shareMessage(data.song.title, data.song.artist, viewUrl(viewId)) : '');
 
   if (error) return <main class="page narrow"><p class="error">{error}</p></main>;
@@ -184,8 +185,8 @@ export function View({ viewId }: { viewId: string }) {
         </table>
         <ExportText song={song} />
       </section>
-      {/* 共有：ライブのしおりの閲覧ページと同じく、構成表のすぐ下に「共有（LINE など）」を1つ置く */}
-      <button class="line view-share" onClick={() => void viewShare(shareText(), shareTitle(song.title))}>↗ 共有（LINE など）</button>
+      {/* 共有：構成表のすぐ下に置く。PC はコピーだけ、スマホはコピーと LINE で送る */}
+      <ShareButtons text={shareText} />
 
       {song.memo && (
         <section class="card">

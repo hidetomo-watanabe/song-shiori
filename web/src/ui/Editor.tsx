@@ -15,7 +15,7 @@ import { Manage } from './Manage';
 import { ShareButtons } from './ShareButtons';
 import { Timeline } from './Timeline';
 import { YouTubeAlign } from './YouTubeAlign';
-import { copy, fmt, go, groupTone, handoff, memberMessage, parseTime, shareMessage, shareTitle, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
+import { copy, fmt, go, groupTone, handoff, memberMessage, parseTime, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
 type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: 'saved'; id: string };
 
@@ -979,11 +979,11 @@ function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; 
         <h3>閲覧URL（メンバーに共有）</h3>
         <p class="sub">URLを知っている人は構成表を見られます。</p>
         {row('閲覧URL', url, 'url')}
-        <ShareButtons text={() => shareMessage(info.title, info.artist, url)} title={shareTitle(info.title)} />
+        <ShareButtons text={() => shareMessage(info.title, info.artist, url)} />
         <h3>編集キー（メンバーに共有）</h3>
         <p class="sub">閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
         {row('編集キー', info.editKey, 'edit')}
-        <ShareButtons text={() => message} title={shareTitle(info.title)} copyLabel="メンバーに送る文をコピー" copied="閲覧URLと編集キーをコピーしました。" />
+        <ShareButtons text={() => message} copyLabel="メンバーに送る文をコピー" copied="閲覧URLと編集キーをコピーしました。" />
         <h3>管理キー（あなただけが控える）</h3>
         <p class="warn">削除・共有の管理・キーの再発行に必要です。アカウントがないため、<strong>なくすと復旧できません</strong>。メンバーには渡さず、安全な場所に控えてください。</p>
         {row('管理キー', info.key, 'key')}

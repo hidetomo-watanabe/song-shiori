@@ -61,8 +61,8 @@ export function toast(message: string) {
   t.timer = window.setTimeout(() => t!.classList.remove('show'), 4000);
 }
 
-// 共有はライブのしおり（public/common.js）と同じ動きにする。
-// LINE で送る：LINE 公式の共有 URL（アプリが開き、送る相手を選べる）。端末の共有メニューは、使える端末でだけ「ほかのアプリで送る」として出す。
+// 共有はライブのしおり（public/common.js）と同じ動きにする。PC では「曲名とリンクをコピー」だけ、スマホではそれと「LINEで送る」を出す。
+// LINE で送る：LINE 公式の共有 URL（アプリが開き、送る相手を選べる）。
 // PC では共有 URL が LINE アプリを開けず LINE のトップページに飛び、コピーと同じことしかできないため「LINEで送る」を隠す（.pc。style.css）。
 // iPad は Mac として名乗るのでタッチ対応で判定
 export const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
@@ -70,16 +70,6 @@ if (!isMobile) document.documentElement.classList.add('pc');
 export async function lineShare(text: string) {
   if (isMobile) { window.open(`https://line.me/R/share?text=${encodeURIComponent(text)}`, '_blank', 'noopener'); return; }
   toast((await copy(text)) ? '送る内容をコピーしました。PCのLINEでトークを開き、貼り付けて送ってください。' : 'コピーできませんでした。「曲名とリンクをコピー」から送ってください。');
-}
-export const canShare = typeof navigator !== 'undefined' && !!navigator.share;
-export async function otherShare(text: string, title?: string) {
-  try { await navigator.share(title ? { title, text } : { text }); } catch (e) { if ((e as Error).name !== 'AbortError') toast('共有できませんでした。「曲名とリンクをコピー」から送ってください。'); }
-}
-// 閲覧ページの「共有（LINE など）」：見た人が転送するときも曲名が分かるよう、曲名入りの文を送る。共有メニュー →（スマホ）LINE の共有 →（PC）コピーの順
-export async function viewShare(text: string, title: string) {
-  if (typeof navigator.share === 'function') return otherShare(text, title);
-  if (isMobile) return lineShare(text);
-  toast((await copy(text)) ? '曲名とリンクをコピーしました。LINE などに貼り付けて送ってください。' : 'コピーできませんでした。');
 }
 export async function copyWithToast(text: string, done: string) {
   toast((await copy(text)) ? done : 'コピーできませんでした。長押しして選び、コピーしてください。');
