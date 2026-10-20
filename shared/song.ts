@@ -307,6 +307,14 @@ export function setTempo(song: Song, patch: Partial<Pick<Song, 'bpmManual' | 'be
   return normalize(s);
 }
 
+// ネット上の BPM（ref）を参考に、推定（est）が倍・半分を取り違えていないかを判定する。
+// ネットの値は録音・アレンジの違いで数％ずれることがあるので、テンポそのものではなく倍率の判定にだけ使う。
+// 2：推定は半分（2倍が正しい）、0.5：推定は2倍（半分が正しい）、1：合っている、null：判断できない
+export function octaveByReference(est: number, ref: number, tolerance = 0.1): 2 | 0.5 | 1 | null {
+  for (const f of [1, 2, 0.5] as const) if (Math.abs((est * f) / ref - 1) <= tolerance) return f;
+  return null;
+}
+
 // 最も近い拍の位置を返す
 export function snapToBeat(song: Song, t: number): number {
   const beats = beatGrid(song);

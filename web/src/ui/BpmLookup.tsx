@@ -7,6 +7,7 @@ type Props = {
   bpmEst: number | null; // 解析による推定値
   bpm: number | null; // 現在使っている値
   onApply: (bpm: number) => void;
+  onResult?: (candidates: BpmCandidate[]) => void; // 検索が終わったら候補を知らせる（倍・半分の判定に使う）
 };
 
 type State = { status: 'idle' | 'loading' | 'done' | 'error'; candidates: BpmCandidate[]; sources: string[]; error?: string };
@@ -16,6 +17,7 @@ function relation(bpm: number, est: number | null): string {
   if (!est) return '';
   const r = bpm / est;
   if (Math.abs(r - 1) < 0.03) return '解析結果とほぼ同じ';
+  if (Math.abs(r - 1) <= 0.1) return '解析結果に近い';
   if (Math.abs(r - 2) < 0.06) return '解析結果の約2倍';
   if (Math.abs(r - 0.5) < 0.015) return '解析結果の約半分';
   if (Math.abs(r - 1.5) < 0.045 || Math.abs(r - 2 / 3) < 0.02) return '解析結果の約3:2';
@@ -23,7 +25,7 @@ function relation(bpm: number, est: number | null): string {
 }
 
 // 曲名・アーティスト名からネット上の BPM 情報を調べ、候補として示す。自動では書き換えない
-export function BpmLookup({ title, artist, bpmEst, bpm, onApply }: Props) {
+export function BpmLookup({ title, artist, bpmEst, bpm, onApply, onResult }: Props) {
   const [state, setState] = useState<State>({ status: 'idle', candidates: [], sources: [] });
   const last = useRef('');
 
@@ -35,7 +37,10 @@ export function BpmLookup({ title, artist, bpmEst, bpm, onApply }: Props) {
     setState((s) => ({ ...s, status: 'loading' }));
     try {
       const r = await api.bpm(t, a);
-      if (last.current === key) setState({ status: 'done', candidates: r.candidates, sources: r.sources });
+      if (last.current === key) {
+        setState({ status: 'done', candidates: r.candidates, sources: r.sources });
+        onResult?.(r.candidates);
+      }
     } catch (e) {
       if (last.current === key) setState({ status: 'error', candidates: [], sources: [], error: e instanceof Error ? e.message : '調べられませんでした' });
     }

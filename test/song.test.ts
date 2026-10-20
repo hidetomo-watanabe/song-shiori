@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  barPositionIn, normalize, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
+  barPositionIn, normalize, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -181,6 +181,13 @@ describe('編集ルール', () => {
     // 最初の小節頭がずれていても、区間の小節数は変わらない
     s = setTempo(s, { firstDownbeat: 1 });
     expect(s.sections.map((x) => x.barsEst)).toEqual([8, 1, 8, 1]);
+  });
+
+  it('ネット上の BPM で倍・半分の取り違えを判定する', () => {
+    expect(octaveByReference(74.4, 138)).toBe(2); // ゲット・アップ・ルーシー：推定は半分。ネットの値とは8%ずれるが倍率は分かる
+    expect(octaveByReference(148.8, 138)).toBe(1);
+    expect(octaveByReference(163, 81)).toBe(0.5);
+    expect(octaveByReference(120, 90)).toBeNull(); // 倍でも半分でもない（別の曲・3拍子など）
   });
 
   it('拍へのスナップ', () => {

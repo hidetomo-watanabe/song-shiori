@@ -15,6 +15,7 @@ npm install
 npm run db:migrate:local   # 初回のみ：ローカルの D1 を作る
 npm run dev:api            # API（http://127.0.0.1:8787）
 npm run dev                # 画面（http://localhost:5173）。/api は API へ中継される
+API_PROXY=https://song-shiori-api.whathides.workers.dev npm run dev  # /api を本番の API へ中継する（ネット上の BPM の確認など）
 ```
 
 ## 確認用のコマンド

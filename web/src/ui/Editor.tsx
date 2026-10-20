@@ -69,6 +69,8 @@ export function Editor({ mode }: { mode: Mode }) {
   // BPM を指定してやり直したとき、音から測ったテンポが指定と違った場合の記録
   const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
   const [slowDismissed, setSlowDismissed] = useState(false);
+  const [netBpm, setNetBpm] = useState<number | null>(null); // ネット上の BPM（いちばん上の候補）
+  const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -202,6 +204,21 @@ export function Editor({ mode }: { mode: Mode }) {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     rows.current.get(playingId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [playingId, follow]);
+
+  // ネット上の BPM から推定が倍・半分を取り違えていると分かったら、手で直した区間がなければ自動で作り直す
+  useEffect(() => {
+    const s = songRef.current;
+    if (!s?.analysis || s.bpmManual != null || s.bpmEst == null || netBpm == null || !player.buffer || progress) return;
+    if (s.sections.some((x) => x.edited)) return;
+    const f = M.octaveByReference(s.bpmEst, netBpm);
+    if (f !== 2 && f !== 0.5) return;
+    const key = `${netBpm}:${s.bpmEst}`;
+    if (autoFixed.current === key) return;
+    autoFixed.current = key;
+    const from = s.bpmEst, to = Math.round(from * f * 10) / 10;
+    void analyzeBuffer(player.buffer, 'replace', to).then(() =>
+      setNotice(`ネット上の BPM（${netBpm}）を参考に、テンポを ${to} に直して作り直しました（推定 ${from} は${f === 2 ? '半分' : '2倍'}のテンポでした）。`));
+  }, [netBpm, song?.bpmEst, progress]);
 
   // キーボード：スペースで再生・停止、Ctrl/⌘+Z で元に戻す、Ctrl/⌘+Shift+Z・Ctrl+Y でやり直す（入力欄の中では使わない）
   useEffect(() => {
@@ -445,7 +462,10 @@ export function Editor({ mode }: { mode: Mode }) {
   const totalBars = song.sections.reduce((p, s) => p + (s.barsManual ?? s.barsEst ?? 0), 0);
   // 手入力・ネット上の BPM が自動生成時の推定と違うとき（倍・半分の誤認など）は、そのBPMでやり直せるようにする
   // 推定が遅め（90未満）なら、2倍のテンポかもしれないと知らせる（半分のテンポへの誤認がよくあるため）
-  const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain
+  // ネット上の BPM を参考に、推定の倍・半分の取り違えを判定する
+  const netFactor = song.analysis && song.bpmManual == null && song.bpmEst != null && netBpm != null ? M.octaveByReference(song.bpmEst, netBpm) : null;
+  const octaveFix = netFactor === 2 || netFactor === 0.5 ? Math.round(song.bpmEst! * netFactor * 10) / 10 : null;
+  const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain && netFactor !== 1 && !octaveFix
     ? Math.round(song.bpmEst * 20) / 10 : null;
   const redoBpm = song.analysis && song.bpmManual != null && (song.bpmEst == null || Math.abs(song.bpmManual / song.bpmEst - 1) > 0.03) ? song.bpmManual : null;
 
@@ -562,6 +582,14 @@ export function Editor({ mode }: { mode: Mode }) {
             </span>
           </label>
         </div>
+        {octaveFix && (song.sections.some((s) => s.edited) || !hasAudio) && (
+          <div class="redo-bpm">
+            <p>ネット上の BPM（{netBpm}）から見ると、推定 {song.bpmEst} は{netFactor === 2 ? '半分' : '2倍'}のテンポのようです。</p>
+            {hasAudio
+              ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, 'propose', octaveFix)}>{octaveFix} で作り直す</button>
+              : <span class="sub">音源を選ぶと {octaveFix} で作り直せます。</span>}
+          </div>
+        )}
         {slowBpm && !slowDismissed && (
           <div class="redo-bpm">
             <p>推定テンポは {song.bpmEst} と遅めです。速い曲なら、実際は2倍の <strong>{slowBpm}</strong> かもしれません（テンポを半分に聞き取る誤りはよくあります）。</p>
@@ -589,6 +617,7 @@ export function Editor({ mode }: { mode: Mode }) {
             </div>
           : <p class="sub">音源を選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
+          onResult={(c) => setNetBpm(c[0]?.bpm ?? null)}
           onApply={(v) => edit((s) => M.setTempo(s, { bpmManual: v }))} />
         <details class="more">
           <summary>詳しい設定（拍子・小節の線）</summary>
