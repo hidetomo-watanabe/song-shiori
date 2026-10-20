@@ -199,7 +199,8 @@ async function bpmInfo(req: Request, env: Env) {
   const title = (url.searchParams.get('title') ?? '').trim().slice(0, 200);
   const artist = (url.searchParams.get('artist') ?? '').trim().slice(0, 200);
   if (!title) throw new HttpError(400, '曲名を入力してください');
-  const cacheKey = new Request(`https://cache.song-shiori/bpm?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}`);
+  // 使える情報源が変わったら（キーの設定など）別の結果として扱う
+  const cacheKey = new Request(`https://cache.song-shiori/bpm?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}&s=${env.GETSONGBPM_KEY ? 'gd' : 'd'}`);
   const cache = (caches as unknown as { default: Cache }).default;
   const hit = await cache.match(cacheKey);
   if (hit) return json(await hit.json());
