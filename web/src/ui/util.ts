@@ -18,7 +18,7 @@ export const fmtDate = (ms: number) =>
 
 export const fmtDay = (ms: number) => new Date(ms).toLocaleDateString('ja-JP');
 
-// 反復グループの色番号（色だけに頼らず、画面ではグループ名も併記する）
+// 繰り返しの色番号（色だけに頼らず、画面では「繰り返しA」なども併記する）
 export const groupTone = (g: string | null) => (g ? (g.charCodeAt(0) - 65 + (g.length - 1) * 3) % 10 : -1);
 
 export const go = (hash: string, replace = false) => {

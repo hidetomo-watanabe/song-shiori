@@ -72,7 +72,7 @@ export function View({ viewId }: { viewId: string }) {
                   <td data-label="セクション">
                     <span class="chip" aria-hidden="true" />
                     {s.name}
-                    {s.group && <span class="group">（グループ{s.group}）</span>}
+                    {s.group && <span class="group">（繰り返し{s.group}）</span>}
                     {changes.map((c) => <span key={c} class="tag change">{CHANGE_LABEL[c]}</span>)}
                   </td>
                   <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>

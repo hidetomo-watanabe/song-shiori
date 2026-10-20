@@ -25,7 +25,7 @@ describe('編集ルール', () => {
   it('推定小節数と自動の名前を付ける', () => {
     const s = sample();
     expect(s.sections.map((x) => x.barsEst)).toEqual([8, 16, 8, 16]);
-    expect(s.sections.map((x) => x.name)).toEqual(['区間A', '区間B', '区間C', '区間B再登場']);
+    expect(s.sections.map((x) => x.name)).toEqual(['パートA', 'パートB（1回目）', 'パートC', 'パートB（2回目）']);
     invariant(s);
   });
 
@@ -44,7 +44,7 @@ describe('編集ルール', () => {
     const s = splitAt(sample(), 32);
     expect(s.sections).toHaveLength(5);
     expect(s.sections[1].end).toBe(32);
-    expect(s.sections[2]).toMatchObject({ start: 32, end: 48, group: null, name: '区間' });
+    expect(s.sections[2]).toMatchObject({ start: 32, end: 48, group: null, name: 'パート' });
     invariant(s);
   });
 
@@ -111,15 +111,15 @@ describe('編集ルール', () => {
     expect(deleteSection(s, s.sections[0].id)).toBe(s);
   });
 
-  it('反復グループの付け替えで自動の名前は変わり、利用者が付けた名前は残る', () => {
+  it('繰り返しの付け替えで自動の名前は変わり、利用者が付けた名前は残る', () => {
     let s = sample();
     s = setGroup(s, s.sections[2].id, 'B');
-    expect(s.sections[2]).toMatchObject({ group: 'B', name: '区間B再登場', groupManual: true });
+    expect(s.sections[2]).toMatchObject({ group: 'B', name: 'パートB（2回目）', groupManual: true });
     s = patchSection(s, s.sections[3].id, { name: 'サビ' });
     s = setGroup(s, s.sections[3].id, 'new');
     expect(s.sections[3]).toMatchObject({ group: 'C', name: 'サビ' });
     s = setGroup(s, s.sections[0].id, null);
-    expect(s.sections[0]).toMatchObject({ group: null, name: '区間' });
+    expect(s.sections[0]).toMatchObject({ group: null, name: 'パート' });
   });
 
   it('テンポを手動で変えると推定小節数が再計算され、手動小節数は残る', () => {
@@ -166,7 +166,7 @@ describe('編集ルール', () => {
     s = patchSection(s, s.sections[0].id, { name: 'イントロ', barsManual: 9 });
     s = setTempo(s, { bpmManual: 60, firstDownbeat: 1 });
     const back = resetToAnalysis(s);
-    expect(back.sections.map((x) => [x.start, x.end, x.name, x.barsManual, x.edited])).toEqual([[0, 32, '区間A', null, false], [32, 64, '区間B', null, false]]);
+    expect(back.sections.map((x) => [x.start, x.end, x.name, x.barsManual, x.edited])).toEqual([[0, 32, 'パートA', null, false], [32, 64, 'パートB', null, false]]);
     expect(back).toMatchObject({ title: '曲', memo: '全体メモ', bpmManual: null, firstDownbeat: 0.5, firstDownbeatManual: false });
     expect(validateSong(back)).toBeNull();
   });
@@ -178,7 +178,7 @@ describe('編集ルール', () => {
     const r = { version: 't2', duration: 96, bpm: 121, beats: [0.5, 1], firstDownbeat: 0.5, beatsUncertain: false,
       segments: [{ start: 0, end: 48, group: 'A' }, { start: 48, end: 96, group: 'A' }] };
     const out = regenerateFromAnalysis(s, r);
-    expect(out.sections.map((x) => [x.start, x.end, x.name, x.edited])).toEqual([[0, 48, '区間A', false], [48, 96, '区間A再登場', false]]);
+    expect(out.sections.map((x) => [x.start, x.end, x.name, x.edited])).toEqual([[0, 48, 'パートA（1回目）', false], [48, 96, 'パートA（2回目）', false]]);
     expect(out).toMatchObject({ title: '曲', bpmEst: 121, bpmManual: null, analysisVersion: 't2', beats: [0.5, 1] });
     expect(resetToAnalysis(out).sections).toHaveLength(2); // 作り直した結果が「戻す」先になる
     expect(validateSong(out)).toBeNull();
@@ -203,7 +203,7 @@ describe('版の差分', () => {
     expect(diffSongs(s, s).changed).toBe(false);
   });
 
-  it('分割・結合・名前・反復グループ・小節数・メモの変更を区間ごとに示す', () => {
+  it('分割・結合・名前・繰り返し・小節数・メモの変更を区間ごとに示す', () => {
     const prev = sample();
     let next = splitAt(prev, 32);
     expect(diffSongs(prev, next).sections[next.sections[1].id]).toEqual(['split', 'bars']);

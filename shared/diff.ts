@@ -5,7 +5,7 @@ export type Change = 'added' | 'split' | 'merged' | 'boundary' | 'name' | 'group
 
 export const CHANGE_LABEL: Record<Change, string> = {
   added: '追加', split: '分割', merged: '結合', boundary: '境界移動',
-  name: '名前変更', group: '反復グループ変更', bars: '小節数変更', memo: 'メモ変更',
+  name: '名前変更', group: '繰り返し変更', bars: '小節数変更', memo: 'メモ変更',
 };
 
 export type SongDiff = {

@@ -5,9 +5,9 @@ export type Section = {
   start: number; // 秒
   end: number; // 秒
   name: string;
-  nameAuto: boolean; // 反復グループから自動で付いた名前か
-  group: string | null; // 反復グループ（A, B, …）
-  groupManual: boolean; // 利用者が反復グループを付け替えたか
+  nameAuto: boolean; // 繰り返しの記号から自動で付いた名前か
+  group: string | null; // 繰り返し（同じ内容の区間に付ける記号 A, B, …。画面では「繰り返しA」）
+  groupManual: boolean; // 利用者が繰り返しを付け替えたか
   barsEst: number | null; // 推定小節数（テンポ・拍子から計算）
   barsManual: number | null; // 手動指定の小節数
   barsNeedsCheck: boolean; // 結合で手動小節数が外れ、確認が必要
@@ -80,14 +80,18 @@ export function newSection(start: number, end: number, init: Partial<Section> = 
 // 推定小節数を再計算し、自動の名前を付け直す
 export function normalize(song: Song): Song {
   const bar = barSeconds(song);
-  const seen = new Set<string>();
+  const total = new Map<string, number>();
+  for (const s of song.sections) if (s.group) total.set(s.group, (total.get(s.group) ?? 0) + 1);
+  const seen = new Map<string, number>();
   const sections = song.sections.map((s) => {
     const barsEst = bar ? Math.max(0, Math.round((s.end - s.start) / bar)) : null;
     let name = s.name;
     if (s.nameAuto) {
-      name = s.group ? `区間${s.group}${seen.has(s.group) ? '再登場' : ''}` : '区間';
+      // 例：パートA（1回目）・パートA（2回目）。1回しか出てこなければ「パートA」
+      const n = s.group ? (seen.get(s.group) ?? 0) + 1 : 0;
+      name = !s.group ? 'パート' : (total.get(s.group) ?? 0) > 1 ? `パート${s.group}（${n}回目）` : `パート${s.group}`;
     }
-    if (s.group) seen.add(s.group);
+    if (s.group) seen.set(s.group, (seen.get(s.group) ?? 0) + 1);
     return { ...s, barsEst, name };
   });
   return { ...song, sections };
@@ -114,7 +118,7 @@ export function moveBoundary(song: Song, i: number, t: number): Song {
   return update(song, next);
 }
 
-// 位置 t で区間を2つに分ける。後半は名前・反復グループ・メモを持たない新しい区間になる
+// 位置 t で区間を2つに分ける。後半は名前・繰り返し・メモを持たない新しい区間になる
 export function splitAt(song: Song, t: number): Song {
   const i = song.sections.findIndex((s) => t > s.start + MIN_SECTION && t < s.end - MIN_SECTION);
   if (i < 0) return song;
@@ -139,7 +143,7 @@ function splitPartner(sections: Section[], s: Section): Section | null {
   return adjacent && sameRange ? p : null;
 }
 
-// keep 側の名前・反復グループ・メモを残して、隣り合う2区間を1つにする
+// keep 側の名前・繰り返し・メモを残して、隣り合う2区間を1つにする
 function combine(song: Song, keep: number, drop: number): Song {
   const a = song.sections[keep], b = song.sections[drop];
   const bothManual = a.barsManual != null && b.barsManual != null;
@@ -205,7 +209,7 @@ export function nextGroupName(song: Song) {
   }
 }
 
-// 反復グループを付け替える。group は既存の名前、'new'（新しいグループ）、null（除外）
+// 繰り返しを付け替える。group は既存の記号、'new'（新しい繰り返し）、null（繰り返しなし）
 export function setGroup(song: Song, id: string, group: string | 'new' | null): Song {
   const i = indexOf(song, id);
   const g = group === 'new' ? nextGroupName(song) : group;
@@ -317,7 +321,7 @@ export function validateSong(x: unknown): string | null {
     if (!sec || !str(sec.id, 32) || !str(sec.name, LIMITS.text) || !str(sec.memo, LIMITS.memo)) return `区間${i + 1}の内容が正しくありません`;
     if (!num(sec.start) || !num(sec.end) || sec.end <= sec.start) return `区間${i + 1}の時刻が正しくありません`;
     if (Math.abs(sec.start - t) > 1e-6) return `区間${i + 1}の前に隙間か重なりがあります`;
-    if (sec.group !== null && !str(sec.group, 8)) return `区間${i + 1}の反復グループが正しくありません`;
+    if (sec.group !== null && !str(sec.group, 8)) return `区間${i + 1}の繰り返しが正しくありません`;
     if (!numOrNull(sec.barsEst) || !numOrNull(sec.barsManual)) return `区間${i + 1}の小節数が正しくありません`;
     t = sec.end;
   }

@@ -506,7 +506,7 @@ export function Editor({ mode }: { mode: Mode }) {
         </div>
         {confirmReset && (
           <div class="confirm">
-            <p>区間の区切り・名前・反復グループ・小節数・区間のメモと、テンポ・拍子・最初の小節頭の手動修正をすべて捨てて、自動解析の結果に戻します。曲名・アーティスト・全体メモは残ります。戻したあとでも「元に戻す」で取り消せます。</p>
+            <p>区間の区切り・名前・繰り返し・小節数・区間のメモと、テンポ・拍子・最初の小節頭の手動修正をすべて捨てて、自動解析の結果に戻します。曲名・アーティスト・全体メモは残ります。戻したあとでも「元に戻す」で取り消せます。</p>
             <button class="danger" onClick={() => { edit((s) => M.resetToAnalysis(s)); setConfirmReset(false); setSelected(null); setNotice('自動解析の結果に戻しました。'); }}>自動解析の結果に戻す</button>
             <button onClick={() => setConfirmReset(false)}>やめる</button>
           </div>
@@ -521,13 +521,13 @@ export function Editor({ mode }: { mode: Mode }) {
                 <span class="chip" aria-hidden="true" />
                 <input class="name" value={s.name} maxLength={200} aria-label="セクション名"
                   onInput={(e) => edit((x) => M.patchSection(x, s.id, { name: (e.currentTarget as HTMLInputElement).value }), { coalesce: `name-${s.id}` })} />
-                <select aria-label="反復グループ" value={s.group ?? ''} onChange={(e) => {
+                <select aria-label="繰り返し" title="同じ内容の区間に同じ記号を付けます" value={s.group ?? ''} onChange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;
                   edit((x) => M.setGroup(x, s.id, v === '' ? null : v));
                 }}>
-                  {groups.map((g) => <option key={g} value={g}>グループ{g}</option>)}
-                  <option value="new">新しいグループ</option>
-                  <option value="">グループなし</option>
+                  {groups.map((g) => <option key={g} value={g}>繰り返し{g}</option>)}
+                  <option value="new">新しい繰り返し</option>
+                  <option value="">繰り返しなし</option>
                 </select>
                 <span class={`origin ${s.edited ? 'manual' : ''}`}>{s.edited ? '手動修正' : '自動'}</span>
               </div>
