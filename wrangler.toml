@@ -1,5 +1,5 @@
 # API専用 Worker（Cloudflare Workers）
-name = "kyoku-shiori-api"
+name = "song-shiori-api"
 main = "worker/src/index.ts"
 compatibility_date = "2026-10-01"
 workers_dev = true

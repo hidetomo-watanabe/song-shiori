@@ -1,7 +1,7 @@
 // ブラウザ内にだけ保存するデータ（要件定義書 8章）。保存できない環境でも動作を続ける
 import type { Song } from '../../../shared/song';
 
-const DB = 'kyoku-shiori';
+const DB = 'song-shiori';
 const STORE = 'drafts';
 export const DRAFT_DAYS = 30;
 

@@ -30,7 +30,7 @@ node scripts/analyze-raw.ts <file.f32>     # 22050Hz モノラル float32 の生
 | 役割 | 公開先 | URL |
 | --- | --- | --- |
 | 画面 | GitHub Pages（`main` への push で GitHub Actions が公開） | https://song-shiori.whathides.co.jp |
-| API | Cloudflare Workers（`npm run deploy:api` で手元から公開） | https://kyoku-shiori-api.whathides.workers.dev |
+| API | Cloudflare Workers（`npm run deploy:api` で手元から公開） | https://song-shiori-api.whathides.workers.dev |
 | データ | Cloudflare D1（`kyoku-shiori`） | |
 
 - DB の変更：`npx wrangler d1 migrations apply kyoku-shiori --remote`

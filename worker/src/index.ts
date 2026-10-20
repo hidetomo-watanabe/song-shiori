@@ -53,7 +53,7 @@ const bearer = (req: Request) => req.headers.get('Authorization')?.replace(/^Bea
 async function limit(req: Request, env: Env, kind: string, max: number) {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'local';
   const hour = Math.floor(Date.now() / 36e5);
-  const bucket = `${kind}:${hour}:${(await digest(`${env.SALT ?? 'kyoku-shiori'}:${ip}`)).slice(0, 32)}`;
+  const bucket = `${kind}:${hour}:${(await digest(`${env.SALT ?? 'song-shiori'}:${ip}`)).slice(0, 32)}`;
   const row = await env.DB.prepare(
     'INSERT INTO rate_limits (bucket, count, expires_at) VALUES (?, 1, ?) ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count',
   ).bind(bucket, (hour + 2) * 36e5).first<{ count: number }>();
@@ -199,7 +199,7 @@ async function bpmInfo(req: Request, env: Env) {
   const title = (url.searchParams.get('title') ?? '').trim().slice(0, 200);
   const artist = (url.searchParams.get('artist') ?? '').trim().slice(0, 200);
   if (!title) throw new HttpError(400, '曲名を入力してください');
-  const cacheKey = new Request(`https://cache.kyoku-shiori/bpm?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}`);
+  const cacheKey = new Request(`https://cache.song-shiori/bpm?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}`);
   const cache = (caches as unknown as { default: Cache }).default;
   const hit = await cache.match(cacheKey);
   if (hit) return json(await hit.json());
