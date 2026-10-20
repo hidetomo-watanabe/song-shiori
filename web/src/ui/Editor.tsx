@@ -529,13 +529,20 @@ export function Editor({ mode }: { mode: Mode }) {
         </div>
         {song.beatsUncertain && song.bpmManual == null && <p class="warn">拍・小節を確定できませんでした。BPMを入力すると小節数を数えます。</p>}
         <div class="tempo-row">
-          <label>BPM
-            <input type="number" inputMode="decimal" min={20} max={400} step="0.1" value={song.bpmManual ?? ''}
-              placeholder={song.bpmEst ? `${song.bpmEst}（推定）` : '未確定'}
-              onInput={(e) => {
-                const v = Number((e.currentTarget as HTMLInputElement).value);
-                edit((s) => M.setTempo(s, { bpmManual: v >= 20 && v <= 400 ? v : null }), { coalesce: 'bpm' });
-              }} />
+          <label>BPM{song.bpmManual != null && <span class="sub">（手入力）</span>}
+            <span class="with-button">
+              <input type="number" inputMode="decimal" min={20} max={400} step="0.1" value={song.bpmManual ?? ''}
+                placeholder={song.bpmEst ? `${song.bpmEst}（推定）` : '未確定'}
+                onInput={(e) => {
+                  const v = Number((e.currentTarget as HTMLInputElement).value);
+                  edit((s) => M.setTempo(s, { bpmManual: v >= 20 && v <= 400 ? v : null }), { coalesce: 'bpm' });
+                }} />
+              {song.bpmManual != null && (
+                <button class="small" onClick={() => { edit((s) => M.setTempo(s, { bpmManual: null })); setBpmCheck(null); }}>
+                  {song.bpmEst ? `推定（${song.bpmEst}）に戻す` : '手入力をやめる'}
+                </button>
+              )}
+            </span>
           </label>
           <label>最初の小節頭
             <span class="with-button">
