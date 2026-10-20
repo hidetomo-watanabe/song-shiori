@@ -112,17 +112,25 @@ export function View({ viewId }: { viewId: string }) {
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます">＋ 新しく作る</a>
       </nav>
       <header class="view-head">
-        <h1>{song.title || '曲名未入力'}</h1>
-        {song.artist && <p class="artist">{song.artist}</p>}
+        <div class="view-title">
+          <div>
+            <h1>{song.title || '曲名未入力'}</h1>
+            {song.artist && <p class="artist">{song.artist}</p>}
+          </div>
+          {/* 共有は閲覧ページのいちばんの操作なので、曲名の横に目立つ形で置く */}
+          <button class="primary share" onClick={() => void share()} title="曲名と URL を送ります">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+            </svg>
+            {shared ? '曲名とURLをコピーしました' : 'LINE などで共有'}
+          </button>
+        </div>
         <div class="view-meta">
           <span class="tag">{bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}</span>
           <span class="tag">{timeSignature(song.beatsPerBar)}</span>
           {song.firstDownbeat != null && <span class="tag">最初の小節頭 {fmt(song.firstDownbeat, 2)}</span>}
         </div>
-        <div class="view-sub">
-          <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
-          <button class="small" onClick={() => void share()} title="曲名と URL を送ります">{shared ? '曲名とURLをコピーしました' : '共有（LINE など）'}</button>
-        </div>
+        <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
       </header>
 
       {diff?.changed && (

@@ -322,7 +322,9 @@ body:has(.savebar) .site-foot { padding-bottom: 180px; }
 .yt-view .yt-frame { max-width: 640px; margin: 0 auto; }
 .yt-view > .sub, .yt-view .sub { text-align: center; }
 .view-player { display: flex; align-items: center; gap: 10px; max-width: 640px; margin: 12px auto 0; }
-.view-player .seekbar { flex: 1; margin: 0; }
+/* 狭い画面で画面の外へはみ出さないよう、シークバーを縮められるようにする */
+.view-player .seekbar { flex: 1; margin: 0; min-width: 0; }
+.view-player .seekbar input[type='range'] { min-width: 0; }
 .view-player > button { min-width: 6em; justify-content: center; }
 .yt-start { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .structure.playable tbody tr { cursor: pointer; }
@@ -337,8 +339,13 @@ button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 
 .view-head { margin: 16px 0 4px; }
 .view-head h1 { font-size: 28px; margin-bottom: 2px; }
 .artist { font-size: 16px; margin: 0; color: var(--sub); font-weight: 600; }
-.view-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.view-sub .sub { margin: 0; }
+.view-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.view-title > div { min-width: 0; }
+button.share { flex: none; margin-top: 4px; }
+@media (max-width: 640px) {
+  .view-title { flex-direction: column; align-items: stretch; }
+  button.share { justify-content: center; min-height: 44px; margin-top: 4px; }
+}
 .view-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
 .view-meta .tag { font-size: 13px; padding: 3px 12px; color: var(--text); }
 .update { border-color: var(--warn); background: color-mix(in srgb, var(--warn-bg) 55%, var(--card)); }
