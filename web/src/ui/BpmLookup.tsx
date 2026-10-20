@@ -50,15 +50,15 @@ export function BpmLookup({ title, artist, bpmEst, bpm, onApply }: Props) {
   return (
     <div class="bpm-lookup">
       <div class="bpm-lookup-head">
-        <strong>ネット上のBPM情報</strong>
+        <strong class="sub-title">ネット上のBPM</strong>
         <button class="small" disabled={!title.trim() || state.status === 'loading'} onClick={() => void lookup(true)}>
           {state.status === 'loading' ? '調べています…' : '調べ直す'}
         </button>
       </div>
-      {!title.trim() && <p class="sub">曲名（とアーティスト名）を入力すると、ネット上のBPM情報を調べます。</p>}
+      {!title.trim() && <p class="sub">曲名を入れると、ネット上のBPMを調べます。</p>}
       {state.status === 'error' && <p class="error">{state.error}</p>}
       {state.status === 'done' && !state.candidates.length && <p class="sub">見つかりませんでした。曲名・アーティスト名の表記を変えると見つかる場合があります。</p>}
-      {state.candidates.length > 0 && !artist.trim() && <p class="warn">アーティスト名が未入力のため、同じ曲名の別の曲が含まれている可能性があります。アーティスト名を入れると絞り込めます。</p>}
+      {state.candidates.length > 0 && !artist.trim() && <p class="warn">アーティスト名を入れると絞り込めます（同じ曲名の別の曲が混ざることがあります）。</p>}
       {state.candidates.length > 0 && (
         <ul class="bpm-candidates">
           {state.candidates.map((c) => (
@@ -76,8 +76,8 @@ export function BpmLookup({ title, artist, bpmEst, bpm, onApply }: Props) {
         </ul>
       )}
       <p class="sub">
-        曲名・アーティスト名だけで検索します（音源は送りません）。ネット上の情報は別の録音・アレンジの値の場合があります。
-        BPM情報：<a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM</a>・Deezer
+        曲名・アーティスト名だけで検索（音源は送りません）。別の録音の値のこともあります。
+        提供：<a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM</a>・Deezer
       </p>
     </div>
   );

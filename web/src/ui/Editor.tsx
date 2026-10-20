@@ -523,8 +523,11 @@ export function Editor({ mode }: { mode: Mode }) {
       </section>
 
       <section class="card tempo">
-        <h2>テンポ・拍子</h2>
-        {song.beatsUncertain && song.bpmManual == null && <p class="warn">拍・小節を確定できませんでした（未確定）。時刻で構成表を作れます。BPMを入力すると小節数を計算します。</p>}
+        <div class="tempo-head">
+          <h2>テンポ</h2>
+          <span class="sub">{bar ? `合計 ${totalBars}小節` : '小節数は未確定'}</span>
+        </div>
+        {song.beatsUncertain && song.bpmManual == null && <p class="warn">拍・小節を確定できませんでした。BPMを入力すると小節数を数えます。</p>}
         <div class="tempo-row">
           <label>BPM
             <input type="number" inputMode="decimal" min={20} max={400} step="0.1" value={song.bpmManual ?? ''}
@@ -534,32 +537,16 @@ export function Editor({ mode }: { mode: Mode }) {
                 edit((s) => M.setTempo(s, { bpmManual: v >= 20 && v <= 400 ? v : null }), { coalesce: 'bpm' });
               }} />
           </label>
-          <label>拍子
-            <select value={song.beatsPerBar} onChange={(e) => edit((s) => M.setTempo(s, { beatsPerBar: Number((e.currentTarget as HTMLSelectElement).value) }))}>
-              {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}拍子</option>)}
-            </select>
-          </label>
           <label>最初の小節頭
-            <TimeInput value={song.firstDownbeat} onChange={(t) => edit((s) => M.setTempo(s, { firstDownbeat: t }))} />
-          </label>
-          {hasAudio && <button class="small" onClick={() => edit((s) => M.setTempo(s, { firstDownbeat: now }))}>再生位置に合わせる</button>}
-          <label>境界を合わせる先
-            <select value={snap} onChange={(e) => setSnap((e.currentTarget as HTMLSelectElement).value as 'bar' | 'beat' | 'off')}>
-              <option value="bar">小節の頭</option>
-              <option value="beat">拍</option>
-              <option value="off">合わせない</option>
-            </select>
+            <span class="with-button">
+              <TimeInput value={song.firstDownbeat} onChange={(t) => edit((s) => M.setTempo(s, { firstDownbeat: t }))} />
+              {hasAudio && <button class="small" onClick={() => edit((s) => M.setTempo(s, { firstDownbeat: now }))}>再生位置にする</button>}
+            </span>
           </label>
         </div>
-        <p class="sub">
-          {bar ? `1小節 約${bar.toFixed(2)}秒・合計 ${totalBars}小節` : '小節数は未確定です'}
-          {bar && (M.usesDetectedBeats(song)
-            ? '（小節の線は、解析で見つけた拍に沿って引いています。テンポの揺れに追従します）'
-            : '（小節の線は、BPM と最初の小節頭から等間隔に引いています）')}
-        </p>
         {redoBpm && bpmCheck?.hint === redoBpm && Math.abs(bpmCheck.measured / redoBpm - 1) > 0.03 ? (
           <div class="redo-bpm warn-box">
-            <p>BPM {redoBpm} を前提に解析し直しましたが、音から測ったテンポは <strong>{bpmCheck.measured}</strong> でした。BPM {redoBpm} のままだと、小節の線が実際の拍とずれ、小節数が合わない可能性があります。</p>
+            <p>BPM {redoBpm} で解析し直しましたが、音から測ると <strong>{bpmCheck.measured}</strong> でした。{redoBpm} のままだと小節数がずれる可能性があります。</p>
             <button class="small primary" onClick={() => {
               const m = bpmCheck.measured;
               // 推定がすでに測った値と揃っていれば手入力をやめて推定を使い、揃っていなければ測った値を入れる
@@ -570,12 +557,22 @@ export function Editor({ mode }: { mode: Mode }) {
           </div>
         ) : redoBpm && bpmCheck?.hint !== -1 && (hasAudio
           ? <div class="redo-bpm">
-              <p>区切りは自動生成時のテンポ（{song.bpmEst ?? '未確定'}）を元に推定しています。BPM {redoBpm} を前提に、拍・小節・区切りを推定し直せます。</p>
+              <p>区切りは推定テンポ {song.bpmEst ?? '未確定'} で作られています。BPM {redoBpm} で作り直すと、区切りと小節数が正確になります。</p>
               <button class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', redoBpm)}>BPM {redoBpm} で自動生成をやり直す</button>
             </div>
           : <p class="sub">音源を選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
           onApply={(v) => edit((s) => M.setTempo(s, { bpmManual: v }))} />
+        <details class="more">
+          <summary>詳しい設定（拍子・小節の線）</summary>
+          <label>拍子
+            <select value={song.beatsPerBar} onChange={(e) => edit((s) => M.setTempo(s, { beatsPerBar: Number((e.currentTarget as HTMLSelectElement).value) }))}>
+              {[4, 3, 2, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n === 4 ? '4拍子（ほとんどの曲）' : n === 3 ? '3拍子（ワルツ・6/8 など）' : `${n}拍子`}</option>)}
+            </select>
+          </label>
+          <p class="sub">ほとんどの曲は4拍子のままで大丈夫です。3拍子で数える曲のときだけ変えてください。小節数の数え方が変わります。</p>
+          {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM と最初の小節頭から等間隔に引いています。'}</p>}
+        </details>
       </section>
 
       <section class="card sections">
@@ -584,6 +581,13 @@ export function Editor({ mode }: { mode: Mode }) {
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now)))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
+          <label class="inline snap">境界を合わせる先
+            <select value={snap} onChange={(e) => setSnap((e.currentTarget as HTMLSelectElement).value as 'bar' | 'beat' | 'off')}>
+              <option value="bar">小節の頭</option>
+              <option value="beat">拍</option>
+              <option value="off">合わせない</option>
+            </select>
+          </label>
           {hasAudio && <label class="check follow"><input type="checkbox" checked={follow} onChange={(e) => setFollow((e.currentTarget as HTMLInputElement).checked)} />再生中の区間を追って表示</label>}
         </div>
         {confirmReset && (

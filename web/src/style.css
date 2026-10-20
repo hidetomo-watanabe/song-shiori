@@ -104,6 +104,14 @@ label.check input { min-height: 0; }
 .play { min-width: 96px; justify-content: center; }
 .time { font-variant-numeric: tabular-nums; }
 .tempo-row input[type='number'] { width: 130px; }
+.tempo-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.with-button { display: inline-flex; align-items: center; gap: 6px; }
+details.more { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 8px; }
+details.more summary { cursor: pointer; font-size: 14px; color: var(--sub); }
+details.more[open] summary { margin-bottom: 8px; }
+.sub-title { font-size: 14px; }
+label.inline.snap { font-size: 13px; color: var(--sub); }
+label.inline.snap select { font-size: 13px; min-height: 32px; }
 .time-input { width: 92px; font-variant-numeric: tabular-nums; }
 
 .seekbar { display: flex; align-items: center; gap: 10px; margin: 10px 0 0; }
