@@ -50,14 +50,14 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         <div class="actions">
           {confirm === 'reshare' ? (
             <>
-              <span>今の閲覧URLは使えなくなります。</span>
+              <span>再発行すると、今の閲覧URLは使えなくなります。メンバーに新しいURLを送り直してください。</span>
               <button class="danger" onClick={() => run(async () => onMeta(await api.reshare(id, session)))}>新しいURLを発行</button>
               <button onClick={() => setConfirm('')}>やめる</button>
             </>
           ) : <button onClick={() => setConfirm('reshare')}>閲覧URLを再発行</button>}
           {url && (confirm === 'unshare' ? (
             <>
-              <span>閲覧URLで見られなくなります。</span>
+              <span>無効にすると、閲覧URLで見られなくなります（あとで新しいURLを発行できます）。</span>
               <button class="danger" onClick={() => run(async () => onMeta(await api.unshare(id, session)))}>共有を無効にする</button>
               <button onClick={() => setConfirm('')}>やめる</button>
             </>
@@ -70,12 +70,12 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         <p class="sub">メンバーが閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
         {newEditKey ? (
           <>
-            <p class="warn">新しい編集キーです。古い編集キーと、それで編集していた端末は使えなくなりました。メンバーに送り直してください。</p>
+            <p class="warn">新しい編集キーを発行しました。古い編集キーは使えなくなりました。メンバーに新しい編集キーを送り直してください。</p>
             <div class="copy-row"><code>{newEditKey}</code><button onClick={() => void copy(newEditKey)}>コピー</button></div>
           </>
         ) : confirm === 'editkey' ? (
           <div class="actions">
-            <span>{meta.editKey ? '古い編集キーと、それで編集していた端末が使えなくなります。' : 'メンバーに渡す編集キーを発行します。'}</span>
+            <span>{meta.editKey ? '再発行すると、古い編集キーは使えなくなり、メンバーは新しい編集キーを入れ直す必要があります。' : 'メンバーに渡す編集キーを発行します。'}</span>
             <button class={meta.editKey ? 'danger' : 'primary'} onClick={() => run(async () => {
               const key = randomHex(24);
               onMeta(await api.editKey(id, session, key));
@@ -86,7 +86,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
           </div>
         ) : confirm === 'stopedit' ? (
           <div class="actions">
-            <span>編集キーが使えなくなり、メンバーは編集できなくなります（閲覧はできます）。</span>
+            <span>止めると、編集キーが使えなくなり、メンバーは編集できなくなります（閲覧はできます）。</span>
             <button class="danger" onClick={() => run(async () => { onMeta(await api.stopEdit(id, session)); saveKeys({ edit: null }); })}>メンバーの編集を止める</button>
             <button onClick={() => setConfirm('')}>やめる</button>
           </div>
@@ -105,12 +105,12 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         <h3>管理キー（作成者用）</h3>
         {newKey ? (
           <>
-            <p class="warn">新しい管理キーです。古い管理キーと、それで編集していたほかの端末は使えなくなりました。<strong>なくすと復旧できません。</strong></p>
+            <p class="warn">新しい管理キーを発行しました。古い管理キーは使えなくなり、古い管理キーで開いていたほかの端末では入れ直しが必要です。<strong>新しいキーは、なくすと復旧できません。</strong></p>
             <div class="copy-row"><code>{newKey}</code><button onClick={() => void copy(newKey)}>コピー</button></div>
           </>
         ) : confirm === 'rekey' ? (
           <div class="actions">
-            <span>古い管理キーと、それで編集していたほかの端末が使えなくなります（編集キーはそのまま使えます）。</span>
+            <span>再発行すると、古い管理キーは使えなくなり、古い管理キーで開いていたほかの端末では入れ直しが必要になります。このブラウザはそのまま使えます。編集キーとメンバーには影響しません。</span>
             <button class="danger" onClick={() => run(async () => {
               const key = randomHex(24);
               const r = await api.rekey(id, session, key);
@@ -141,7 +141,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         <h3>削除</h3>
         {confirm === 'delete' ? (
           <div class="actions">
-            <span>構成メモと過去の更新の記録をすべて削除します。元に戻せません。</span>
+            <span>削除すると、構成メモと過去の更新の記録がすべて消え、閲覧URLも使えなくなります。元に戻せません。</span>
             <button class="danger" onClick={() => run(async () => { await api.remove(id, session); onDeleted(); })}>削除する</button>
             <button onClick={() => setConfirm('')}>やめる</button>
           </div>
