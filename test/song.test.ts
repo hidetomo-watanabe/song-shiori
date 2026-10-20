@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  barPositionIn, normalize, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
+  barPositionIn, normalize, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -148,6 +148,23 @@ describe('編集ルール', () => {
     const t = barPositionIn(s, s.sections[1], 4)!;
     expect(splitAt(s, t).sections.slice(1, 3).map((x) => x.barsEst)).toEqual([4, 12]);
     expect(barPositionIn({ ...s, bpmEst: null }, s.sections[1], 4)).toBeNull();
+  });
+
+  it('解析で見つけた拍に沿って小節を数える（テンポが揺れても正しく数える）', () => {
+    // だんだん速くなる曲：1拍 0.5秒 → 0.4秒。1小節目の頭は 1秒
+    const beats: number[] = [];
+    for (let t = 1, i = 0; i < 160; i++) { beats.push(t); t += 0.5 - (0.1 * i) / 160; }
+    const at = (bar: number) => beats[bar * 4];
+    let s = normalize({ ...emptySong(beats[159] + 0.5), bpmEst: 130, beats, firstDownbeat: 1,
+      sections: [newSection(0, at(8)), newSection(at(8), at(24)), newSection(at(24), at(32)), newSection(at(32), beats[159] + 0.5)] });
+    expect(usesDetectedBeats(s)).toBe(true);
+    expect(s.sections.slice(1, 3).map((x) => x.barsEst)).toEqual([16, 8]);
+    expect(snapToBar(s, at(20) + 0.3)).toBeCloseTo(at(20));
+    expect(barPositionIn(s, s.sections[1], 5)).toBeCloseTo(at(13));
+    // 等間隔で数えると後半ほどずれる（比較のため、手入力の BPM で拍の列を使わない場合）
+    const uniform = setTempo(s, { bpmManual: 100 });
+    expect(usesDetectedBeats(uniform)).toBe(false);
+    expect(uniform.sections[2].barsEst).not.toBe(8);
   });
 
   it('拍へのスナップ', () => {

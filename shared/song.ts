@@ -63,9 +63,70 @@ export const newId = () => {
 export const bpmOf = (s: Song) => s.bpmManual ?? s.bpmEst;
 // 拍・小節が使えるか。解析で確定できなくても、BPM を手動で入れれば使える
 export const hasGrid = (s: Song) => bpmOf(s) != null && (s.bpmManual != null || !s.beatsUncertain);
+// 解析で見つけた拍の位置を小節の線に使えるか。BPM を推定と大きく違う値に手で直した場合は使わない（拍の列が合わないため）
+export const usesDetectedBeats = (s: Song) =>
+  !!s.beats && s.beats.length >= 8 && !s.beatsUncertain &&
+  (s.bpmManual == null || (s.bpmEst != null && Math.abs(s.bpmManual / s.bpmEst - 1) <= 0.03));
+
+// 拍の位置の列（秒）。解析で見つけた拍が使えればそれを使い、テンポの揺れに追従する。
+// 使えなければ BPM と最初の小節頭から等間隔に作る。曲の前後は端の間隔で延長する
+function beatGrid(s: Song): number[] | null {
+  const end = Math.max(s.duration, s.sections[s.sections.length - 1]?.end ?? 0);
+  let beats: number[];
+  if (usesDetectedBeats(s)) {
+    beats = s.beats!.slice();
+  } else {
+    const bpm = bpmOf(s);
+    if (!bpm || !hasGrid(s)) return null;
+    const beat = 60 / bpm;
+    const origin = s.firstDownbeat ?? 0;
+    const k0 = Math.floor(-origin / beat) - 1;
+    const k1 = Math.ceil((end - origin) / beat) + 1;
+    return Array.from({ length: k1 - k0 + 1 }, (_, i) => origin + (k0 + i) * beat);
+  }
+  const head = beats[1] - beats[0];
+  while (beats[0] > 0) beats.unshift(beats[0] - head);
+  const tail = beats[beats.length - 1] - beats[beats.length - 2];
+  while (beats[beats.length - 1] < end) beats.push(beats[beats.length - 1] + tail);
+  return beats;
+}
+
+// 小節の頭の位置の列（秒）。最初の小節頭に最も近い拍から、拍子の数ごとに取る
+export function barLines(s: Song): number[] | null {
+  const beats = beatGrid(s);
+  if (!beats || beats.length < 2) return null;
+  const origin = s.firstDownbeat ?? beats[0];
+  let phase = 0;
+  for (let i = 1; i < beats.length; i++) if (Math.abs(beats[i] - origin) < Math.abs(beats[phase] - origin)) phase = i;
+  const n = Math.max(1, s.beatsPerBar);
+  const lines = beats.filter((_, i) => (((i - phase) % n) + n) % n === 0);
+  return lines.length >= 2 ? lines : null;
+}
+
+// 位置 t が何小節目にあたるか（小数）。線の間は直線で補い、前後は端の間隔で延長する
+function indexAt(lines: number[], t: number): number {
+  const last = lines.length - 1;
+  if (t <= lines[0]) return (t - lines[0]) / (lines[1] - lines[0]);
+  if (t >= lines[last]) return last + (t - lines[last]) / (lines[last] - lines[last - 1]);
+  let lo = 0, hi = last;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (lines[mid] <= t) lo = mid; else hi = mid;
+  }
+  return lo + (t - lines[lo]) / (lines[hi] - lines[lo]);
+}
+
+function timeAt(lines: number[], k: number): number {
+  const last = lines.length - 1;
+  if (k < 0) return lines[0] + k * (lines[1] - lines[0]);
+  if (k > last) return lines[last] + (k - last) * (lines[last] - lines[last - 1]);
+  return lines[k];
+}
+
+// 1小節の平均の長さ（秒）。表示や、音源なしで区間を足すときの目安に使う
 export const barSeconds = (s: Song) => {
-  const bpm = bpmOf(s);
-  return bpm && hasGrid(s) ? (60 / bpm) * s.beatsPerBar : null;
+  const lines = barLines(s);
+  return lines ? (lines[lines.length - 1] - lines[0]) / (lines.length - 1) : null;
 };
 
 export function emptySong(duration = 0): Song {
@@ -87,12 +148,12 @@ export function newSection(start: number, end: number, init: Partial<Section> = 
 
 // 推定小節数を再計算し、自動の名前を付け直す
 export function normalize(song: Song): Song {
-  const bar = barSeconds(song);
+  const lines = barLines(song);
   const total = new Map<string, number>();
   for (const s of song.sections) if (s.group) total.set(s.group, (total.get(s.group) ?? 0) + 1);
   const seen = new Map<string, number>();
   const sections = song.sections.map((s) => {
-    const barsEst = bar && !s.silence ? Math.max(0, Math.round((s.end - s.start) / bar)) : null;
+    const barsEst = lines && !s.silence ? Math.max(0, Math.round(indexAt(lines, s.end) - indexAt(lines, s.start))) : null;
     let name = s.name;
     if (s.nameAuto && !s.silence) {
       // 例：パートA（1回目）・パートA（2回目）。1回しか出てこなければ「パートA」
@@ -243,27 +304,22 @@ export function setTempo(song: Song, patch: Partial<Pick<Song, 'bpmManual' | 'be
   return normalize(s);
 }
 
-// テンポ・拍子・最初の小節頭から、最も近い拍の位置を返す
+// 最も近い拍の位置を返す
 export function snapToBeat(song: Song, t: number): number {
-  const bpm = bpmOf(song);
-  if (!bpm || !hasGrid(song)) return t;
-  const beat = 60 / bpm;
-  const origin = song.firstDownbeat ?? 0;
-  return origin + Math.round((t - origin) / beat) * beat;
+  const beats = beatGrid(song);
+  return beats ? timeAt(beats, Math.round(indexAt(beats, t))) : t;
 }
 
-// テンポ・拍子・最初の小節頭から、最も近い小節の頭の位置を返す
+// 最も近い小節の頭の位置を返す
 export function snapToBar(song: Song, t: number): number {
-  const bar = barSeconds(song);
-  if (!bar) return t;
-  const origin = song.firstDownbeat ?? 0;
-  return origin + Math.round((t - origin) / bar) * bar;
+  const lines = barLines(song);
+  return lines ? timeAt(lines, Math.round(indexAt(lines, t))) : t;
 }
 
 // 区間の先頭から n 小節の位置（小節の頭に合わせる）。小節が未確定なら null
 export function barPositionIn(song: Song, sec: Section, n: number): number | null {
-  const bar = barSeconds(song);
-  return bar ? snapToBar(song, sec.start + n * bar) : null;
+  const lines = barLines(song);
+  return lines ? timeAt(lines, Math.round(indexAt(lines, sec.start)) + n) : null;
 }
 
 // 自動解析の結果から曲メモを作る

@@ -548,7 +548,12 @@ export function Editor({ mode }: { mode: Mode }) {
             </select>
           </label>
         </div>
-        <p class="sub">{bar ? `1小節 ${bar.toFixed(2)}秒・合計 ${totalBars}小節` : '小節数は未確定です'}</p>
+        <p class="sub">
+          {bar ? `1小節 約${bar.toFixed(2)}秒・合計 ${totalBars}小節` : '小節数は未確定です'}
+          {bar && (M.usesDetectedBeats(song)
+            ? '（小節の線は、解析で見つけた拍に沿って引いています。テンポの揺れに追従します）'
+            : '（小節の線は、BPM と最初の小節頭から等間隔に引いています）')}
+        </p>
         {redoBpm && (hasAudio
           ? <div class="redo-bpm">
               <p>区切りは自動生成時のテンポ（{song.bpmEst ?? '未確定'}）を元に推定しています。BPM {redoBpm} を前提に、拍・小節・区切りを推定し直せます。</p>
