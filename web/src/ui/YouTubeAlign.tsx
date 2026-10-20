@@ -23,11 +23,11 @@ export function YouTubeAlign({ song, videoDuration, videoTime, onChange }: Props
   return (
     <details class="more yt-align" open={offset !== 0 || Math.abs(lengthDiff) > 1.5}>
       <summary>音源とのずれを合わせる（{describe(offset)}）</summary>
-      <p class="sub">曲頭の無音や MV の前置きの長さが音源と違うと、区間の位置が全体にずれます。動画を聴いて、区間が始まった瞬間に押してください。</p>
+      <p class="sub">曲頭の無音や MV の前置きの長さが音源と違うと、区間の位置が全体にずれます。合わせる区間を番号（下の構成の番号）で選び、動画を聴いてその区間が始まった瞬間に押してください。</p>
       {sec && (
         <div class="actions">
           <select value={sec.id} aria-label="合わせる区間" onChange={(e) => setTarget((e.currentTarget as HTMLSelectElement).value)}>
-            {song.sections.map((s) => <option key={s.id} value={s.id}>{fmt(s.start, 1)} {s.name}</option>)}
+            {song.sections.map((s, i) => <option key={s.id} value={s.id}>{i + 1}. {s.name}（{fmt(s.start, 1)}〜）</option>)}
           </select>
           <button class="small primary" onClick={() => onChange(clampOffset(videoTime() - sec.start))}>今の位置をこの区間の頭にする</button>
         </div>

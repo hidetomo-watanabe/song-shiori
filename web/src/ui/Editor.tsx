@@ -768,8 +768,10 @@ export function Editor({ mode }: { mode: Mode }) {
               class={`section tone-${groupTone(s.group)}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
               {current === s.id && <div class="now-label">{playing ? '▶ 再生中' : '■ 再生位置'}・{fmt(now)}</div>}
               <div class="sec-main">
+                {/* 区間番号。「音源とのずれを合わせる」で区間を選ぶときの目印にする */}
+                <span class="sec-no" title={`区間${i + 1}`}>{i + 1}</span>
                 <span class="chip" aria-hidden="true" />
-                <input class="name" value={s.name} maxLength={200} aria-label="セクション名"
+                <input class="name" value={s.name} maxLength={200} aria-label={`区間${i + 1}の名前`}
                   onInput={(e) => edit((x) => M.patchSection(x, s.id, { name: (e.currentTarget as HTMLInputElement).value }), { coalesce: `name-${s.id}` })} />
                 {hintFor(s) && (
                   <button class="small hint" title="繰り返し・並び・音量から推定した候補です"
