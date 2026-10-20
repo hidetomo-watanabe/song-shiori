@@ -156,6 +156,13 @@ export function View({ viewId }: { viewId: string }) {
                     {s.name}
                     {sameAs(s) && <span class="group">（{sameAs(s)}と同じ）</span>}
                     {changes.map((c) => <span key={c} class="tag change">{CHANGE_LABEL[c]}</span>)}
+                    {yt && (
+                      // 区間の中の再生位置。行を押したときの「区間の頭から再生」にならないよう、操作を行へ伝えない
+                      <div class="row-seek" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                        <SeekBar compact range={{ start: s.start, end: s.end }} now={started ? now : -1} label={`${s.name}の再生位置`}
+                          onSeek={(t) => { yt.seek(t); setNow(t); setStarted(true); }} />
+                      </div>
+                    )}
                   </td>
                   <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>
                   <td data-label="メモ">{s.memo}</td>

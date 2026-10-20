@@ -328,6 +328,9 @@ body:has(.savebar) .site-foot { padding-bottom: 180px; }
 .structure.playable tbody tr { cursor: pointer; }
 .structure tr.now { background: color-mix(in srgb, var(--tone) 16%, var(--card)); }
 .structure tr.now td[data-label='セクション'] { text-decoration: underline; text-decoration-color: var(--tone); text-decoration-thickness: 3px; text-underline-offset: 4px; }
+/* 閲覧ページの区間のシークバー。区間名の下に置く */
+.structure .row-seek { margin-top: 4px; max-width: 420px; cursor: default; }
+.structure .row-seek .seekbar { margin: 0; }
 button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 4px -4px -6px; color: var(--accent); }
 
 /* 閲覧ページ */
