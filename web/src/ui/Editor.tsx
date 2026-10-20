@@ -521,6 +521,14 @@ export function Editor({ mode }: { mode: Mode }) {
                 <span class="chip" aria-hidden="true" />
                 <input class="name" value={s.name} maxLength={200} aria-label="セクション名"
                   onInput={(e) => edit((x) => M.patchSection(x, s.id, { name: (e.currentTarget as HTMLInputElement).value }), { coalesce: `name-${s.id}` })} />
+                <select class="name-preset" aria-label="名前の候補から選ぶ" value="" onChange={(e) => {
+                  const el = e.currentTarget as HTMLSelectElement;
+                  if (el.value) edit((x) => M.patchSection(x, s.id, { name: el.value }));
+                  el.value = '';
+                }}>
+                  <option value="">名前を選ぶ</option>
+                  {M.SECTION_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
                 <select aria-label="繰り返し" title="同じ内容の区間に同じ記号を付けます" value={s.group ?? ''} onChange={(e) => {
                   const v = (e.currentTarget as HTMLSelectElement).value;
                   edit((x) => M.setGroup(x, s.id, v === '' ? null : v));

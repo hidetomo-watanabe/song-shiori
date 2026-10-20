@@ -33,7 +33,12 @@ export type Song = {
   sections: Section[];
   // 最後に採用した自動解析の結果。手動修正をやめて「自動解析の結果に戻す」ときに使う
   analysis?: AnalysisSnapshot | null;
+  // 繰り返しの記号ごとの名前（例：B → サビ）。同じ繰り返しの、名前を付けていない区間に使う
+  groupNames?: Record<string, string>;
 };
+
+// 区間の名前の候補（入力欄で選べる）
+export const SECTION_NAMES = ['イントロ', 'Aメロ', 'Bメロ', 'Cメロ', 'サビ', '大サビ', '落ちサビ', '間奏', 'ソロ', 'ブレイク', 'アウトロ'];
 
 export type AnalysisSnapshot = {
   duration: number;
@@ -89,7 +94,8 @@ export function normalize(song: Song): Song {
     if (s.nameAuto) {
       // 例：パートA（1回目）・パートA（2回目）。1回しか出てこなければ「パートA」
       const n = s.group ? (seen.get(s.group) ?? 0) + 1 : 0;
-      name = !s.group ? 'パート' : (total.get(s.group) ?? 0) > 1 ? `パート${s.group}（${n}回目）` : `パート${s.group}`;
+      const base = s.group ? song.groupNames?.[s.group] || `パート${s.group}` : 'パート';
+      name = s.group && (total.get(s.group) ?? 0) > 1 ? `${base}（${n}回目）` : base;
     }
     if (s.group) seen.set(s.group, (seen.get(s.group) ?? 0) + 1);
     return { ...s, barsEst, name };
@@ -187,7 +193,17 @@ export function patchSection(song: Song, id: string, patch: Partial<Pick<Section
   const i = indexOf(song, id);
   const next = song.sections.slice();
   const s = { ...next[i], ...patch, edited: true };
-  if ('name' in patch) s.nameAuto = false;
+  let groupNames = song.groupNames;
+  if ('name' in patch) {
+    s.nameAuto = false;
+    // 繰り返しの1回目に名前を付けたら、同じ繰り返しの名前未設定の区間にも使う（例：サビ → サビ（2回目））
+    if (s.group && next.findIndex((x) => x.group === s.group) === i) {
+      groupNames = { ...groupNames };
+      const name = (patch.name ?? '').trim();
+      if (name) groupNames[s.group] = name;
+      else delete groupNames[s.group];
+    }
+  }
   if ('barsManual' in patch) s.barsNeedsCheck = false;
   next[i] = s;
   // 分割した片方の小節数を入れたら、もう片方を残りの小節数にする
@@ -195,7 +211,7 @@ export function patchSection(song: Song, id: string, patch: Partial<Pick<Section
   if (p && s.barsManual! <= s.split!.total) {
     next[next.indexOf(p)] = { ...p, barsManual: s.split!.total - s.barsManual!, barsNeedsCheck: false, edited: true };
   }
-  return update(song, next);
+  return update({ ...song, groupNames }, next);
 }
 
 export const groupsOf = (song: Song) =>
@@ -254,6 +270,7 @@ export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
     analysisVersion: r.version,
     sections: r.segments.map((g) => newSection(g.start, g.end, { group: g.group })),
     analysis: snapshotOf(r),
+    groupNames: {},
   };
   if (!base?.firstDownbeatManual) song.firstDownbeat = r.firstDownbeat;
   return normalize(song);
@@ -278,6 +295,7 @@ export function resetToAnalysis(song: Song): Song {
     firstDownbeatManual: false,
     beatsUncertain: a.beatsUncertain,
     sections: a.segments.map((g) => newSection(g.start, g.end, { group: g.group })),
+    groupNames: {},
   });
 }
 
@@ -326,6 +344,7 @@ export function validateSong(x: unknown): string | null {
     t = sec.end;
   }
   if (s.sections.length && Math.abs(t - s.duration) > 1e-6) return '最後の区間が曲の終わりと一致しません';
+  if (s.groupNames != null && (typeof s.groupNames !== 'object' || Object.keys(s.groupNames).length > 100 || !Object.values(s.groupNames).every((v) => str(v, LIMITS.text)))) return '繰り返しの名前が正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;
 }

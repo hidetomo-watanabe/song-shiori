@@ -122,6 +122,17 @@ describe('編集ルール', () => {
     expect(s.sections[0]).toMatchObject({ group: null, name: 'パート' });
   });
 
+  it('繰り返しの1回目に名前を付けると、同じ繰り返しの名前未設定の区間にも使われる', () => {
+    let s = sample(); // A, B, C, B
+    s = patchSection(s, s.sections[1].id, { name: 'サビ' });
+    expect(s.sections.map((x) => x.name)).toEqual(['パートA', 'サビ', 'パートC', 'サビ（2回目）']);
+    s = patchSection(s, s.sections[3].id, { name: '大サビ' }); // 2回目以降の名前はその区間だけ
+    expect(s.sections.map((x) => x.name)).toEqual(['パートA', 'サビ', 'パートC', '大サビ']);
+    s = setGroup(s, s.sections[2].id, 'B'); // 名前未設定の区間を同じ繰り返しにすると、1回目の名前になる
+    expect(s.sections[2].name).toBe('サビ（2回目）');
+    expect(validateSong(s)).toBeNull();
+  });
+
   it('テンポを手動で変えると推定小節数が再計算され、手動小節数は残る', () => {
     let s = sample();
     s = patchSection(s, s.sections[1].id, { barsManual: 17 });
