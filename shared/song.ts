@@ -249,6 +249,20 @@ export function snapToBeat(song: Song, t: number): number {
   return origin + Math.round((t - origin) / beat) * beat;
 }
 
+// テンポ・拍子・最初の小節頭から、最も近い小節の頭の位置を返す
+export function snapToBar(song: Song, t: number): number {
+  const bar = barSeconds(song);
+  if (!bar) return t;
+  const origin = song.firstDownbeat ?? 0;
+  return origin + Math.round((t - origin) / bar) * bar;
+}
+
+// 区間の先頭から n 小節の位置（小節の頭に合わせる）。小節が未確定なら null
+export function barPositionIn(song: Song, sec: Section, n: number): number | null {
+  const bar = barSeconds(song);
+  return bar ? snapToBar(song, sec.start + n * bar) : null;
+}
+
 // 自動解析の結果から曲メモを作る
 export type AnalysisResult = {
   version: string;

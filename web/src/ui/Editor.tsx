@@ -53,7 +53,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const [playing, setPlaying] = useState(false);
   const [loopId, setLoopId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [snap, setSnap] = useState(true);
+  const [snap, setSnap] = useState<'bar' | 'beat' | 'off'>('bar'); // 境界を合わせる先
+  const [splitForm, setSplitForm] = useState<{ id: string; bars: string; error: string } | null>(null);
   const [follow, setFollow] = useState(true); // 再生中の区間に自動でスクロールする
   const rows = useRef(new Map<string, HTMLLIElement>());
 
@@ -301,7 +302,37 @@ export function Editor({ mode }: { mode: Mode }) {
     track('loop_play');
   }
 
-  const snapT = (t: number) => (snap && songRef.current ? M.snapToBeat(songRef.current, t) : t);
+  const snapT = (t: number) => {
+    const s = songRef.current;
+    if (!s || snap === 'off') return t;
+    return snap === 'bar' ? M.snapToBar(s, t) : M.snapToBeat(s, t);
+  };
+
+  // 「分割」：小節が分かれば「先頭から何小節で分けるか」を入力してもらう。分からなければ再生位置か真ん中で分ける
+  function openSplit(s: Section) {
+    const cur = songRef.current!;
+    const barLen = M.barSeconds(cur);
+    const inside = !!player.buffer && now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION;
+    if (!barLen) {
+      edit((x) => M.splitAt(x, inside ? snapT(now) : snapT((s.start + s.end) / 2)));
+      return;
+    }
+    const total = s.barsManual ?? s.barsEst ?? 0;
+    const n = inside ? Math.round((now - s.start) / barLen) : Math.floor(total / 2);
+    setSplitForm({ id: s.id, bars: String(Math.max(1, n)), error: '' });
+  }
+
+  function submitSplit(s: Section) {
+    if (!splitForm) return;
+    const n = Number(splitForm.bars);
+    const t = Number.isInteger(n) && n > 0 ? M.barPositionIn(songRef.current!, s, n) : null;
+    if (t == null || t <= s.start + M.MIN_SECTION || t >= s.end - M.MIN_SECTION) {
+      setSplitForm({ ...splitForm, error: `1〜${Math.max(1, (s.barsManual ?? s.barsEst ?? 2) - 1)} の小節数を入力してください` });
+      return;
+    }
+    edit((x) => M.splitAt(x, t));
+    setSplitForm(null);
+  }
 
   async function save(force = false) {
     const s = songRef.current;
@@ -375,7 +406,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const groups = M.groupsOf(song);
   const bar = M.barSeconds(song);
   const beat = M.bpmOf(song) ? 60 / M.bpmOf(song)! : null;
-  const step = snap && beat && M.hasGrid(song) ? beat : 0.1;
+  const step = snap === 'bar' && bar ? bar : snap !== 'off' && beat && M.hasGrid(song) ? beat : 0.1;
   const currentSection = player.buffer ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
   const current = currentSection?.id;
   const hasAudio = !!player.buffer;
@@ -483,7 +514,13 @@ export function Editor({ mode }: { mode: Mode }) {
             <TimeInput value={song.firstDownbeat} onChange={(t) => edit((s) => M.setTempo(s, { firstDownbeat: t }))} />
           </label>
           {hasAudio && <button class="small" onClick={() => edit((s) => M.setTempo(s, { firstDownbeat: now }))}>再生位置に合わせる</button>}
-          <label class="check"><input type="checkbox" checked={snap} onChange={(e) => setSnap((e.currentTarget as HTMLInputElement).checked)} />境界を拍に合わせる</label>
+          <label>境界を合わせる先
+            <select value={snap} onChange={(e) => setSnap((e.currentTarget as HTMLSelectElement).value as 'bar' | 'beat' | 'off')}>
+              <option value="bar">小節の頭</option>
+              <option value="beat">拍</option>
+              <option value="off">合わせない</option>
+            </select>
+          </label>
         </div>
         <p class="sub">{bar ? `1小節 ${bar.toFixed(2)}秒・合計 ${totalBars}小節` : '小節数は未確定です'}</p>
         {redoBpm && (hasAudio
@@ -567,13 +604,23 @@ export function Editor({ mode }: { mode: Mode }) {
                   ? <button class="small row-play on" onClick={togglePlay}>停止</button>
                   : <button class="small row-play" onClick={() => playSection(s)}>ここから再生</button>)}
                 {hasAudio && <button class={`small${loopId === s.id ? ' on' : ''}`} onClick={() => toggleLoop(s)}>{loopId === s.id ? 'ループ解除' : 'ループ'}</button>}
-                <button class="small" onClick={() => {
-                  const inside = hasAudio && now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION;
-                  edit((x) => M.splitAt(x, inside ? snapT(now) : snapT((s.start + s.end) / 2)));
-                }}>分割</button>
+                <button class={`small${splitForm?.id === s.id ? ' on' : ''}`} onClick={() => (splitForm?.id === s.id ? setSplitForm(null) : openSplit(s))}>分割</button>
                 {i < song.sections.length - 1 && <button class="small" onClick={() => edit((x) => M.mergeWithNext(x, s.id))}>次と結合</button>}
                 {song.sections.length > 1 && <button class="small danger" onClick={() => edit((x) => M.deleteSection(x, s.id))}>削除</button>}
               </div>
+              {splitForm?.id === s.id && (
+                <form class="split-form" onSubmit={(e) => { e.preventDefault(); submitSplit(s); }}>
+                  <label class="inline">先頭から
+                    <input type="number" inputMode="numeric" min={1} value={splitForm.bars} autoFocus
+                      onInput={(e) => setSplitForm({ ...splitForm, bars: (e.currentTarget as HTMLInputElement).value, error: '' })} />
+                    小節で分割
+                  </label>
+                  <span class="sub">（この区間は {s.barsManual ?? s.barsEst} 小節。分けた位置は小節の頭に合わせます）</span>
+                  <button class="small primary" type="submit">分割する</button>
+                  <button class="small" type="button" onClick={() => setSplitForm(null)}>やめる</button>
+                  {splitForm.error && <p class="error">{splitForm.error}</p>}
+                </form>
+              )}
             </li>
           ))}
         </ol>

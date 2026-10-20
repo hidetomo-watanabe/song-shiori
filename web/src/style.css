@@ -109,6 +109,10 @@ label.check input { min-height: 0; }
 .progress { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; font-size: 13px; color: var(--sub); }
 .meter { flex: 1 1 160px; height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
 .meter div { height: 100%; background: var(--accent); }
+.split-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px dashed var(--accent); border-radius: 8px; padding: 8px 10px; }
+.split-form p { flex: 1 1 100%; margin: 0; }
+label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+label.inline input { width: 72px; }
 .confirm { border: 1px solid var(--danger); border-radius: 8px; padding: 10px; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .confirm p { flex: 1 1 100%; margin: 0; font-size: 14px; }
 .proposal { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px; margin: 8px 0; }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  normalize, patchSection, regenerateFromAnalysis, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
+  barPositionIn, normalize, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -139,6 +139,15 @@ describe('編集ルール', () => {
     s = setTempo(s, { bpmManual: 60 });
     expect(s.sections.map((x) => x.barsEst)).toEqual([4, 8, 4, 8]);
     expect(s.sections[1].barsManual).toBe(17);
+  });
+
+  it('小節の頭へのスナップと、区間の先頭から n 小節の位置', () => {
+    const s = setTempo(sample(), { firstDownbeat: 0.5 }); // 1小節2秒、小節の頭は 0.5, 2.5, 4.5 …
+    expect(snapToBar(s, 17.2)).toBeCloseTo(16.5);
+    expect(barPositionIn(s, s.sections[1], 4)).toBeCloseTo(24.5); // 区間B（16秒〜）の4小節目の後
+    const t = barPositionIn(s, s.sections[1], 4)!;
+    expect(splitAt(s, t).sections.slice(1, 3).map((x) => x.barsEst)).toEqual([4, 12]);
+    expect(barPositionIn({ ...s, bpmEst: null }, s.sections[1], 4)).toBeNull();
   });
 
   it('拍へのスナップ', () => {
