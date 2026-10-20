@@ -6,13 +6,15 @@
 //   0:01.5 イントロ 2小節
 //   0:05.2 Aメロ 8小節 ｜ドラムは抑えめ
 // 1行に1区間。区間の始まりの時刻・区間名・小節数（任意）・「｜」の後ろにメモ（任意）。区間の終わりは次の行の始まり。
-// 時刻で始まらない行は見出し（曲名、BPM・拍子、長さ）として扱う。検証音源フォルダの README の書き方（# で始まる行）も読める
-import type { Song } from './song';
+// YouTube の動画を使っていれば、見出しに「YouTube https://youtu.be/… ずれ +5.02秒」の行を加える。
+// 時刻で始まらない行は見出し（曲名、BPM・拍子、長さ、YouTube）として扱う。検証音源フォルダの README の書き方（# で始まる行）も読める
+import { clampOffset, youtubeId, type Song } from './song';
 
 export type TruthSection = { start: number; end: number; name: string; bars: number | null; memo: string };
 export type Truth = {
   title: string; artist: string; memo: string;
   bpm: number | null; beatsPerBar: number | null; duration: number | null; sections: TruthSection[];
+  youtube: string | null; youtubeOffset: number; // YouTube の動画 ID と、構成表の時刻とのずれ（秒）
 };
 
 const time = (t: number) => {
@@ -27,8 +29,12 @@ export function songToText(song: Song): string {
   const lines = [
     [song.title || '曲名未入力', song.artist].filter(Boolean).join(' / '),
     [bpm ? `BPM ${bpm}` : 'BPM 未確定', signature(song.beatsPerBar), `長さ ${time(song.duration)}`].join('・'),
-    '',
   ];
+  if (song.youtube) {
+    const o = song.youtubeOffset ?? 0;
+    lines.push(`YouTube https://youtu.be/${song.youtube}${o ? ` ずれ ${o > 0 ? '+' : ''}${o.toFixed(2)}秒` : ''}`);
+  }
+  lines.push('');
   for (const s of song.sections) {
     const bars = s.silence ? null : s.barsManual ?? s.barsEst;
     const memo = s.memo.replace(/\s+/g, ' ').trim();
@@ -47,6 +53,7 @@ const parseTime = (s: string) => {
 export function parseTruth(text: string): Truth {
   let bpm: number | null = null, beatsPerBar: number | null = null, duration: number | null = null;
   let title = '', artist = '';
+  let youtube: string | null = null, youtubeOffset = 0;
   const songMemo: string[] = [];
   const rows: { start: number; name: string; bars: number | null; memo: string }[] = [];
   for (const raw of text.split(/\r?\n/)) {
@@ -55,6 +62,13 @@ export function parseTruth(text: string): Truth {
     const head = line.split(/\s+/)[0];
     const start = parseTime(head);
     if (start == null) {
+      // YouTube の行（URL に「/」や数字が入るため、BPM・拍子より先に読む）
+      const y = line.match(/^#?\s*YouTube\s*[:：]?\s*(\S+)(?:\s*ずれ\s*[:：]?\s*([+\-−]?\d+(?:\.\d+)?)\s*秒)?/i);
+      if (y && youtubeId(y[1])) {
+        youtube = youtubeId(y[1]);
+        youtubeOffset = y[2] ? clampOffset(Number(y[2].replace('−', '-'))) : 0;
+        continue;
+      }
       // 見出しの行：BPM・拍子・長さを読む（「BPM 148.8・4/4・長さ 4:38.9」「# BPM: 149」「# 拍子: 4/4」）
       const b = line.match(/BPM\s*[:：]?\s*(\d+(?:\.\d+)?)/);
       if (b) bpm = Number(b[1]);
@@ -78,5 +92,5 @@ export function parseTruth(text: string): Truth {
   }
   rows.sort((a, b) => a.start - b.start);
   const sections = rows.map((r, i) => ({ ...r, end: rows[i + 1]?.start ?? duration ?? r.start }));
-  return { title: title === '曲名未入力' ? '' : title, artist, memo: songMemo.join('\n'), bpm, beatsPerBar, duration, sections };
+  return { title: title === '曲名未入力' ? '' : title, artist, memo: songMemo.join('\n'), bpm, beatsPerBar, duration, sections, youtube, youtubeOffset };
 }

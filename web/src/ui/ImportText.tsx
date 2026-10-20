@@ -29,7 +29,7 @@ export function ImportText({ song, duration, onImport, onClose }: Props) {
       </div>
       {result && (
         <div class="import-preview">
-          {ok && <p>{result.song.title || '曲名なし'}・{result.song.bpmManual ?? result.song.bpmEst ?? 'BPM 未確定'}・{parts.length}区間（{parts.map((s) => s.name).slice(0, 6).join('、')}{parts.length > 6 ? '…' : ''}）</p>}
+          {ok && <p>{result.song.title || '曲名なし'}・{result.song.bpmManual ?? result.song.bpmEst ?? 'BPM 未確定'}・{parts.length}区間（{parts.map((s) => s.name).slice(0, 6).join('、')}{parts.length > 6 ? '…' : ''}）{result.song.youtube && result.song.youtube !== song.youtube ? '・YouTube の動画' : ''}</p>}
           {result.warnings.map((w) => <p key={w} class="warn">{w}</p>)}
           {ok && (
             <>

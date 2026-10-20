@@ -54,6 +54,9 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
     beatsPerBar: t.beatsPerBar ?? base.beatsPerBar,
     // BPM は推定と同じなら推定のまま、違えば手入力の値として入れる
     bpmManual: t.bpm != null && (base.bpmEst == null || Math.abs(t.bpm / base.bpmEst - 1) > 0.005) ? t.bpm : base.bpmManual,
+    // YouTube の動画はテキストに書かれていればそれを使い、なければ今の動画のまま
+    youtube: t.youtube ?? base.youtube,
+    youtubeOffset: t.youtube ? t.youtubeOffset || undefined : base.youtubeOffset,
     groupNames: Object.fromEntries([...groupOf].map(([name, g]) => [g, name])),
     sections,
   };

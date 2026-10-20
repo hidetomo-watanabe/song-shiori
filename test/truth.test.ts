@@ -36,6 +36,18 @@ describe('構成表のテキスト', () => {
     expect(back.duration).toBe(64);
     expect(back.sections.map((s) => [s.start, s.end, s.name, s.bars, s.memo])).toEqual([
       [0, 0.5, '無音', null, ''], [0.5, 16, 'イントロ', 8, ''], [16, 48, 'Aメロ', 16, 'ドラムは抑えめ'], [48, 64, 'サビ', 8, '']]);
+    expect(back.youtube).toBeNull();
+  });
+
+  it('YouTube の動画とずれを書き出し、読み戻せる', () => {
+    const song = normalize({ ...emptySong(20), title: '曲', bpmEst: 120, youtube: 'M7lc1UVf-VE', youtubeOffset: -3.5, sections: [newSection(0, 20, { name: 'イントロ', nameAuto: false })] });
+    const text = songToText(song);
+    expect(text).toContain('曲\nBPM 120・4/4・長さ 0:20.0\nYouTube https://youtu.be/M7lc1UVf-VE ずれ -3.50秒\n\n0:00.0 イントロ');
+    const back = parseTruth(text);
+    expect([back.youtube, back.youtubeOffset, back.bpm, back.beatsPerBar, back.title]).toEqual(['M7lc1UVf-VE', -3.5, 120, 4, '曲']);
+    expect(songToText({ ...song, youtubeOffset: undefined })).toContain('YouTube https://youtu.be/M7lc1UVf-VE\n');
+    // 手で書いた行（ほかの URL の形・全角のコロン・ずれなし）も読める
+    expect(parseTruth('YouTube：https://www.youtube.com/watch?v=M7lc1UVf-VE&t=10s\n0:00 イントロ')).toMatchObject({ youtube: 'M7lc1UVf-VE', youtubeOffset: 0 });
   });
 });
 
@@ -67,6 +79,14 @@ BPM 120・4/4・長さ 1:10.0
     // 拍から数えた小節数（5）と同じなら推定のまま、違えば手入力として残す
     expect(song.sections.map((s) => [s.barsEst, s.barsManual])).toEqual([[null, null], [4, null], [8, null], [8, null], [8, null], [5, null], [null, null]]);
     expect(validateSong(song)).toBeNull();
+  });
+
+  it('YouTube の動画とずれを読み込み、書かれていなければ今の動画のまま', () => {
+    const withVideo = songFromText(text.replace('長さ 1:10.0\n', '長さ 1:10.0\nYouTube https://youtu.be/M7lc1UVf-VE ずれ +5.02秒\n')).song;
+    expect([withVideo.youtube, withVideo.youtubeOffset]).toEqual(['M7lc1UVf-VE', 5.02]);
+    expect(validateSong(withVideo)).toBeNull();
+    const kept = songFromText(text, { ...emptySong(), youtube: 'dQw4w9WgXcQ', youtubeOffset: 1.5 }).song;
+    expect([kept.youtube, kept.youtubeOffset]).toEqual(['dQw4w9WgXcQ', 1.5]);
   });
 
   it('音源の長さに合わせ、違えば知らせる', () => {
