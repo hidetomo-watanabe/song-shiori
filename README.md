@@ -24,6 +24,7 @@ API_PROXY=https://song-shiori-api.whathides.workers.dev npm run dev  # /api を�
 npm test                                   # 編集ルール・差分計算のテスト
 node scripts/api-smoke.ts                  # API の主要操作をローカルで確認（dev:api の起動が必要）
 node scripts/analyze-raw.ts <file.f32>     # 22050Hz モノラル float32 の生データを解析して表示
+node scripts/evaluate.ts [フォルダ]        # 検証音源フォルダの全曲を解析し、正解ファイル（曲名.txt）と比べる（音源の読み込みに Python の librosa が必要）
 ```
 
 ## 公開の構成

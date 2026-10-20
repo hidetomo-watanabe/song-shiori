@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
+import { songToTruth } from '../../../shared/truth';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
 import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/run';
@@ -743,6 +744,19 @@ export function Editor({ mode }: { mode: Mode }) {
           ))}
         </ol>
         <p class="sub">削除した区間は直前の区間（先頭の場合は直後）に結合されます。音源は変更されません。</p>
+        {song.sections.length > 0 && (
+          <p class="sub">
+            <button class="link" title="区間の始まりの時刻・名前・小節数をテキストにします。聴いて直した構成を、自動解析の検証用の正解データとして使えます"
+              onClick={() => {
+                const blob = new Blob([songToTruth(song)], { type: 'text/plain;charset=utf-8' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${(song.title || '構成').replace(/[\\/:*?"<>|]/g, '')}.txt`;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+              }}>構成をテキストで書き出す（検証用の正解データ）</button>
+          </p>
+        )}
       </section>
 
       <section class="card">
