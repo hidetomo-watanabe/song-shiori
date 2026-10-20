@@ -51,6 +51,7 @@ export class YouTubePlayer implements Playback {
   // 構成表の時刻と動画の時刻のずれ（秒）。動画の時刻 = 構成表の時刻 + offset。外から見える時刻はすべて構成表の時刻
   offset = 0;
   onEnded: () => void = () => {};
+  onPlay: () => void = () => {}; // 再生が始まったとき（動画の上の操作も含む）
   onError: (message: string) => void = () => {};
 
   private constructor() {}
@@ -79,7 +80,7 @@ export class YouTubePlayer implements Playback {
           },
           onStateChange: (e: { data: number }) => {
             // 動画の上の操作（YouTube のボタン）で再生・停止したときも合わせる
-            if (e.data === PLAYING) self.want = true;
+            if (e.data === PLAYING) { self.want = true; self.onPlay(); }
             else if (e.data === PAUSED) self.want = false;
             else if (e.data === ENDED) {
               if (self.loop) { self.seekRaw(self.loop.start); self.p.playVideo(); return; }

@@ -33,10 +33,10 @@ export function View({ viewId }: { viewId: string }) {
     }).catch((e) => setError(e instanceof Error ? e.message : '読み込めませんでした'));
   }, []);
 
-  // YouTube の動画。押したときだけ読み込む（それまで YouTube には接続しない）
+  // YouTube の動画。開いたときに表示する（読み込めなかったときは、押して読み込み直せるようにする）
   const ytHost = useRef<HTMLDivElement>(null);
   const [yt, setYt] = useState<YouTubePlayer | null>(null);
-  const [ytState, setYtState] = useState<'off' | 'loading' | 'ready'>('off');
+  const [ytState, setYtState] = useState<'off' | 'loading' | 'ready'>('loading');
   const [ytError, setYtError] = useState('');
   const [now, setNow] = useState(-1); // 再生中の位置。止まっているときは -1（どの区間も示さない）
   useEffect(() => {
@@ -46,12 +46,13 @@ export function View({ viewId }: { viewId: string }) {
       if (!alive) { p.destroy(); return; }
       p.onError = setYtError;
       p.offset = data.song.youtubeOffset ?? 0;
+      // 表示しただけでは数えず、最初に再生したときに数える
+      p.onPlay = () => { track('youtube_view_play'); p.onPlay = () => {}; };
       setYt(p);
       setYtState('ready');
-      track('youtube_view_play');
     }).catch((e) => { if (alive) { setYtError(e instanceof Error ? e.message : '動画を読み込めませんでした'); setYtState('off'); } });
     return () => { alive = false; };
-  }, [ytState]);
+  }, [ytState, !!data]);
   useEffect(() => {
     if (!yt) return;
     const t = setInterval(() => setNow(yt.playing ? yt.currentTime : -1), 200);
@@ -104,8 +105,8 @@ export function View({ viewId }: { viewId: string }) {
         <section class="card yt-view">
           {ytState === 'off' ? (
             <div class="yt-start">
-              <button class="primary" onClick={() => setYtState('loading')}>▶ YouTube の動画で聴く</button>
-              <span class="sub">押すと YouTube（プライバシー強化モード）に接続します。<a href={youtubeUrl(song.youtube)} target="_blank" rel="noopener">YouTube で開く</a></span>
+              <button class="primary" onClick={() => { setYtError(''); setYtState('loading'); }}>▶ YouTube の動画を読み込み直す</button>
+              <a class="sub" href={youtubeUrl(song.youtube)} target="_blank" rel="noopener">YouTube で開く</a>
             </div>
           ) : (
             <>

@@ -316,7 +316,9 @@ body:has(.savebar) .site-foot { padding-bottom: 180px; }
 .offset-input { width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
 .yt-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .yt-form input { flex: 1 1 260px; }
-.yt-view .yt-frame { max-width: none; }
+/* 閲覧ページでは構成表が主役なので、動画は大きくしすぎない */
+.yt-view .yt-frame { max-width: 640px; margin: 0 auto; }
+.yt-view > .sub { text-align: center; }
 .yt-start { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .structure.playable tbody tr { cursor: pointer; }
 .structure tr.now { background: color-mix(in srgb, var(--tone) 16%, var(--card)); }
