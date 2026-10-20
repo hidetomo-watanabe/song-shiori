@@ -96,6 +96,8 @@ label.check input { min-height: 0; }
 .bar { display: flex; align-items: center; gap: 12px; }
 .bar .home { font-weight: 700; text-decoration: none; color: var(--text); }
 .bar .state { color: var(--sub); font-size: 13px; flex: 1; }
+.new-link { white-space: nowrap; }
+@media (max-width: 640px) { .bar { flex-wrap: wrap; } .bar .state { flex-basis: 100%; order: 3; } }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .row2 input { width: 100%; }
 .player-row, .tempo-row, .sections-head { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }

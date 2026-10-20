@@ -48,6 +48,11 @@ export function View({ viewId }: { viewId: string }) {
 
   return (
     <main class="page view">
+      <nav class="bar">
+        <a href="#/" class="home">曲のしおり</a>
+        <span class="state" />
+        <a class="button new-link" href="#/">＋ 新しく作る</a>
+      </nav>
       <header class="view-head">
         <h1>{song.title || '曲名未入力'}</h1>
         {song.artist && <p class="artist">{song.artist}</p>}
