@@ -870,6 +870,8 @@ export function Editor({ mode }: { mode: Mode }) {
       {id && meta && session && role === 'edit' && (
         <section class="card">
           <p class="sub">編集キーで編集しています。構成の編集と保存ができます。削除や共有の管理は、管理キーを持つ人（作成者）だけができます。</p>
+          {/* 見てもらうだけのときは、曲名と閲覧 URL を送る（編集キーは入れない）。共有が無効なときは出さない */}
+          {meta.viewId && <ShareButtons text={() => shareMessage(song.title, song.artist, viewUrl(meta.viewId!))} />}
         </section>
       )}
       {id && meta && session && role === 'admin' && (
