@@ -61,6 +61,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const [analysisError, setAnalysisError] = useState('');
   const [proposal, setProposal] = useState<AnalysisResult | null>(null);
   const [notice, setNotice] = useState('');
+  const [confirmReset, setConfirmReset] = useState(false);
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -471,7 +472,15 @@ export function Editor({ mode }: { mode: Mode }) {
           <h2>構成</h2>
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now)))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
+          {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
         </div>
+        {confirmReset && (
+          <div class="confirm">
+            <p>区間の区切り・名前・反復グループ・小節数・区間のメモと、テンポ・拍子・最初の小節頭の手動修正をすべて捨てて、自動解析の結果に戻します。曲名・アーティスト・全体メモは残ります。戻したあとでも「元に戻す」で取り消せます。</p>
+            <button class="danger" onClick={() => { edit((s) => M.resetToAnalysis(s)); setConfirmReset(false); setSelected(null); setNotice('自動解析の結果に戻しました。'); }}>自動解析の結果に戻す</button>
+            <button onClick={() => setConfirmReset(false)}>やめる</button>
+          </div>
+        )}
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
         <ol class="section-list">
           {song.sections.map((s, i) => (

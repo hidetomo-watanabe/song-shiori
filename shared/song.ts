@@ -31,6 +31,16 @@ export type Song = {
   beatsUncertain: boolean; // 拍・小節が確定できない
   analysisVersion: string | null;
   sections: Section[];
+  // 最後に採用した自動解析の結果。手動修正をやめて「自動解析の結果に戻す」ときに使う
+  analysis?: AnalysisSnapshot | null;
+};
+
+export type AnalysisSnapshot = {
+  duration: number;
+  bpm: number | null;
+  firstDownbeat: number | null;
+  beatsUncertain: boolean;
+  segments: { start: number; end: number; group: string }[];
 };
 
 export const MIN_SECTION = 0.5; // 区間の最短長（秒）
@@ -239,9 +249,32 @@ export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
     sections: r.segments.map((g) => newSection(g.start, g.end, { group: g.group })),
+    analysis: snapshotOf(r),
   };
   if (!base?.firstDownbeatManual) song.firstDownbeat = r.firstDownbeat;
   return normalize(song);
+}
+
+const snapshotOf = (r: AnalysisResult): AnalysisSnapshot => ({
+  duration: r.duration, bpm: r.bpm, firstDownbeat: r.firstDownbeat, beatsUncertain: r.beatsUncertain,
+  segments: r.segments.slice(0, LIMITS.sections).map(({ start, end, group }) => ({ start, end, group })),
+});
+
+// 構成を自動解析の結果に戻す。区間・テンポ・拍子・最初の小節頭の手動修正を捨てる（曲名・全体メモは残す）
+export function resetToAnalysis(song: Song): Song {
+  const a = song.analysis;
+  if (!a || !a.segments.length) return song;
+  return normalize({
+    ...song,
+    duration: a.duration,
+    bpmEst: a.bpm,
+    bpmManual: null,
+    beatsPerBar: 4,
+    firstDownbeat: a.firstDownbeat,
+    firstDownbeatManual: false,
+    beatsUncertain: a.beatsUncertain,
+    sections: a.segments.map((g) => newSection(g.start, g.end, { group: g.group })),
+  });
 }
 
 // 再解析の結果を採用する。手動修正済みの区間がある場合は区間を置き換えず、テンポの推定値だけ更新する
@@ -255,6 +288,7 @@ export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sect
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
     firstDownbeat: song.firstDownbeatManual ? song.firstDownbeat : r.firstDownbeat,
+    analysis: snapshotOf(r),
   };
   return { song: normalize(next), sectionsReplaced: false };
 }
@@ -283,5 +317,6 @@ export function validateSong(x: unknown): string | null {
     t = sec.end;
   }
   if (s.sections.length && Math.abs(t - s.duration) > 1e-6) return '最後の区間が曲の終わりと一致しません';
+  if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;
 }

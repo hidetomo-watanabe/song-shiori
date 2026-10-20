@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  normalize, patchSection, setGroup, setTempo, snapToBeat, splitAt, validateSong, type Song,
+  normalize, patchSection, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -155,6 +155,25 @@ describe('編集ルール', () => {
     expect(kept.sectionsReplaced).toBe(false);
     expect(kept.song.sections).toHaveLength(4);
     expect(kept.song.bpmEst).toBe(121);
+  });
+
+  it('自動解析の結果に戻す：手動修正を捨て、曲名とメモは残す', () => {
+    const r = { version: 't', duration: 64, bpm: 120, beats: [], firstDownbeat: 0.5, beatsUncertain: false,
+      segments: [{ start: 0, end: 32, group: 'A' }, { start: 32, end: 64, group: 'B' }] };
+    let s = songFromAnalysis(r);
+    s = { ...s, title: '曲', memo: '全体メモ' };
+    s = splitAt(s, 16);
+    s = patchSection(s, s.sections[0].id, { name: 'イントロ', barsManual: 9 });
+    s = setTempo(s, { bpmManual: 60, firstDownbeat: 1 });
+    const back = resetToAnalysis(s);
+    expect(back.sections.map((x) => [x.start, x.end, x.name, x.barsManual, x.edited])).toEqual([[0, 32, '区間A', null, false], [32, 64, '区間B', null, false]]);
+    expect(back).toMatchObject({ title: '曲', memo: '全体メモ', bpmManual: null, firstDownbeat: 0.5, firstDownbeatManual: false });
+    expect(validateSong(back)).toBeNull();
+  });
+
+  it('自動解析の結果がなければ戻さない', () => {
+    const s = sample();
+    expect(resetToAnalysis(s)).toBe(s);
   });
 
   it('検証：隙間・重なり・末尾の不一致を拒否する', () => {
