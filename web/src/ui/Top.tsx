@@ -13,6 +13,12 @@ export function Top() {
 
   const confirmReplace = () => !draft || window.confirm('作成中の下書きがあります。新しく作ると下書きは破棄されます。よろしいですか？');
 
+  async function discard() {
+    if (!window.confirm('作成中の下書きを破棄します。元に戻せません。よろしいですか？')) return;
+    await removeDraft('draft');
+    setDraft(null);
+  }
+
   async function pick(e: Event) {
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
@@ -45,7 +51,10 @@ export function Top() {
       {draft && (
         <section class="card notice">
           <p>作成中の下書きがあります（{fmtDate(draft.updatedAt)} 更新・{draft.song.title || '曲名未入力'}）。</p>
-          <div class="actions"><button class="primary" onClick={() => go('#/new')}>下書きを開く</button></div>
+          <div class="actions">
+            <button class="primary" onClick={() => go('#/new')}>下書きを開く</button>
+            <button class="danger" onClick={() => void discard()}>下書きを破棄</button>
+          </div>
         </section>
       )}
 
