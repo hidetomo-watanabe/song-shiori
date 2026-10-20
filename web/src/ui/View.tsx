@@ -3,7 +3,7 @@ import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
 import { bpmOf } from '../../../shared/song';
 import { api, track, type ViewData } from '../api';
 import { getSeen, setSeen } from '../storage/local';
-import { fmt, fmtDate, fmtDay, groupTone } from './util';
+import { fmt, fmtDate, fmtDay, groupTone, timeSignature } from './util';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
 export function View({ viewId }: { viewId: string }) {
@@ -64,7 +64,7 @@ export function View({ viewId }: { viewId: string }) {
 
       <section class="card">
         <p class="tempo-line">
-          {bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}・{song.beatsPerBar}拍子
+          {bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}・{timeSignature(song.beatsPerBar)}
           {song.firstDownbeat != null && `・最初の小節頭 ${fmt(song.firstDownbeat, 2)}`}
         </p>
         <table class="structure">

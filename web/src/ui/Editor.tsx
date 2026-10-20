@@ -10,7 +10,7 @@ import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { Timeline } from './Timeline';
-import { copy, fmt, go, groupTone, handoff, parseTime, viewUrl } from './util';
+import { copy, fmt, go, groupTone, handoff, parseTime, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
 type Mode = { kind: 'draft'; manual: boolean } | { kind: 'saved'; id: string };
 
@@ -567,10 +567,11 @@ export function Editor({ mode }: { mode: Mode }) {
           <summary>詳しい設定（拍子・小節の線）</summary>
           <label>拍子
             <select value={song.beatsPerBar} onChange={(e) => edit((s) => M.setTempo(s, { beatsPerBar: Number((e.currentTarget as HTMLSelectElement).value) }))}>
-              {[4, 3, 2, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n === 4 ? '4拍子（ほとんどの曲）' : n === 3 ? '3拍子（ワルツ・6/8 など）' : `${n}拍子`}</option>)}
+              {(TIME_SIGNATURES.includes(song.beatsPerBar) ? TIME_SIGNATURES : [...TIME_SIGNATURES, song.beatsPerBar]).map((n) =>
+                <option key={n} value={n}>{timeSignature(n)}{n === 4 ? '（ほとんどの曲）' : n === 3 ? '（ワルツなど）' : ''}</option>)}
             </select>
           </label>
-          <p class="sub">ほとんどの曲は4拍子のままで大丈夫です。3拍子で数える曲のときだけ変えてください。小節数の数え方が変わります。</p>
+          <p class="sub">ほとんどの曲は 4/4 のままで大丈夫です。変えると小節数の数え方が変わります。6/8・7/8 は8分音符1つを1拍として数えます。</p>
           {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM と最初の小節頭から等間隔に引いています。'}</p>}
         </details>
       </section>
