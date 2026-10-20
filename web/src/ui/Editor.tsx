@@ -96,7 +96,9 @@ export function Editor({ mode }: { mode: Mode }) {
   const [note, setNote] = useState('');
   const [notify, setNotify] = useState(true);
 
-  function init(s: Song) {
+  function init(loaded: Song) {
+    // 以前の形式（無音の区間）は、曲の頭を 0:00 にした形に直して開く。保存すると直した形で残る
+    const s = M.trimSilence(loaded);
     songRef.current = s;
     history.current = [];
     future.current = [];
@@ -224,9 +226,6 @@ export function Editor({ mode }: { mode: Mode }) {
     };
   }, [videoId]);
 
-  // ずれを変えたら、再生中の動画にもすぐ反映する
-  useEffect(() => { if (yt) yt.offset = song?.youtubeOffset ?? 0; }, [song?.youtubeOffset, ytReady]);
-
   function setVideo(e: Event) {
     e.preventDefault();
     const v = M.youtubeId(ytInput);
@@ -311,9 +310,10 @@ export function Editor({ mode }: { mode: Mode }) {
       yt?.pause();
       const cur = songRef.current!;
       if (!cur.sections.length && !analyzeNow) {
-        edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)] }));
-      } else if (cur.sections.length && Math.abs(cur.duration - buf.duration) > 1) {
-        setAudioNote(`構成表の長さ（${fmt(cur.duration)}）と音源の長さ（${fmt(buf.duration)}）が違います。別バージョンの音源かもしれません。`);
+        edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)], audio: { offset: 0, duration: buf.duration } }));
+      } else if (cur.sections.length && Math.abs((cur.audio?.duration ?? cur.duration) - buf.duration) > 1) {
+        // 構成を作った音源ファイルの長さと比べる（構成表の長さは曲頭・曲末の無音を含まないため）
+        setAudioNote(`構成表を作った音源の長さ（${fmt(cur.audio?.duration ?? cur.duration)}）と、選んだ音源の長さ（${fmt(buf.duration)}）が違います。別バージョンの音源かもしれません。`);
       }
       if (analyzeNow) await analyzeBuffer(buf, cur.sections.length ? 'propose' : 'replace');
       else setProgress(null);
@@ -343,7 +343,7 @@ export function Editor({ mode }: { mode: Mode }) {
       setAnalysisError(msg);
       if (msg !== '解析を中止しました') track('analysis_fail', { error: msg.slice(0, 60), audioSec: buf.duration });
       if (!songRef.current?.sections.length) {
-        edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)] }));
+        edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)], audio: { offset: 0, duration: buf.duration } }));
       }
     } finally {
       job.current = null;
@@ -522,6 +522,10 @@ export function Editor({ mode }: { mode: Mode }) {
   const step = snap === 'bar' && bar ? bar : snap !== 'off' && beat && M.hasGrid(song) ? beat : 0.1;
   const currentSection = canPlay() ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
   const current = currentSection?.id;
+  // 曲の頭が音源ファイル・動画の何秒目か（ずれ）を、再生に反映する。再生の時刻や長さを表示する前に合わせる
+  // （止まっているときは再描画が起きないため、描画のあとで合わせると古い長さが表示されたままになる）
+  player.offset = song.audio?.offset ?? 0;
+  if (yt) yt.offset = song.youtubeOffset ?? 0;
   const hasAudio = canPlay(); // 再生できる（音源ファイルか YouTube の動画）
   const canAnalyze = !!player.buffer; // 自動生成に使える（音源ファイルのみ）
   // 区間名の候補（自動推定）。名前を付けていない区間にだけ示す
@@ -566,7 +570,7 @@ export function Editor({ mode }: { mode: Mode }) {
         <section class="card notice">
           <p>この曲メモには、保存されていない変更がこの端末に残っています。{restore.baseVersion !== meta?.version && '（そのあとに別の端末で更新されています。保存するときに、どちらを残すか確認します）'}</p>
           <div class="actions">
-            <button class="primary" onClick={() => { base.current = restore.baseVersion ?? base.current; edit(() => restore.song); setRestore(null); }}>変更を復元する</button>
+            <button class="primary" onClick={() => { base.current = restore.baseVersion ?? base.current; edit(() => M.trimSilence(restore.song)); setRestore(null); }}>変更を復元する</button>
             <button onClick={() => { void L.removeDraft(draftKey); setRestore(null); }}>破棄する</button>
           </div>
         </section>
@@ -634,7 +638,7 @@ export function Editor({ mode }: { mode: Mode }) {
         {proposal && (
           <div class="proposal">
             <p>自動生成の結果：BPM {proposal.bpm ?? '未確定'}・区間 {proposal.segments.length} 個。選ぶまで構成表は変わりません。</p>
-            <p class="sub">{proposal.segments.map((g) => `${fmt(g.start, 0)} ${g.group}`).join(' / ')}</p>
+            <p class="sub">{proposal.segments.map((g) => `${fmt(Math.max(0, g.start - (proposal.leadingSilence ?? 0)), 0)} ${g.group}`).join(' / ')}</p>
             <p class="warn">手動で直した内容があります。作り直すと、区間の区切り・名前・小節数・メモなどの手動修正は消えます（曲名・アーティスト・全体メモは残ります。「元に戻す」で取り消せます）。</p>
             <button class="primary" onClick={() => adopt(true)}>この結果で作り直す</button>
             <button onClick={() => adopt(false)}>テンポの推定だけ更新（区間はそのまま）</button>
@@ -736,7 +740,7 @@ export function Editor({ mode }: { mode: Mode }) {
       <section class="card sections">
         <div class="card-head">
           <h2>構成</h2>
-          <span class="sub">{song.sections.filter((s) => !s.silence).length}区間{bar ? `・合計 ${totalBars}小節` : ''}</span>
+          <span class="sub">{song.sections.length}区間{bar ? `・合計 ${totalBars}小節` : ''}</span>
         </div>
         <div class="sections-tools">
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now, containingStart(s, now))))}>再生位置で分割</button>}
@@ -793,7 +797,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   <option value="new">新しい繰り返し</option>
                   <option value="">繰り返しなし</option>
                 </select>
-                {s.silence ? <span class="tag">無音・小節数に数えません</span> : <span class={`origin ${s.edited ? 'manual' : ''}`}>{s.edited ? '手動修正' : '自動'}</span>}
+                <span class={`origin ${s.edited ? 'manual' : ''}`}>{s.edited ? '手動修正' : '自動'}</span>
               </div>
               <div class="sec-time">
                 {i === 0 ? <span class="t">{fmt(s.start)}</span> : (
@@ -806,7 +810,7 @@ export function Editor({ mode }: { mode: Mode }) {
                 )}
                 <span class="t">〜 {fmt(s.end)}</span>
                 <label class="bars">
-                  <input type="number" inputMode="numeric" min={0} max={999} value={s.barsManual ?? ''} placeholder={s.silence ? '—' : s.barsEst != null ? String(s.barsEst) : '未確定'}
+                  <input type="number" inputMode="numeric" min={0} max={999} value={s.barsManual ?? ''} placeholder={s.barsEst != null ? String(s.barsEst) : '未確定'}
                     aria-label="小節数"
                     onInput={(e) => {
                       const raw = (e.currentTarget as HTMLInputElement).value;

@@ -9,7 +9,7 @@ export function ImportText({ song, duration, onImport, onClose }: Props) {
   const [text, setText] = useState('');
   const [result, setResult] = useState<Imported | null>(null);
   const read = (t: string) => { setText(t); setResult(t.trim() ? songFromText(t, song, duration) : null); };
-  const parts = result?.song.sections.filter((s) => !s.silence) ?? [];
+  const parts = result?.song.sections ?? [];
   const ok = !!result && parts.length > 0 && result.song !== song;
   return (
     <div class="import">

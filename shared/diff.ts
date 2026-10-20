@@ -1,5 +1,5 @@
 // 2つの版の差分（要件定義書 5.5）。区間は ID で対応付ける
-import type { Section, Song } from './song';
+import { trimSilence, type Section, type Song } from './song.ts';
 
 export type Change = 'added' | 'split' | 'merged' | 'boundary' | 'name' | 'group' | 'bars' | 'memo';
 
@@ -19,7 +19,9 @@ const EPS = 0.01;
 const bars = (s: Section) => s.barsManual ?? s.barsEst;
 const inside = (a: Section, b: Section) => a.start >= b.start - EPS && a.end <= b.end + EPS;
 
-export function diffSongs(prev: Song, next: Song): SongDiff {
+export function diffSongs(prevSong: Song, nextSong: Song): SongDiff {
+  // 以前の形式（無音の区間）を直してから比べる。形式を直しただけで「変更あり」にしない
+  const prev = trimSilence(prevSong), next = trimSilence(nextSong);
   const before = new Map(prev.sections.map((s) => [s.id, s]));
   const after = new Set(next.sections.map((s) => s.id));
   const sections: Record<string, Change[]> = {};

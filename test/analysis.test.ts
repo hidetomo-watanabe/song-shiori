@@ -35,10 +35,14 @@ describe('自動解析（合成音源）', () => {
     expect(r.bpm).toBeCloseTo(120, 0);
     expect(r.leadingSilence).toBeCloseTo(3, 0);
     expect(r.trailingSilence).toBeCloseTo(4, 0);
-    const parts = song.sections.filter((s) => !s.silence);
+    // 曲頭・曲末の無音は構成に入れず、曲の頭（音源ファイルの3秒目）を 0:00 にする
+    expect(song.sections.some((s) => s.silence)).toBe(false);
+    expect(song.audio?.offset).toBeCloseTo(3, 0);
+    expect(song.duration).toBeCloseTo(80, 0);
+    const parts = song.sections;
     expect(parts.map((s) => s.barsEst)).toEqual([8, 8, 8, 8, 8]);
     expect(parts.map((s) => s.group)).toEqual(['A', 'B', 'A', 'C', 'A']);
-    parts.slice(1).forEach((s, i) => expect(s.start).toBeCloseTo(3 + 16 * (i + 1), 0));
+    parts.slice(1).forEach((s, i) => expect(s.start).toBeCloseTo(16 * (i + 1), 0));
   });
 
   it('変化の少ない長い部分も、16小節を超えるパートにしない', () => {

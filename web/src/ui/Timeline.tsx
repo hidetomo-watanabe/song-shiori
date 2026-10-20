@@ -36,7 +36,7 @@ export function Timeline({ song, now, showPlayhead, selected, onSeek, onSelect, 
           onPointerDown={(e) => { onSelect(s.id); onSeek(toTime(e.clientX)); }}
         >
           {s.group && <span class="seg-group">{s.group}</span>}
-          {!s.silence && <span>{s.name}</span>}
+          <span>{s.name}</span>
         </div>
       ))}
       {song.sections.slice(1).map((s, k) => (

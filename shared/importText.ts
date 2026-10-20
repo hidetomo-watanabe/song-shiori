@@ -1,6 +1,6 @@
 // テキスト（構成表の書き出し）から曲メモの構成を作る
-import { emptySong, MIN_SECTION, newSection, normalize, type Section, type Song } from './song';
-import { parseTruth } from './truth';
+import { emptySong, MIN_SECTION, newSection, normalize, trimSilence, type Section, type Song } from './song.ts';
+import { parseTruth } from './truth.ts';
 
 export type Imported = { song: Song; warnings: string[] };
 
@@ -69,5 +69,12 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
       return r?.bars != null && r.bars !== s.barsEst ? { ...s, barsManual: r.bars } : s;
     }),
   });
+  // 以前の形式のテキスト（「（無音）」の行がある、時刻が音源ファイルの時刻）は、曲の頭を 0:00 にそろえる。
+  // 曲頭の無音の長さを音源ファイルのずれにし、テキストに書かれた YouTube のずれも同じだけ動かす
+  if (song.sections.some((s) => s.silence)) {
+    const youtubeOffset = song.youtubeOffset;
+    song = trimSilence({ ...song, audio: base.audio ? { offset: 0, duration: base.audio.duration } : null });
+    if (!t.youtube) song = { ...song, youtubeOffset };
+  }
   return { song, warnings };
 }

@@ -33,11 +33,14 @@ export class Player {
   private ctx: AudioContext | null = null;
   private src: AudioBufferSourceNode | null = null;
   private startedAt = 0;
-  private offset = 0;
+  private pos = 0; // 止めている位置・再生を始めた位置（音源ファイルの時刻）
   private looping: { start: number; end: number } | null = null; // 今の再生がループ用の音を使っているときの範囲
   private loopCache: { start: number; end: number; buffer: AudioBuffer } | null = null;
   buffer: AudioBuffer | null = null;
   loop: { start: number; end: number } | null = null;
+  // 曲の頭が音源ファイルの何秒目か（曲頭の無音の長さ）。外から見える時刻（currentTime・play・seek・loop・duration）はすべて
+  // 曲の頭からの時刻で、音源ファイルの上の位置は offset を足して求める
+  offset = 0;
   playing = false;
   onEnded: () => void = () => {};
 
@@ -54,23 +57,34 @@ export class Player {
     } catch {
       throw new Error('音源を読み込めませんでした。ファイルが壊れているか、このブラウザでは再生できない形式です');
     }
-    this.offset = 0;
+    this.pos = 0;
     this.loopCache = null;
     return this.buffer;
   }
 
-  get duration() {
+  // 音源ファイルの長さ
+  private get fileDuration() {
     return this.buffer?.duration ?? 0;
   }
 
-  get currentTime(): number {
-    if (!this.playing || !this.ctx) return this.offset;
+  get duration() {
+    return Math.max(0, this.fileDuration - this.offset);
+  }
+
+  // 音源ファイルの上の再生位置
+  private get fileTime(): number {
+    if (!this.playing || !this.ctx) return this.pos;
     const elapsed = this.ctx.currentTime - this.startedAt;
     if (this.looping) {
       const { start, end } = this.looping;
-      return start + ((this.offset - start + elapsed) % (end - start));
+      return start + ((this.pos - start + elapsed) % (end - start));
     }
-    return Math.min(this.offset + elapsed, this.duration);
+    return Math.min(this.pos + elapsed, this.fileDuration);
+  }
+
+  // 曲の頭からの再生位置。曲頭の無音を再生している間は 0
+  get currentTime(): number {
+    return Math.max(0, this.fileTime - this.offset);
   }
 
   // 利用者の操作（タップ）から呼ぶこと。iPhone ではそれ以外の契機で音が出ない
@@ -78,11 +92,11 @@ export class Player {
     if (!this.buffer) return;
     const ctx = this.context();
     void ctx.resume();
-    let at = Math.max(0, Math.min(from ?? this.currentTime, this.duration - 0.01));
+    let at = Math.max(0, Math.min(from != null ? from + this.offset : this.fileTime, this.fileDuration - 0.01));
     this.stopSource();
     const src = ctx.createBufferSource();
     src.connect(ctx.destination);
-    const loop = this.loop && this.loop.end - this.loop.start > 0.05 ? this.loop : null;
+    const loop = this.loop && this.loop.end - this.loop.start > 0.05 ? { start: this.loop.start + this.offset, end: this.loop.end + this.offset } : null;
     if (loop) {
       // ループ範囲だけを切り出した音を、つなぎ目をなめらかにして繰り返す
       if (at < loop.start || at >= loop.end) at = loop.start;
@@ -98,26 +112,26 @@ export class Player {
     this.looping = loop ? { ...loop } : null;
     src.onended = () => {
       if (this.src !== src) return;
-      this.offset = this.duration;
+      this.pos = this.fileDuration;
       this.playing = false;
       this.src = null;
       this.onEnded();
     };
     this.src = src;
     this.startedAt = ctx.currentTime;
-    this.offset = at;
+    this.pos = at;
     this.playing = true;
   }
 
   pause() {
-    this.offset = this.currentTime;
+    this.pos = this.fileTime;
     this.stopSource();
     this.playing = false;
   }
 
   seek(t: number) {
     if (this.playing) this.play(t);
-    else this.offset = Math.max(0, Math.min(t, this.duration));
+    else this.pos = Math.max(0, Math.min(t + this.offset, this.fileDuration));
   }
 
   setLoop(range: { start: number; end: number } | null) {
@@ -130,7 +144,7 @@ export class Player {
   stop() {
     this.stopSource();
     this.playing = false;
-    this.offset = 0;
+    this.pos = 0;
   }
 
   // ループ用の音を作る。区間の終わりの直後に続く音を、区間の頭に 30ms かけて重ねて（等電力クロスフェード）、

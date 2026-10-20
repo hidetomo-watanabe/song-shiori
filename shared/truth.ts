@@ -8,7 +8,7 @@
 // 1行に1区間。区間の始まりの時刻・区間名・小節数（任意）・「｜」の後ろにメモ（任意）。区間の終わりは次の行の始まり。
 // YouTube の動画を使っていれば、見出しに「YouTube https://youtu.be/… ずれ +5.02秒」の行を加える。
 // 時刻で始まらない行は見出し（曲名、BPM・拍子、長さ、YouTube）として扱う。検証音源フォルダの README の書き方（# で始まる行）も読める
-import { clampOffset, youtubeId, type Song } from './song';
+import { clampOffset, trimSilence, youtubeId, type Song } from './song.ts';
 
 export type TruthSection = { start: number; end: number; name: string; bars: number | null; memo: string };
 export type Truth = {
@@ -24,7 +24,8 @@ const time = (t: number) => {
 const signature = (n: number) => `${n}/${n === 6 || n === 7 ? 8 : 4}`;
 export const SILENCE_LABEL = '（無音）';
 
-export function songToText(song: Song): string {
+export function songToText(original: Song): string {
+  const song = trimSilence(original);
   const bpm = song.bpmManual ?? song.bpmEst;
   const lines = [
     [song.title || '曲名未入力', song.artist].filter(Boolean).join(' / '),

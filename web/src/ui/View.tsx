@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, youtubeUrl } from '../../../shared/song';
+import { bpmOf, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
@@ -48,7 +48,8 @@ export function View({ viewId }: { viewId: string }) {
     YouTubePlayer.create(ytHost.current, data.song.youtube).then((p) => {
       if (!alive) { p.destroy(); return; }
       p.onError = setYtError;
-      p.offset = data.song.youtubeOffset ?? 0;
+      // 以前の形式（無音の区間）を直すと YouTube のずれも変わるため、直した曲のずれを使う
+      p.offset = trimSilence(data.song).youtubeOffset ?? 0;
       // 表示しただけでは数えず、最初に再生したときに数える
       p.onPlay = () => { track('youtube_view_play'); p.onPlay = () => {}; };
       setYt(p);
@@ -69,7 +70,8 @@ export function View({ viewId }: { viewId: string }) {
   if (error) return <main class="page narrow"><p class="error">{error}</p></main>;
   if (!data) return <main class="page narrow"><p>読み込んでいます…</p></main>;
 
-  const { song } = data;
+  // 以前の形式（無音の区間）は、曲の頭を 0:00 にした形に直して表示する
+  const song = trimSilence(data.song);
   const current = started ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
   const diff: SongDiff | null = data.base ? diffSongs(data.base.song, song) : null;
   const bpm = bpmOf(song);
@@ -142,7 +144,7 @@ export function View({ viewId }: { viewId: string }) {
             {song.sections.map((s) => {
               const changes = diff?.sections[s.id] ?? [];
               return (
-                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.silence ? ' silence' : ''}${current?.id === s.id ? ' now' : ''}`}
+                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${current?.id === s.id ? ' now' : ''}`}
                   onClick={yt ? () => yt.play(s.start) : undefined}>
                   <td data-label="開始">
                     {yt && <button class="tiny ghost row-go" aria-label={`${s.name}から再生`} onClick={(e) => { e.stopPropagation(); yt.play(s.start); }}>▶</button>}
@@ -155,7 +157,7 @@ export function View({ viewId }: { viewId: string }) {
                     {sameAs(s) && <span class="group">（{sameAs(s)}と同じ）</span>}
                     {changes.map((c) => <span key={c} class="tag change">{CHANGE_LABEL[c]}</span>)}
                   </td>
-                  <td data-label="小節数" class="num">{s.silence ? '—' : s.barsManual ?? s.barsEst ?? '未確定'}</td>
+                  <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>
                   <td data-label="メモ">{s.memo}</td>
                 </tr>
               );

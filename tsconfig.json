@@ -9,6 +9,8 @@
     "strict": true,
     "noUnusedLocals": true,
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "types": ["@cloudflare/workers-types"]
   },
   "include": ["web/src", "worker/src", "shared", "test"]

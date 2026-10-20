@@ -18,7 +18,7 @@ describe('構成表のテキスト', () => {
       [0, 1.5, '無音', null], [1.5, 5.2, 'イントロ', null], [5.2, 60, 'Aメロ', 16], [60, 90, 'サビ', null]]);
   });
 
-  it('書き出したテキストは読みやすく、読み戻すと区間・小節数・メモが一致する', () => {
+  it('書き出したテキストは読みやすく、読み戻すと区間・小節数・メモが一致する（以前の形式の無音は除き、曲の頭から）', () => {
     let t = 0;
     const sections = [8, 16, 8].map((bars, i) => {
       const s = newSection(t, t + bars * 2, { name: ['イントロ', 'Aメロ', 'サビ'][i], nameAuto: false, memo: i === 1 ? 'ドラムは抑えめ' : '' });
@@ -29,13 +29,14 @@ describe('構成表のテキスト', () => {
     sections[1] = { ...sections[1], start: 0.5 };
     const song = normalize({ ...emptySong(t), title: '曲', artist: '歌手', bpmEst: 120, firstDownbeat: 0.5, sections, memo: 'キーは E' });
     const text = songToText(song);
-    expect(text).toContain('曲 / 歌手\nBPM 120・4/4・長さ 1:04.0\n\n0:00.0 （無音）\n0:00.5 イントロ 8小節\n0:16.0 Aメロ 16小節 ｜ドラムは抑えめ\n0:48.0 サビ 8小節\n\nキーは E');
+    expect(text).toContain('曲 / 歌手\nBPM 120・4/4・長さ 1:03.5\n\n0:00.0 イントロ 8小節\n0:15.5 Aメロ 16小節 ｜ドラムは抑えめ\n0:47.5 サビ 8小節\n\nキーは E');
     expect(text).not.toContain('#');
+    expect(text).not.toContain('無音');
     const back = parseTruth(text);
     expect(back.bpm).toBe(120);
-    expect(back.duration).toBe(64);
+    expect(back.duration).toBe(63.5);
     expect(back.sections.map((s) => [s.start, s.end, s.name, s.bars, s.memo])).toEqual([
-      [0, 0.5, '無音', null, ''], [0.5, 16, 'イントロ', 8, ''], [16, 48, 'Aメロ', 16, 'ドラムは抑えめ'], [48, 64, 'サビ', 8, '']]);
+      [0, 15.5, 'イントロ', 8, ''], [15.5, 47.5, 'Aメロ', 16, 'ドラムは抑えめ'], [47.5, 63.5, 'サビ', 8, '']]);
     expect(back.youtube).toBeNull();
   });
 
@@ -68,31 +69,39 @@ BPM 120・4/4・長さ 1:10.0
 
 キーは E`;
 
-  it('曲名・BPM・区間・メモ・全体メモを読み込み、同じ名前の区間を同じ繰り返しにする', () => {
+  it('曲名・BPM・区間・メモ・全体メモを読み込み、同じ名前の区間を同じ繰り返しにする（以前の形式の無音は除き、曲の頭を 0:00 に）', () => {
     const { song, warnings } = songFromText(text);
     expect(warnings).toEqual([]);
-    expect(song).toMatchObject({ title: 'ゲット・アップ・ルーシー', artist: 'THEE MICHELLE GUN ELEPHANT', memo: 'キーは E', bpmManual: 120, beatsPerBar: 4, duration: 70 });
+    expect(song).toMatchObject({ title: 'ゲット・アップ・ルーシー', artist: 'THEE MICHELLE GUN ELEPHANT', memo: 'キーは E', bpmManual: 120, beatsPerBar: 4, duration: 66 });
     expect(song.sections.map((s) => [s.start, s.end, s.name, s.group, s.silence ?? false, s.memo])).toEqual([
-      [0, 2, '無音（曲の前）', null, true, ''], [2, 10, 'イントロ', null, false, ''], [10, 26, 'Aメロ', 'A', false, 'ドラムは抑えめ'],
-      [26, 42, 'サビ', 'B', false, ''], [42, 58, 'Aメロ（2回目）', 'A', false, ''], [58, 68, 'サビ（2回目）', 'B', false, ''],
-      [68, 70, '無音（曲の後）', null, true, '']]);
+      [0, 8, 'イントロ', null, false, ''], [8, 24, 'Aメロ', 'A', false, 'ドラムは抑えめ'],
+      [24, 40, 'サビ', 'B', false, ''], [40, 56, 'Aメロ（2回目）', 'A', false, ''], [56, 66, 'サビ（2回目）', 'B', false, '']]);
     // 拍から数えた小節数（5）と同じなら推定のまま、違えば手入力として残す
-    expect(song.sections.map((s) => [s.barsEst, s.barsManual])).toEqual([[null, null], [4, null], [8, null], [8, null], [8, null], [5, null], [null, null]]);
+    expect(song.sections.map((s) => [s.barsEst, s.barsManual])).toEqual([[4, null], [8, null], [8, null], [8, null], [5, null]]);
+    // 曲頭の無音は音源ファイルのずれになる
+    expect(song.audio).toEqual({ offset: 2, duration: 70 });
     expect(validateSong(song)).toBeNull();
+  });
+
+  it('今の形式（曲の頭が 0:00）のテキストはそのまま読み込む', () => {
+    const { song } = songFromText('曲\nBPM 120・4/4・長さ 0:24.0\n\n0:00.0 イントロ 4小節\n0:08.0 Aメロ 8小節', { ...emptySong(), audio: { offset: 1.5, duration: 30 } });
+    expect(song.sections.map((s) => [s.start, s.end, s.name])).toEqual([[0, 8, 'イントロ'], [8, 24, 'Aメロ']]);
+    expect(song.audio).toEqual({ offset: 1.5, duration: 30 });
   });
 
   it('YouTube の動画とずれを読み込み、書かれていなければ今の動画のまま', () => {
     const withVideo = songFromText(text.replace('長さ 1:10.0\n', '長さ 1:10.0\nYouTube https://youtu.be/M7lc1UVf-VE ずれ +5.02秒\n')).song;
-    expect([withVideo.youtube, withVideo.youtubeOffset]).toEqual(['M7lc1UVf-VE', 5.02]);
+    // 以前の形式のテキストでは、曲頭の無音（2秒）の分だけ YouTube のずれも動かす
+    expect([withVideo.youtube, withVideo.youtubeOffset]).toEqual(['M7lc1UVf-VE', 7.02]);
     expect(validateSong(withVideo)).toBeNull();
     const kept = songFromText(text, { ...emptySong(), youtube: 'dQw4w9WgXcQ', youtubeOffset: 1.5 }).song;
     expect([kept.youtube, kept.youtubeOffset]).toEqual(['dQw4w9WgXcQ', 1.5]);
   });
 
   it('音源の長さに合わせ、違えば知らせる', () => {
-    const { song, warnings } = songFromText(text, undefined, 66);
-    expect(song.duration).toBe(66);
-    expect(song.sections[song.sections.length - 1]).toMatchObject({ start: 58, end: 66, name: 'サビ（2回目）' });
+    const { song, warnings } = songFromText('曲\nBPM 120・4/4・長さ 1:06.0\n\n0:00.0 イントロ 4小節\n0:08.0 Aメロ 8小節\n0:24.0 サビ 8小節', undefined, 60);
+    expect(song.duration).toBe(60);
+    expect(song.sections[song.sections.length - 1]).toMatchObject({ start: 24, end: 60, name: 'サビ' });
     expect(warnings[0]).toMatch(/長さ/);
   });
 

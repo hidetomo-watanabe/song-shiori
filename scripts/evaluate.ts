@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { analyze, ANALYSIS_SR } from '../web/src/analysis/core.ts';
-import { octaveByReference, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
+import { octaveByReference, shiftSong, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
 import { parseTruth, type Truth } from '../shared/truth.ts';
 
 const args = process.argv.slice(2);
@@ -97,14 +97,16 @@ for (const f of files) {
   // 画面と同じく、参考の BPM（ここでは正解の BPM）から倍・半分を判定して作り直す
   const f2 = truth?.bpm && raw ? octaveByReference(raw, truth.bpm) : null;
   if (f2 === 2 || f2 === 0.5) song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, { ...tuning, bpm: Math.round(raw! * f2 * 10) / 10 }));
-  const parts = song.sections.filter((s) => !s.silence);
+  const parts = song.sections;
   console.log(`\n■ ${name}`);
   console.log(`  推定 BPM ${raw}${f2 === 2 || f2 === 0.5 ? ` → 参考の BPM で ${song.bpmEst} に修正` : ''} / 区間 ${parts.length} / 最長 ${Math.max(...parts.map((s) => s.barsEst ?? 0))}小節`);
   if (!truth || !truth.sections.length) {
     console.log('  正解ファイルがない（または区間が書かれていない）ため、判定はしません');
     continue;
   }
-  const r = evaluate(song, truth);
+  // 構成表は曲の頭を 0:00 にしているので、正解ファイル（音源ファイルの時刻）と比べるときは音源ファイルの時刻に戻す。
+  // 正解の「無音」の行は区切りとして数えない（自動の側も曲頭・曲末の無音を区切りにしないため）
+  const r = evaluate(shiftSong(song, song.audio?.offset ?? 0), { ...truth, sections: truth.sections.filter((s) => s.name !== '無音') });
   for (const l of r.lines) console.log(`  ${l}`);
   for (const k of Object.keys(sum) as (keyof typeof sum)[]) sum[k] += r[k];
 }

@@ -13,7 +13,7 @@ export type Section = {
   barsNeedsCheck: boolean; // 結合で手動小節数が外れ、確認が必要
   memo: string;
   edited: boolean; // 手動修正済み
-  silence?: boolean; // 曲頭・曲末の無音。小節数を数えない
+  silence?: boolean; // 曲頭・曲末の無音（以前の形式）。今は作らず、読み込むときに trimSilence で取り除く
   energy?: number; // 解析で測った音量（dB）。名前の候補の推定に使う
   // 分割でできた2区間の対応。片方の小節数を入れると、もう片方を「元の小節数 − 入れた値」にする
   split?: { partner: string; total: number; start: number; end: number } | null;
@@ -42,6 +42,9 @@ export type Song = {
   // 構成表の時刻と YouTube の動画の時刻のずれ（秒）。動画の時刻 = 構成表の時刻 + ずれ。
   // 音源と動画で曲頭の無音や MV の前置きの長さが違うときに合わせる。構成表の時刻は変えない
   youtubeOffset?: number;
+  // 構成を作った音源ファイル。offset：ファイルの何秒目が曲の頭（0:00）か（曲頭の無音の長さ）。duration：ファイルの長さ。
+  // 構成表の時刻は曲の頭からの時刻で、音源ファイルで再生するときだけ offset を足す
+  audio?: { offset: number; duration: number } | null;
 };
 
 // 区間の名前の候補（入力欄で選べる）
@@ -86,6 +89,44 @@ export function youtubeId(text: string): string | null {
 }
 export const youtubeUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 export const MAX_YOUTUBE_OFFSET = 600;
+const round3 = (t: number) => Math.round(t * 1000) / 1000;
+
+// 曲の時刻をまとめて dt 秒ずらす（区間・拍・最初の小節頭・分割の記録）
+export function shiftSong(song: Song, dt: number): Song {
+  if (!dt) return song;
+  const sh = (t: number) => round3(t + dt);
+  return {
+    ...song,
+    duration: sh(song.duration),
+    beats: song.beats?.map(sh) ?? null,
+    firstDownbeat: song.firstDownbeat == null ? null : sh(song.firstDownbeat),
+    sections: song.sections.map((x) => ({ ...x, start: sh(x.start), end: sh(x.end), split: x.split ? { ...x.split, start: sh(x.split.start), end: sh(x.split.end) } : x.split })),
+  };
+}
+
+// 以前の形式（曲頭・曲末の「無音」の区間）を、曲の頭を 0:00 とする形に直す。
+// 曲頭の無音の長さは音源ファイルのずれ（audio.offset）にし、YouTube のずれも同じだけ足して再生位置を保つ。
+// 無音の区間に書いたメモは全体メモへ移す。無音の区間がなければそのまま返す
+export function trimSilence(song: Song): Song {
+  const secs = song.sections;
+  if (!secs.some((x) => x.silence)) return song;
+  let a = 0, b = secs.length;
+  while (a < b && secs[a].silence) a++;
+  while (b > a && secs[b - 1].silence) b--;
+  if (a === b) return { ...song, sections: secs.map((x) => ({ ...x, silence: false })) };
+  const lead = secs[a].start;
+  const notes = secs.filter((x, i) => x.silence && (i < a || i >= b) && x.memo.trim()).map((x) => `${x.name}：${x.memo.trim()}`);
+  const kept = secs.slice(a, b).map((x) => (x.silence ? { ...x, silence: false } : x));
+  const trimmed: Song = {
+    ...song,
+    duration: kept[kept.length - 1].end,
+    sections: kept,
+    memo: [song.memo.trim(), ...notes].filter(Boolean).join('\n').slice(0, LIMITS.memo),
+    audio: { offset: round3((song.audio?.offset ?? 0) + lead), duration: song.audio?.duration ?? song.duration },
+    youtubeOffset: song.youtube && lead ? clampOffset((song.youtubeOffset ?? 0) + lead) || undefined : song.youtubeOffset,
+  };
+  return normalize(shiftSong(trimmed, -lead));
+}
 // ずれは 0.01 秒単位にそろえ、範囲に収める
 export const clampOffset = (x: number) => Math.round(Math.max(-MAX_YOUTUBE_OFFSET, Math.min(MAX_YOUTUBE_OFFSET, x)) * 100) / 100;
 // 拍・小節が使えるか。解析で確定できなくても、BPM を手動で入れれば使える
@@ -459,36 +500,42 @@ export type AnalysisResult = {
   trailingSilence?: number; // 曲末の無音（秒）。0 なら無音なし
 };
 
-// 解析の区切りから区間を作る。曲頭・曲末に無音があれば「無音（曲の前）」「無音（曲の後）」として分け、
-// 構成は音が鳴っている間だけにする
-function sectionsFrom(segments: AnalysisResult['segments'], leadingSilence = 0, trailingSilence = 0): Section[] {
-  const secs = segments.map((g) => newSection(g.start, g.end, { group: g.group, energy: g.energy }));
-  if (leadingSilence > 0 && secs.length && secs[0].end - leadingSilence > MIN_SECTION) {
-    secs[0] = { ...secs[0], start: leadingSilence };
-    secs.unshift(newSection(0, leadingSilence, { name: '無音（曲の前）', nameAuto: false, silence: true }));
-  }
-  const last = secs[secs.length - 1];
-  const end = last ? last.end - trailingSilence : 0;
-  if (trailingSilence > 0 && last && !last.silence && end - last.start > MIN_SECTION) {
-    secs[secs.length - 1] = { ...last, end };
-    secs.push(newSection(end, last.end, { name: '無音（曲の後）', nameAuto: false, silence: true }));
-  }
-  return secs;
+// 解析の結果（音源ファイルの時刻）を、曲の頭を 0:00 とする時刻に直す。曲頭・曲末の無音は構成に入れず、
+// 曲頭の無音の長さ（lead）を音源ファイルのずれにする
+function songTimes(a: Pick<AnalysisSnapshot, 'duration' | 'segments' | 'leadingSilence' | 'trailingSilence'>) {
+  const segs = a.segments;
+  if (!segs.length) return { lead: 0, duration: a.duration, sections: [] as Section[] };
+  const lead = (a.leadingSilence ?? 0) > 0 && segs[0].end - a.leadingSilence! > MIN_SECTION ? round3(a.leadingSilence!) : 0;
+  const last = segs[segs.length - 1];
+  const cut = last.end - (a.trailingSilence ?? 0);
+  const end = (a.trailingSilence ?? 0) > 0 && cut - Math.max(last.start, lead) > MIN_SECTION ? cut : last.end;
+  const sections = segs.map((g, i) => newSection(round3((i === 0 ? lead : g.start) - lead), round3((i === segs.length - 1 ? end : g.end) - lead), { group: g.group, energy: g.energy }));
+  return { lead, duration: sections[sections.length - 1].end, sections };
 }
 
+// 曲の頭（音源ファイルのずれ）を from から to に動かしたとき、YouTube のずれを保つ。音源ファイルなしで作った構成は対応が分からないので変えない
+const keepYoutube = (song: Song, d: number): Partial<Song> =>
+  song.audio && song.youtube && d ? { youtubeOffset: clampOffset((song.youtubeOffset ?? 0) + d) || undefined } : {};
+
 export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
+  const t = songTimes(r);
+  const b = base ?? emptySong();
+  const d = round3(t.lead - (b.audio?.offset ?? 0)); // 曲の頭が音源ファイルの上で後ろへ動いた秒数
   const song: Song = {
-    ...(base ?? emptySong()),
-    duration: r.duration,
+    ...b,
+    ...keepYoutube(b, d),
+    duration: t.duration,
     bpmEst: r.bpm,
-    beats: r.beats.slice(0, LIMITS.beats),
+    beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - t.lead)),
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
-    sections: sectionsFrom(r.segments, r.leadingSilence, r.trailingSilence),
+    sections: t.sections,
     analysis: snapshotOf(r),
+    audio: { offset: t.lead, duration: r.duration },
     groupNames: {},
   };
-  if (!base?.firstDownbeatManual) song.firstDownbeat = r.firstDownbeat;
+  if (!b.firstDownbeatManual) song.firstDownbeat = r.firstDownbeat == null ? null : round3(r.firstDownbeat - t.lead);
+  else if (b.audio && b.firstDownbeat != null) song.firstDownbeat = round3(b.firstDownbeat - d);
   return normalize(song);
 }
 
@@ -499,41 +546,51 @@ const snapshotOf = (r: AnalysisResult): AnalysisSnapshot => ({
   trailingSilence: r.trailingSilence ?? 0,
 });
 
-// 構成を自動解析の結果に戻す。区間・テンポ・拍子・最初の小節頭の手動修正を捨てる（曲名・全体メモは残す）
+// 構成を自動解析の結果に戻す。区間・テンポ・拍子・最初の小節頭の手動修正を捨てる（曲名・全体メモは残す）。
+// 解析の結果（analysis）は音源ファイルの時刻のまま持ち、ここで曲の時刻に直す。拍（beats）は今の音源ファイルのずれに合わせてあるので、ずれの変化だけ動かす
 export function resetToAnalysis(song: Song): Song {
   const a = song.analysis;
   if (!a || !a.segments.length) return song;
+  const t = songTimes(a);
+  const d = round3(t.lead - (song.audio?.offset ?? 0));
   return normalize({
     ...song,
-    duration: a.duration,
+    ...keepYoutube(song, d),
+    duration: t.duration,
     bpmEst: a.bpm,
     bpmManual: null,
     beatsPerBar: 4,
-    firstDownbeat: a.firstDownbeat,
+    beats: song.beats?.map((x) => round3(x - d)) ?? null,
+    firstDownbeat: a.firstDownbeat == null ? null : round3(a.firstDownbeat - t.lead),
     firstDownbeatManual: false,
     beatsUncertain: a.beatsUncertain,
-    sections: sectionsFrom(a.segments, a.leadingSilence, a.trailingSilence),
+    sections: t.sections,
+    audio: { offset: t.lead, duration: a.duration },
     groupNames: {},
   });
 }
 
 // 解析結果で構成を作り直す。手動修正はすべて捨てる（曲名・アーティスト・全体メモは残す）
 export function regenerateFromAnalysis(song: Song, r: AnalysisResult): Song {
-  return resetToAnalysis({ ...song, beats: r.beats.slice(0, LIMITS.beats), analysisVersion: r.version, analysis: snapshotOf(r) });
+  const off = song.audio?.offset ?? 0;
+  return resetToAnalysis({ ...song, beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - off)), analysisVersion: r.version, analysis: snapshotOf(r) });
 }
 
 // 再解析の結果を採用する。手動修正済みの区間がある場合は区間を置き換えず、テンポの推定値だけ更新する
 export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sectionsReplaced: boolean } {
   const anyEdited = song.sections.some((s) => s.edited);
   if (!anyEdited) return { song: songFromAnalysis(r, song), sectionsReplaced: true };
+  // 区間はそのままなので、拍と最初の小節頭は今の音源ファイルのずれで曲の時刻に直す
+  const off = song.audio?.offset ?? 0;
   const next: Song = {
     ...song,
     bpmEst: r.bpm,
-    beats: r.beats.slice(0, LIMITS.beats),
+    beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - off)),
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
-    firstDownbeat: song.firstDownbeatManual ? song.firstDownbeat : r.firstDownbeat,
+    firstDownbeat: song.firstDownbeatManual ? song.firstDownbeat : r.firstDownbeat == null ? null : round3(r.firstDownbeat - off),
     analysis: snapshotOf(r),
+    audio: { offset: off, duration: r.duration },
   };
   return { song: normalize(next), sectionsReplaced: false };
 }
@@ -565,6 +622,7 @@ export function validateSong(x: unknown): string | null {
   if (s.groupNames != null && (typeof s.groupNames !== 'object' || Object.keys(s.groupNames).length > 100 || !Object.values(s.groupNames).every((v) => str(v, LIMITS.text)))) return '繰り返しの名前が正しくありません';
   if (s.youtube != null && (typeof s.youtube !== 'string' || !YOUTUBE_ID.test(s.youtube))) return 'YouTube の動画が正しくありません';
   if (s.youtubeOffset != null && (!num(s.youtubeOffset) || Math.abs(s.youtubeOffset) > MAX_YOUTUBE_OFFSET)) return 'YouTube の動画のずれが正しくありません';
+  if (s.audio != null && (typeof s.audio !== 'object' || !num(s.audio.offset) || !num(s.audio.duration) || s.audio.offset < 0 || s.audio.duration < 0 || s.audio.duration > LIMITS.duration)) return '音源ファイルの情報が正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;
 }

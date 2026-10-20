@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -266,29 +266,57 @@ describe('編集ルール', () => {
     expect(validateSong(out)).toBeNull();
   });
 
-  it('曲頭の無音は別の区間にし、小節数を数えない。戻すときも同じ', () => {
-    const r = { version: 't', duration: 66, bpm: 120, beats: [], firstDownbeat: 2, beatsUncertain: false, leadingSilence: 2,
+  it('曲頭の無音は構成に入れず、曲の頭を 0:00 にして音源ファイルのずれにする。戻すときも同じ', () => {
+    const r = { version: 't', duration: 66, bpm: 120, beats: [2, 2.5, 3], firstDownbeat: 2, beatsUncertain: false, leadingSilence: 2,
       segments: [{ start: 0, end: 34, group: 'A' }, { start: 34, end: 66, group: 'B' }] };
     const s = songFromAnalysis(r);
-    expect(s.sections.map((x) => [x.start, x.end, x.name, x.barsEst, !!x.silence])).toEqual([
-      [0, 2, '無音（曲の前）', null, true], [2, 34, 'パートA', 16, false], [34, 66, 'パートB', 16, false]]);
+    expect(s.sections.map((x) => [x.start, x.end, x.name, x.barsEst, !!x.silence])).toEqual([[0, 32, 'パートA', 16, false], [32, 64, 'パートB', 16, false]]);
+    expect(s).toMatchObject({ duration: 64, firstDownbeat: 0, beats: [0, 0.5, 1], audio: { offset: 2, duration: 66 } });
     expect(validateSong(s)).toBeNull();
-    const edited = patchSection(s, s.sections[1].id, { name: 'イントロ' });
-    expect(resetToAnalysis(edited).sections.map((x) => x.name)).toEqual(['無音（曲の前）', 'パートA', 'パートB']);
-    // 無音の区間を削除すると、直後の区間に結合されて曲頭から始まる
-    expect(deleteSection(s, s.sections[0].id).sections[0]).toMatchObject({ start: 0, end: 34, name: 'パートA' });
+    const edited = patchSection(s, s.sections[0].id, { name: 'イントロ' });
+    const back = resetToAnalysis(edited);
+    expect(back.sections.map((x) => [x.start, x.end, x.name])).toEqual([[0, 32, 'パートA'], [32, 64, 'パートB']]);
+    expect(back).toMatchObject({ firstDownbeat: 0, beats: [0, 0.5, 1], audio: { offset: 2, duration: 66 } });
   });
 
-  it('曲末の無音も別の区間にする', () => {
+  it('曲末の無音も構成に入れない', () => {
     const r = { version: 't', duration: 70, bpm: 120, beats: [], firstDownbeat: 2, beatsUncertain: false, leadingSilence: 2, trailingSilence: 4,
       segments: [{ start: 0, end: 34, group: 'A' }, { start: 34, end: 70, group: 'B' }] };
     const s = songFromAnalysis(r);
-    expect(s.sections.map((x) => [x.start, x.end, x.name, x.barsEst])).toEqual([
-      [0, 2, '無音（曲の前）', null], [2, 34, 'パートA', 16], [34, 66, 'パートB', 16], [66, 70, '無音（曲の後）', null]]);
+    expect(s.sections.map((x) => [x.start, x.end, x.name, x.barsEst])).toEqual([[0, 32, 'パートA', 16], [32, 64, 'パートB', 16]]);
+    expect(s).toMatchObject({ duration: 64, audio: { offset: 2, duration: 70 } });
     expect(validateSong(s)).toBeNull();
-    expect(resetToAnalysis(s).sections).toHaveLength(4);
-    // 曲末の無音を削除すると、直前の区間に結合される
-    expect(deleteSection(s, s.sections[3].id).sections[2]).toMatchObject({ start: 34, end: 70, name: 'パートB' });
+  });
+
+  it('作り直して曲の頭（音源ファイルのずれ）が変わっても、YouTube の再生位置を保つ', () => {
+    const r = (lead: number) => ({ version: 't', duration: 70, bpm: 120, beats: [lead, lead + 0.5], firstDownbeat: lead, beatsUncertain: false, leadingSilence: lead,
+      segments: [{ start: 0, end: 34, group: 'A' }, { start: 34, end: 70, group: 'B' }] });
+    const s = { ...songFromAnalysis(r(2)), youtube: 'M7lc1UVf-VE', youtubeOffset: 5 };
+    // 曲の頭が音源ファイルの 2秒目 → 3秒目 に動くと、同じ音の位置の曲の時刻は1秒早くなる。動画のずれは1秒増やす
+    const again = regenerateFromAnalysis(s, r(3));
+    expect(again).toMatchObject({ audio: { offset: 3, duration: 70 }, youtubeOffset: 6, firstDownbeat: 0, beats: [0, 0.5] });
+    expect(songFromAnalysis(r(3), s)).toMatchObject({ audio: { offset: 3 }, youtubeOffset: 6, beats: [0, 0.5] });
+    // 区間を手で直していれば区間は残し、拍だけ今のずれで曲の時刻に直す
+    const kept = adoptAnalysis(patchSection(s, s.sections[0].id, { name: 'イントロ' }), r(2)).song;
+    expect(kept).toMatchObject({ audio: { offset: 2 }, youtubeOffset: 5, beats: [0, 0.5], firstDownbeat: 0 });
+  });
+
+  it('以前の形式（無音の区間）を、曲の頭を 0:00 にした形に直す', () => {
+    const old = normalize({
+      ...emptySong(70), bpmEst: 120, firstDownbeat: 2, beats: [2, 2.5], memo: 'キーは E', youtube: 'M7lc1UVf-VE', youtubeOffset: 8,
+      sections: [
+        newSection(0, 2, { name: '無音（曲の前）', nameAuto: false, silence: true, memo: 'カウント4つ' }),
+        newSection(2, 34, { group: 'A' }), newSection(34, 66, { group: 'B' }),
+        newSection(66, 70, { name: '無音（曲の後）', nameAuto: false, silence: true }),
+      ],
+    });
+    const s = trimSilence(old);
+    expect(s.sections.map((x) => [x.start, x.end, x.barsEst, !!x.silence])).toEqual([[0, 32, 16, false], [32, 64, 16, false]]);
+    expect(s).toMatchObject({ duration: 64, firstDownbeat: 0, beats: [0, 0.5], audio: { offset: 2, duration: 70 }, youtubeOffset: 10, memo: 'キーは E\n無音（曲の前）：カウント4つ' });
+    expect(validateSong(s)).toBeNull();
+    expect(trimSilence(s)).toBe(s); // 直したものはそのまま
+    // 形式を直しただけでは、閲覧ページに「変更あり」と出さない
+    expect(diffSongs(old, s).changed).toBe(false);
   });
 
   it('自動解析の結果がなければ戻さない', () => {

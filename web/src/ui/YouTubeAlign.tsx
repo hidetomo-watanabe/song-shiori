@@ -15,9 +15,8 @@ const describe = (x: number) => (x > 0 ? `動画のほうが ${x.toFixed(2)}秒 
 // 音は読み取れないため自動では合わせられない
 export function YouTubeAlign({ song, videoDuration, videoTime, onChange }: Props) {
   const offset = song.youtubeOffset ?? 0;
-  const parts = song.sections.filter((s) => !s.silence);
-  const [target, setTarget] = useState(parts[0]?.id ?? '');
-  const sec = song.sections.find((s) => s.id === target) ?? parts[0] ?? song.sections[0];
+  const [target, setTarget] = useState(song.sections[0]?.id ?? '');
+  const sec = song.sections.find((s) => s.id === target) ?? song.sections[0];
   // 前後の余りを除いても長さが合わなければ、途中に演出が入るなど別バージョンの動画のことがある
   const lengthDiff = song.sections.length ? videoDuration - offset - song.duration : 0;
   return (
