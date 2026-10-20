@@ -51,13 +51,13 @@ export function View({ viewId }: { viewId: string }) {
       <header class="view-head">
         <h1>{song.title || '曲名未入力'}</h1>
         {song.artist && <p class="artist">{song.artist}</p>}
-        <p class="sub">最終更新 {fmtDate(data.updatedAt)}・版 {data.version}</p>
+        <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
       </header>
 
       {diff?.changed && (
         <section class="card update" role="status">
-          <h2>{seenBefore ? '前回見たあとに更新があります' : `直前の版（版 ${data.base!.version}）からの変更`}</h2>
-          {data.notes.map((n) => <p key={n.version} class="note">版 {n.version}：{n.note}</p>)}
+          <h2>{seenBefore ? '前回見たあとに更新があります' : '前回の更新からの変更'}</h2>
+          {data.notes.map((n) => <p key={n.version} class="note">・{n.note}</p>)}
           {diff.song.length > 0 && <p>曲全体：{diff.song.join('・')}を変更</p>}
           {diff.removed.map((s) => <p key={s.id}>削除：{s.name}（{fmt(s.start, 0)}〜{fmt(s.end, 0)}）</p>)}
           <p class="sub">変更のあった区間に印を付けています。</p>

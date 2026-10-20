@@ -423,7 +423,7 @@ export function Editor({ mode }: { mode: Mode }) {
       setSaveState('error');
       if (e instanceof ApiError && e.status === 409 && id) {
         setConflict({ version: e.body?.version });
-        setSaveError('他の端末で更新されています。最新の版を読み込むか、この内容で上書きするかを選んでください。');
+        setSaveError('他の端末で更新されています。最新の内容を読み込むか、この内容で上書きするかを選んでください。');
       } else if (e instanceof ApiError && e.status === 401) {
         setSaveError('編集の有効期限が切れたか、キーが再発行されました。キーを入力すると、変更を保持したまま保存できます。');
         setSessionState(null);
@@ -485,7 +485,7 @@ export function Editor({ mode }: { mode: Mode }) {
     <main class="page editor">
       <header class="bar">
         <a href="#/" class="home">曲のしおり</a>
-        <span class="state">{id ? `版 ${meta?.version ?? '-'}` : '下書き（この端末にだけ保存）'}</span>
+        <span class="state">{id ? (meta ? `最終保存 ${new Date(meta.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '') : '下書き（この端末にだけ保存）'}</span>
         <button onClick={undo} disabled={!history.current.length} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
         <button onClick={redo} disabled={!future.current.length} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
       </header>
@@ -500,7 +500,7 @@ export function Editor({ mode }: { mode: Mode }) {
 
       {restore && (
         <section class="card notice">
-          <p>この曲メモには、保存されていない変更がこの端末に残っています。{restore.baseVersion !== meta?.version && `（版 ${restore.baseVersion} を元にした変更です。保存すると競合として確認します）`}</p>
+          <p>この曲メモには、保存されていない変更がこの端末に残っています。{restore.baseVersion !== meta?.version && '（そのあとに別の端末で更新されています。保存するときに、どちらを残すか確認します）'}</p>
           <button class="primary" onClick={() => { base.current = restore.baseVersion ?? base.current; edit(() => restore.song); setRestore(null); }}>変更を復元する</button>
           <button onClick={() => { void L.removeDraft(draftKey); setRestore(null); }}>破棄する</button>
         </section>
@@ -807,7 +807,7 @@ export function Editor({ mode }: { mode: Mode }) {
         {saveError && <p class="error">{saveError}</p>}
         {conflict && (
           <div class="conflict">
-            <button onClick={() => void reloadLatest()}>最新の版を読み込む（この変更は破棄）</button>
+            <button onClick={() => void reloadLatest()}>最新の内容を読み込む（この変更は破棄）</button>
             <button class="danger" onClick={() => void save(true)}>この内容で上書き保存</button>
           </div>
         )}

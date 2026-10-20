@@ -121,7 +121,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         <h3>削除</h3>
         {confirm === 'delete' ? (
           <div class="actions">
-            <span>構成メモと過去の版をすべて削除します。元に戻せません。</span>
+            <span>構成メモと過去の更新の記録をすべて削除します。元に戻せません。</span>
             <button class="danger" onClick={() => run(async () => { await api.remove(id, session); onDeleted(); })}>削除する</button>
             <button onClick={() => setConfirm('')}>やめる</button>
           </div>
