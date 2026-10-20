@@ -217,6 +217,18 @@ describe('編集ルール', () => {
     expect(deleteSection(s, s.sections[0].id).sections[0]).toMatchObject({ start: 0, end: 34, name: 'パートA' });
   });
 
+  it('曲末の無音も別の区間にする', () => {
+    const r = { version: 't', duration: 70, bpm: 120, beats: [], firstDownbeat: 2, beatsUncertain: false, leadingSilence: 2, trailingSilence: 4,
+      segments: [{ start: 0, end: 34, group: 'A' }, { start: 34, end: 70, group: 'B' }] };
+    const s = songFromAnalysis(r);
+    expect(s.sections.map((x) => [x.start, x.end, x.name, x.barsEst])).toEqual([
+      [0, 2, '無音（曲の前）', null], [2, 34, 'パートA', 16], [34, 66, 'パートB', 16], [66, 70, '無音（曲の後）', null]]);
+    expect(validateSong(s)).toBeNull();
+    expect(resetToAnalysis(s).sections).toHaveLength(4);
+    // 曲末の無音を削除すると、直前の区間に結合される
+    expect(deleteSection(s, s.sections[3].id).sections[2]).toMatchObject({ start: 34, end: 70, name: 'パートB' });
+  });
+
   it('自動解析の結果がなければ戻さない', () => {
     const s = sample();
     expect(resetToAnalysis(s)).toBe(s);

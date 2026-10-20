@@ -13,7 +13,7 @@ export type Section = {
   barsNeedsCheck: boolean; // 結合で手動小節数が外れ、確認が必要
   memo: string;
   edited: boolean; // 手動修正済み
-  silence?: boolean; // 曲頭の無音。小節数を数えない
+  silence?: boolean; // 曲頭・曲末の無音。小節数を数えない
   // 分割でできた2区間の対応。片方の小節数を入れると、もう片方を「元の小節数 − 入れた値」にする
   split?: { partner: string; total: number; start: number; end: number } | null;
 };
@@ -48,6 +48,7 @@ export type AnalysisSnapshot = {
   beatsUncertain: boolean;
   segments: { start: number; end: number; group: string }[];
   leadingSilence?: number; // 曲頭の無音（秒）
+  trailingSilence?: number; // 曲末の無音（秒）
 };
 
 export const MIN_SECTION = 0.5; // 区間の最短長（秒）
@@ -275,14 +276,22 @@ export type AnalysisResult = {
   beatsUncertain: boolean;
   segments: { start: number; end: number; group: string }[];
   leadingSilence?: number; // 曲頭の無音（秒）。0 なら無音なし
+  trailingSilence?: number; // 曲末の無音（秒）。0 なら無音なし
 };
 
-// 解析の区切りから区間を作る。曲頭に無音があれば「無音（曲の前）」として分け、構成は音が始まってからにする
-function sectionsFrom(segments: AnalysisResult['segments'], leadingSilence = 0): Section[] {
+// 解析の区切りから区間を作る。曲頭・曲末に無音があれば「無音（曲の前）」「無音（曲の後）」として分け、
+// 構成は音が鳴っている間だけにする
+function sectionsFrom(segments: AnalysisResult['segments'], leadingSilence = 0, trailingSilence = 0): Section[] {
   const secs = segments.map((g) => newSection(g.start, g.end, { group: g.group }));
   if (leadingSilence > 0 && secs.length && secs[0].end - leadingSilence > MIN_SECTION) {
     secs[0] = { ...secs[0], start: leadingSilence };
     secs.unshift(newSection(0, leadingSilence, { name: '無音（曲の前）', nameAuto: false, silence: true }));
+  }
+  const last = secs[secs.length - 1];
+  const end = last ? last.end - trailingSilence : 0;
+  if (trailingSilence > 0 && last && !last.silence && end - last.start > MIN_SECTION) {
+    secs[secs.length - 1] = { ...last, end };
+    secs.push(newSection(end, last.end, { name: '無音（曲の後）', nameAuto: false, silence: true }));
   }
   return secs;
 }
@@ -295,7 +304,7 @@ export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
     beats: r.beats.slice(0, LIMITS.beats),
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
-    sections: sectionsFrom(r.segments, r.leadingSilence),
+    sections: sectionsFrom(r.segments, r.leadingSilence, r.trailingSilence),
     analysis: snapshotOf(r),
     groupNames: {},
   };
@@ -307,6 +316,7 @@ const snapshotOf = (r: AnalysisResult): AnalysisSnapshot => ({
   duration: r.duration, bpm: r.bpm, firstDownbeat: r.firstDownbeat, beatsUncertain: r.beatsUncertain,
   segments: r.segments.slice(0, LIMITS.sections).map(({ start, end, group }) => ({ start, end, group })),
   leadingSilence: r.leadingSilence ?? 0,
+  trailingSilence: r.trailingSilence ?? 0,
 });
 
 // 構成を自動解析の結果に戻す。区間・テンポ・拍子・最初の小節頭の手動修正を捨てる（曲名・全体メモは残す）
@@ -322,7 +332,7 @@ export function resetToAnalysis(song: Song): Song {
     firstDownbeat: a.firstDownbeat,
     firstDownbeatManual: false,
     beatsUncertain: a.beatsUncertain,
-    sections: sectionsFrom(a.segments, a.leadingSilence),
+    sections: sectionsFrom(a.segments, a.leadingSilence, a.trailingSilence),
     groupNames: {},
   });
 }

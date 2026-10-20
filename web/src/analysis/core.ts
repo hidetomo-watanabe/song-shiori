@@ -311,8 +311,8 @@ function segmentSimilarity(S: number[][], a: [number, number], b: [number, numbe
   return ratio > 2 ? best * 0.85 : best;
 }
 
-// 曲頭の無音の長さ（秒）。最も大きい音から 40dB 以上小さい間を無音とみなす（短い無音は 0）
-function findLeadingSilence(f: Features, frameTime: (t: number) => number): number {
+// 曲頭・曲末の無音の長さ（秒）。最も大きい音から 40dB 以上小さい間を無音とみなす（0.3秒未満は 0）
+function findSilence(f: Features, frameTime: (t: number) => number, duration: number): { leading: number; trailing: number } {
   const level = new Float32Array(f.frames);
   let max = -Infinity;
   for (let t = 0; t < f.frames; t++) {
@@ -323,8 +323,12 @@ function findLeadingSilence(f: Features, frameTime: (t: number) => number): numb
   }
   let first = 0;
   while (first < f.frames && level[first] < max - 40) first++;
-  const t = Math.max(0, frameTime(first) - 0.05);
-  return t >= 0.3 ? Math.round(t * 100) / 100 : 0;
+  let last = f.frames - 1;
+  while (last > first && level[last] < max - 40) last--;
+  const lead = Math.max(0, frameTime(first) - 0.05);
+  const trail = Math.max(0, duration - (frameTime(last) + 0.1)); // 余韻を少し残す
+  const round = (x: number) => (x >= 0.3 ? Math.round(x * 100) / 100 : 0);
+  return { leading: round(lead), trailing: round(trail) };
 }
 
 export function analyze(y: Float32Array, sr: number, progress: Progress = () => {}, opts: { bpm?: number } = {}): AnalysisResult {
@@ -332,7 +336,9 @@ export function analyze(y: Float32Array, sr: number, progress: Progress = () => 
   const f = extract(y, sr, progress);
   if (f.frames < f.fps * 10) throw new Error('音源が短すぎます（10秒以上必要です）');
   const frameTime = (t: number) => (t * HOP + N_FFT / 2) / sr;
-  let leadingSilence = findLeadingSilence(f, frameTime);
+  const silence = findSilence(f, frameTime, duration);
+  let leadingSilence = silence.leading;
+  const trailingSilence = silence.trailing;
 
   progress(0.65, 'テンポと拍を推定しています');
   const period = estimatePeriod(f.onset, f.fps, opts.bpm);
@@ -394,5 +400,5 @@ export function analyze(y: Float32Array, sr: number, progress: Progress = () => 
     group: labels[i],
   }));
   progress(1, '完了');
-  return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments, leadingSilence };
+  return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments, leadingSilence, trailingSilence };
 }
