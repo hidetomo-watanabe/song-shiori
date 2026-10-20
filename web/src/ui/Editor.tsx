@@ -257,11 +257,17 @@ export function Editor({ mode }: { mode: Mode }) {
     }
   }
 
-  function adopt() {
+  // 自動生成のやり直し結果を反映する。rebuild は手動修正を捨てて構成を作り直す
+  function adopt(rebuild: boolean) {
     if (!proposal) return;
-    const r = M.adoptAnalysis(songRef.current!, proposal);
-    edit(() => r.song);
-    setNotice(r.sectionsReplaced ? '再解析の結果を採用しました。' : '手動で直した区間があるため、区間はそのままにして、テンポの推定値だけを更新しました。');
+    if (rebuild) {
+      edit((s) => M.regenerateFromAnalysis(s, proposal));
+      setSelected(null);
+      setNotice('自動生成の結果で構成を作り直しました。「元に戻す」で取り消せます。');
+    } else {
+      edit((s) => M.adoptAnalysis(s, proposal).song);
+      setNotice('区間はそのままにして、テンポの推定値だけを更新しました。');
+    }
     setProposal(null);
   }
 
@@ -411,20 +417,22 @@ export function Editor({ mode }: { mode: Mode }) {
               if (f) void loadAudio(f, false);
             }} />
           </label>
-          {hasAudio && !progress && <button class="small" onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace')}>再解析</button>}
+          {hasAudio && !progress && <button class="small" onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace')}>自動生成をやり直す</button>}
         </div>
         {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）</p>}
-        {!hasAudio && <p class="sub">再生するには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
+        {!hasAudio && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
         {audioNote && <p class="warn">{audioNote}</p>}
         {progress && <Progress p={progress} onCancel={job.current ? () => job.current?.cancel() : undefined} />}
         {analysisError && <p class="error">{analysisError}。区間を手動で編集して作成を続けられます。</p>}
         {notice && <p class="ok">{notice}<button class="link" onClick={() => setNotice('')}>閉じる</button></p>}
         {proposal && (
           <div class="proposal">
-            <p>再解析の結果：BPM {proposal.bpm ?? '未確定'}・区間 {proposal.segments.length} 個。採用するまで構成表は変わりません。</p>
+            <p>自動生成の結果：BPM {proposal.bpm ?? '未確定'}・区間 {proposal.segments.length} 個。選ぶまで構成表は変わりません。</p>
             <p class="sub">{proposal.segments.map((g) => `${fmt(g.start, 0)} ${g.group}`).join(' / ')}</p>
-            <button class="primary" onClick={adopt}>採用する</button>
-            <button onClick={() => setProposal(null)}>採用しない</button>
+            <p class="warn">手動で直した内容があります。作り直すと、区間の区切り・名前・小節数・メモなどの手動修正は消えます（曲名・アーティスト・全体メモは残ります。「元に戻す」で取り消せます）。</p>
+            <button class="primary" onClick={() => adopt(true)}>この結果で作り直す</button>
+            <button onClick={() => adopt(false)}>テンポの推定だけ更新（区間はそのまま）</button>
+            <button onClick={() => setProposal(null)}>やめる</button>
           </div>
         )}
         <Timeline

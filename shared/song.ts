@@ -277,6 +277,11 @@ export function resetToAnalysis(song: Song): Song {
   });
 }
 
+// 解析結果で構成を作り直す。手動修正はすべて捨てる（曲名・アーティスト・全体メモは残す）
+export function regenerateFromAnalysis(song: Song, r: AnalysisResult): Song {
+  return resetToAnalysis({ ...song, beats: r.beats.slice(0, LIMITS.beats), analysisVersion: r.version, analysis: snapshotOf(r) });
+}
+
 // 再解析の結果を採用する。手動修正済みの区間がある場合は区間を置き換えず、テンポの推定値だけ更新する
 export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sectionsReplaced: boolean } {
   const anyEdited = song.sections.some((s) => s.edited);

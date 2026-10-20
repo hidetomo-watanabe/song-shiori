@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  normalize, patchSection, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
+  normalize, patchSection, regenerateFromAnalysis, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -169,6 +169,19 @@ describe('編集ルール', () => {
     expect(back.sections.map((x) => [x.start, x.end, x.name, x.barsManual, x.edited])).toEqual([[0, 32, '区間A', null, false], [32, 64, '区間B', null, false]]);
     expect(back).toMatchObject({ title: '曲', memo: '全体メモ', bpmManual: null, firstDownbeat: 0.5, firstDownbeatManual: false });
     expect(validateSong(back)).toBeNull();
+  });
+
+  it('手動修正があっても、解析結果で作り直せる', () => {
+    let s = sample();
+    s = { ...s, title: '曲' };
+    s = patchSection(s, s.sections[0].id, { name: 'イントロ', barsManual: 3 });
+    const r = { version: 't2', duration: 96, bpm: 121, beats: [0.5, 1], firstDownbeat: 0.5, beatsUncertain: false,
+      segments: [{ start: 0, end: 48, group: 'A' }, { start: 48, end: 96, group: 'A' }] };
+    const out = regenerateFromAnalysis(s, r);
+    expect(out.sections.map((x) => [x.start, x.end, x.name, x.edited])).toEqual([[0, 48, '区間A', false], [48, 96, '区間A再登場', false]]);
+    expect(out).toMatchObject({ title: '曲', bpmEst: 121, bpmManual: null, analysisVersion: 't2', beats: [0.5, 1] });
+    expect(resetToAnalysis(out).sections).toHaveLength(2); // 作り直した結果が「戻す」先になる
+    expect(validateSong(out)).toBeNull();
   });
 
   it('自動解析の結果がなければ戻さない', () => {
