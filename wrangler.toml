@@ -17,4 +17,4 @@ crons = ["30 18 * * *"]
 
 # API を呼べる画面のドメイン（カンマ区切りで複数可）
 [vars]
-ALLOWED_ORIGINS = "https://kyoku.whathides.co.jp"
+ALLOWED_ORIGINS = "https://song-shiori.whathides.co.jp"

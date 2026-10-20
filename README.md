@@ -29,7 +29,7 @@ node scripts/analyze-raw.ts <file.f32>     # 22050Hz モノラル float32 の生
 
 | 役割 | 公開先 | URL |
 | --- | --- | --- |
-| 画面 | GitHub Pages（`main` への push で GitHub Actions が公開） | https://kyoku.whathides.co.jp |
+| 画面 | GitHub Pages（`main` への push で GitHub Actions が公開） | https://song-shiori.whathides.co.jp |
 | API | Cloudflare Workers（`npm run deploy:api` で手元から公開） | https://kyoku-shiori-api.whathides.workers.dev |
 | データ | Cloudflare D1（`kyoku-shiori`） | |
 
@@ -37,5 +37,5 @@ node scripts/analyze-raw.ts <file.f32>     # 22050Hz モノラル float32 の生
 - シークレット：`SALT`（設定済み）、`GETSONGBPM_KEY`（https://getsongbpm.com/api で無料登録。未設定なら Deezer のみで検索）
   - 設定は `npx wrangler secret put GETSONGBPM_KEY`。ローカルでは `.dev.vars` に書く
 - GitHub のリポジトリ変数 `API_BASE` に API の URL を設定する（画面のビルドで使う）
-- `web/public/CNAME` が独自ドメイン（kyoku.whathides.co.jp）。DNS に `kyoku` → `hidetomo-watanabe.github.io` の CNAME が必要
+- `web/public/CNAME` が独自ドメイン（song-shiori.whathides.co.jp）。DNS に `song-shiori` → `hidetomo-watanabe.github.io` の CNAME が必要
 - `*.workers.dev` では Cache API が働かないため、BPM 検索結果のキャッシュは独自ドメインに移すまで効かない
