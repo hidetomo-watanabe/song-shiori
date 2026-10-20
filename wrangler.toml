@@ -1,0 +1,20 @@
+# API専用 Worker（Cloudflare Workers）
+name = "kyoku-shiori-api"
+main = "worker/src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# 構成メモの保存先（D1）。database_id は Cloudflare で作成したDBに合わせる
+[[d1_databases]]
+binding = "DB"
+database_name = "kyoku-shiori"
+database_id = "0187d194-9e27-4ded-a0ab-942a69bacafd"
+migrations_dir = "migrations"
+
+# 期限切れメモ等の定期削除：毎日 3:30（日本時間）= 18:30 UTC
+[triggers]
+crons = ["30 18 * * *"]
+
+# API を呼べる画面のドメイン（カンマ区切りで複数可）
+[vars]
+ALLOWED_ORIGINS = "https://kyoku.whathides.co.jp"
