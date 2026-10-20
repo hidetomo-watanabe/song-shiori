@@ -74,6 +74,38 @@ describe('編集ルール', () => {
     expect(mergeWithNext(u, u.sections[0].id).sections[0]).toMatchObject({ barsManual: null, barsNeedsCheck: true, barsEst: 24 });
   });
 
+  it('分割した片方の小節数を入れると、もう片方は残りの小節数になる', () => {
+    let s = splitAt(sample(), 30); // 区間B（16小節）を 16〜30秒・30〜48秒 に分割
+    const [first, second] = [s.sections[1], s.sections[2]];
+    s = patchSection(s, first.id, { barsManual: 6 });
+    expect(s.sections[2]).toMatchObject({ id: second.id, barsManual: 10 });
+    s = patchSection(s, second.id, { barsManual: 12 });
+    expect(s.sections[1].barsManual).toBe(4);
+    // 合計を超える値や、入力を消したときは相手を変えない
+    s = patchSection(s, first.id, { barsManual: 20 });
+    expect(s.sections[2].barsManual).toBe(12);
+    s = patchSection(s, first.id, { barsManual: null });
+    expect(s.sections[2].barsManual).toBe(12);
+  });
+
+  it('分割前の手動小節数を元にする。外側の境界が動いたら連動しない', () => {
+    let s = sample();
+    s = patchSection(s, s.sections[1].id, { barsManual: 18 });
+    s = splitAt(s, 32);
+    s = patchSection(s, s.sections[1].id, { barsManual: 10 });
+    expect(s.sections[2].barsManual).toBe(8);
+    s = moveBoundary(s, 1, 14); // 前半の開始位置（外側の境界）を動かす
+    s = patchSection(s, s.sections[1].id, { barsManual: 9 });
+    expect(s.sections[2].barsManual).toBe(8);
+  });
+
+  it('分割した2区間の間の境界を動かしても連動は続く', () => {
+    let s = splitAt(sample(), 32);
+    s = moveBoundary(s, 2, 36);
+    s = patchSection(s, s.sections[2].id, { barsManual: 5 });
+    expect(s.sections[1].barsManual).toBe(11);
+  });
+
   it('区間が1つのときは削除しない', () => {
     const s = normalize({ ...emptySong(10), sections: [newSection(0, 10)] });
     expect(deleteSection(s, s.sections[0].id)).toBe(s);

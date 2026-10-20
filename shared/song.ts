@@ -13,6 +13,8 @@ export type Section = {
   barsNeedsCheck: boolean; // 結合で手動小節数が外れ、確認が必要
   memo: string;
   edited: boolean; // 手動修正済み
+  // 分割でできた2区間の対応。片方の小節数を入れると、もう片方を「元の小節数 − 入れた値」にする
+  split?: { partner: string; total: number; start: number; end: number } | null;
 };
 
 export type Song = {
@@ -107,10 +109,24 @@ export function splitAt(song: Song, t: number): Song {
   const i = song.sections.findIndex((s) => t > s.start + MIN_SECTION && t < s.end - MIN_SECTION);
   if (i < 0) return song;
   const cur = song.sections[i];
+  const total = cur.barsManual ?? cur.barsEst;
+  const second = newSection(t, cur.end, { edited: true });
+  const pair = (partner: string) => (total != null ? { partner, total, start: cur.start, end: cur.end } : null);
+  second.split = pair(cur.id);
   const next = song.sections.slice();
-  next.splice(i, 1, { ...cur, end: t, barsManual: null, edited: true },
-    newSection(t, cur.end, { edited: true }));
+  next.splice(i, 1, { ...cur, end: t, barsManual: null, edited: true, split: pair(second.id) }, second);
   return update(song, next);
+}
+
+// 分割の相手がまだ有効か（隣り合っていて、2区間を合わせた範囲が分割前と同じ）
+function splitPartner(sections: Section[], s: Section): Section | null {
+  if (!s.split) return null;
+  const p = sections.find((x) => x.id === s.split!.partner);
+  if (!p || p.split?.partner !== s.id) return null;
+  const eps = 1e-6;
+  const adjacent = Math.abs(p.end - s.start) < eps || Math.abs(s.end - p.start) < eps;
+  const sameRange = Math.abs(Math.min(s.start, p.start) - s.split.start) < eps && Math.abs(Math.max(s.end, p.end) - s.split.end) < eps;
+  return adjacent && sameRange ? p : null;
 }
 
 // keep 側の名前・反復グループ・メモを残して、隣り合う2区間を1つにする
@@ -124,6 +140,7 @@ function combine(song: Song, keep: number, drop: number): Song {
     barsManual: bothManual ? a.barsManual! + b.barsManual! : null,
     barsNeedsCheck: !bothManual && (a.barsManual != null || b.barsManual != null) ? true : a.barsNeedsCheck,
     edited: true,
+    split: null,
   };
   const next = song.sections.slice();
   next.splice(Math.min(keep, drop), 2, merged);
@@ -159,6 +176,11 @@ export function patchSection(song: Song, id: string, patch: Partial<Pick<Section
   if ('name' in patch) s.nameAuto = false;
   if ('barsManual' in patch) s.barsNeedsCheck = false;
   next[i] = s;
+  // 分割した片方の小節数を入れたら、もう片方を残りの小節数にする
+  const p = 'barsManual' in patch && s.barsManual != null ? splitPartner(next, s) : null;
+  if (p && s.barsManual! <= s.split!.total) {
+    next[next.indexOf(p)] = { ...p, barsManual: s.split!.total - s.barsManual!, barsNeedsCheck: false, edited: true };
+  }
   return update(song, next);
 }
 
