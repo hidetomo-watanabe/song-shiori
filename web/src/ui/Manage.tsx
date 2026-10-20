@@ -122,7 +122,10 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
           </div>
         ) : (
           <div class="actions">
-            <KeyView value={keys.admin} />
+            {keys.admin ? <KeyView value={keys.admin} /> : (
+              <StoreKey id={id} role="admin" onStored={() => setKeysState(L.getKeys(id))}
+                note="このブラウザには保存されていません。作成時に控えた管理キーは、引き続き使えます。" />
+            )}
             <button onClick={() => setConfirm('rekey')}>管理キーを再発行</button>
           </div>
         )}
@@ -160,7 +163,7 @@ export const memberMessage = (url: string, editKey: string) =>
 function KeyView({ value, extra }: { value?: string; extra?: { label: string; text: string } }) {
   const [shown, setShown] = useState(false);
   const [copied, setCopied] = useState('');
-  if (!value) return <span class="sub">このブラウザには保存されていません（再発行すると、このブラウザで見られます）</span>;
+  if (!value) return <span class="sub">このブラウザには保存されていません。作成時に控えたキーは、引き続き使えます（再発行すると、このブラウザで見られます）。</span>;
   return (
     <>
       <code>{shown ? value : `${value.slice(0, 4)}${'•'.repeat(12)}`}</code>
@@ -168,5 +171,34 @@ function KeyView({ value, extra }: { value?: string; extra?: { label: string; te
       <button class="small" onClick={async () => setCopied((await copy(value)) ? 'key' : '')}>{copied === 'key' ? 'コピー済み' : 'コピー'}</button>
       {extra && <button class="small" onClick={async () => setCopied((await copy(extra.text)) ? 'msg' : '')}>{copied === 'msg' ? 'コピーしました' : extra.label}</button>}
     </>
+  );
+}
+
+// 控えてあるキーを入れて、このブラウザに保存する（キーを保存する機能より前に作った曲メモや、別の端末で発行したキー向け）
+function StoreKey({ id, role, note, onStored }: { id: string; role: 'admin' | 'edit'; note: string; onStored: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState('');
+  const [error, setError] = useState('');
+  if (!open) return <><span class="sub">{note}</span><button class="small" onClick={() => setOpen(true)}>控えてある{role === 'admin' ? '管理' : '編集'}キーを入れる</button></>;
+  return (
+    <form class="store-key" onSubmit={async (e) => {
+      e.preventDefault();
+      setError('');
+      const k = key.trim().toLowerCase();
+      try {
+        // 正しいキーか、どちらのキーかをサーバーで確かめてから保存する
+        const r = await api.session(id, k);
+        if (r.role !== role) { setError(role === 'admin' ? 'これは編集キーです。管理キーを入れてください' : 'これは管理キーです。編集キーを入れてください'); return; }
+        L.setKeys(id, { [role]: k });
+        onStored();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : '確認できませんでした');
+      }
+    }}>
+      <input value={key} autoComplete="off" spellcheck={false} placeholder="48桁の英数字" onInput={(e) => setKey((e.currentTarget as HTMLInputElement).value)} />
+      <button class="small primary" type="submit" disabled={!key.trim()}>このブラウザに保存</button>
+      <button class="small" type="button" onClick={() => setOpen(false)}>キャンセル</button>
+      {error && <p class="error">{error}</p>}
+    </form>
   );
 }
