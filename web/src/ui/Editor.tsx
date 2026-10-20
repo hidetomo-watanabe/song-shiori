@@ -6,6 +6,7 @@ import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/ru
 import { api, ApiError, randomHex, track, type MemoInfo } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
+import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { Timeline } from './Timeline';
 import { copy, fmt, go, groupTone, handoff, parseTime, viewUrl } from './util';
@@ -374,6 +375,8 @@ export function Editor({ mode }: { mode: Mode }) {
           <label>曲名<input value={song.title} maxLength={200} onInput={(e) => edit((s) => ({ ...s, title: (e.currentTarget as HTMLInputElement).value }), { coalesce: 'title' })} /></label>
           <label>アーティスト<input value={song.artist} maxLength={200} onInput={(e) => edit((s) => ({ ...s, artist: (e.currentTarget as HTMLInputElement).value }), { coalesce: 'artist' })} /></label>
         </div>
+        <SongLookup title={song.title} artist={song.artist} duration={player.buffer ? player.duration : null}
+          onPick={(t) => edit((s) => ({ ...s, title: t.title, artist: t.artist }))} />
       </section>
 
       <section class="card player">

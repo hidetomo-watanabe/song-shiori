@@ -169,6 +169,11 @@ label.check input { min-height: 0; }
 /* 編集画面では下部の保存バーに隠れないよう余白を取る */
 body:has(.savebar) .site-foot { padding-bottom: 180px; }
 
+.song-lookup { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lookup-results { list-style: none; padding: 0; margin: 4px 0 0; width: 100%; }
+.lookup-results li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.lookup-results li .tag { margin-left: 6px; }
+
 /* 閲覧ページ */
 .view-head { margin: 8px 0 4px; }
 .artist { font-size: 16px; margin: 0; }
