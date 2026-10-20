@@ -7,7 +7,8 @@ import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
-import { copy, fmt, fmtDate, fmtDay, groupTone, shareMessage, shareTitle, timeSignature, viewUrl } from './util';
+import { ShareButtons } from './ShareButtons';
+import { fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
 export function View({ viewId }: { viewId: string }) {
@@ -75,18 +76,8 @@ export function View({ viewId }: { viewId: string }) {
     return () => { document.title = before; };
   }, [data?.song.title]);
 
-  // 共有：スマホなどは共有シート（LINE を選べる）、なければ曲名入りの文をコピーする
-  const [shared, setShared] = useState(false);
-  async function share() {
-    if (!data) return;
-    const { title, artist } = data.song;
-    const url = viewUrl(viewId);
-    if (navigator.share) {
-      try { await navigator.share({ title: shareTitle(title, artist), text: shareTitle(title, artist), url }); } catch { /* 共有をやめた */ }
-      return;
-    }
-    if (await copy(shareMessage(title, artist, url))) { setShared(true); setTimeout(() => setShared(false), 2000); }
-  }
+  // 共有の文（曲名・アーティスト・閲覧 URL）。LINE で送る・ほかのアプリで送る・コピーで同じ文を使う
+  const shareText = () => (data ? shareMessage(data.song.title, data.song.artist, viewUrl(viewId)) : '');
 
   if (error) return <main class="page narrow"><p class="error">{error}</p></main>;
   if (!data) return <main class="page narrow"><p>読み込んでいます…</p></main>;
@@ -117,13 +108,8 @@ export function View({ viewId }: { viewId: string }) {
             <h1>{song.title || '曲名未入力'}</h1>
             {song.artist && <p class="artist">{song.artist}</p>}
           </div>
-          {/* 共有は閲覧ページのいちばんの操作なので、曲名の横に目立つ形で置く */}
-          <button class="primary share" onClick={() => void share()} title="曲名と URL を送ります">
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
-            </svg>
-            {shared ? '曲名とURLをコピーしました' : 'LINE などで共有'}
-          </button>
+          {/* 共有は閲覧ページのいちばんの操作なので、曲名の横に目立つ形で置く（ライブのしおりと同じく LINE を主に） */}
+          <ShareButtons text={shareText} />
         </div>
         <div class="view-meta">
           <span class="tag">{bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}</span>

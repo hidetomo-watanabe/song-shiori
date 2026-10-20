@@ -341,11 +341,25 @@ button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 
 .artist { font-size: 16px; margin: 0; color: var(--sub); font-weight: 600; }
 .view-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .view-title > div { min-width: 0; }
-button.share { flex: none; margin-top: 4px; }
+/* 共有のボタン。LINE で送るを主にする（ライブのしおりと同じ LINE の緑） */
+.share-buttons { flex: none; display: grid; gap: 4px; justify-items: end; margin-top: 4px; }
+.share-main { display: flex; gap: 8px; }
+.share-main button { justify-content: center; }
+button.line { background: #06a849; border-color: #06a849; color: #fff; font-weight: 700; }
+button.line:hover:not(:disabled) { background: #05923f; border-color: #05923f; }
+.share-buttons.compact { justify-items: start; margin-top: 0; }
 @media (max-width: 640px) {
   .view-title { flex-direction: column; align-items: stretch; }
-  button.share { justify-content: center; min-height: 44px; margin-top: 4px; }
+  .share-buttons:not(.compact) { justify-items: stretch; }
+  .share-buttons:not(.compact) .share-main { display: grid; grid-template-columns: 1fr 1fr; }
+  .share-buttons:not(.compact) .share-main button { min-height: 44px; }
 }
+
+/* 画面下の通知（コピー・共有の結果） */
+#toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 10px; background: var(--text); color: var(--card); font-size: 14px; line-height: 1.6; box-shadow: var(--shadow-lg); transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+/* 編集画面では下の保存バーに重ならないよう上げる */
+body:has(.savebar) #toast { bottom: 140px; }
 .view-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
 .view-meta .tag { font-size: 13px; padding: 3px 12px; color: var(--text); }
 .update { border-color: var(--warn); background: color-mix(in srgb, var(--warn-bg) 55%, var(--card)); }

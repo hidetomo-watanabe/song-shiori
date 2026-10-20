@@ -1,6 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api, randomHex, type MemoInfo } from '../api';
 import * as L from '../storage/local';
+import { ShareButtons } from './ShareButtons';
 import { copy, fmtDay, memberMessage, shareMessage, viewUrl } from './util';
 
 type Props = {
@@ -27,7 +28,7 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
   };
   const [newEditKey, setNewEditKey] = useState('');
   const [confirm, setConfirm] = useState<'' | 'rekey' | 'editkey' | 'stopedit' | 'unshare' | 'reshare' | 'delete'>('');
-  const [copied, setCopied] = useState<'' | 'url' | 'share'>('');
+  const [copied, setCopied] = useState(false);
 
   const run = async (fn: () => Promise<void>) => {
     setError('');
@@ -45,13 +46,12 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
         {url ? (
           <div class="copy-row">
             <code>{url}</code>
-            <button onClick={async () => setCopied((await copy(url)) ? 'url' : '')}>{copied === 'url' ? 'コピー済み' : 'コピー'}</button>
-            <button onClick={async () => setCopied((await copy(shareMessage(title, artist, url))) ? 'share' : '')} title="LINE などに貼ると、どの曲の構成表か分かります">
-              {copied === 'share' ? 'コピー済み' : '曲名とURLをコピー'}
-            </button>
+            <button onClick={async () => setCopied(await copy(url))}>{copied ? 'コピー済み' : 'コピー'}</button>
             <a class="button" href={url} target="_blank" rel="noopener">開く</a>
           </div>
         ) : <p class="warn">共有は無効になっています。</p>}
+        {/* 見てもらうだけのときは、曲名と閲覧 URL を送る（編集キーは入れない） */}
+        {url && <ShareButtons compact text={() => shareMessage(title, artist, url)} lineLabel="LINEで送る（閲覧のみ）" copyLabel="曲名とURLをコピー" />}
         <div class="actions">
           {confirm === 'reshare' ? (
             <>
@@ -96,13 +96,17 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
             <button onClick={() => setConfirm('')}>キャンセル</button>
           </div>
         ) : (
-          <div class="actions">
-            {meta.editKey
-              ? <KeyView value={keys.edit} extra={keys.edit && url ? { label: 'メンバーに送る文をコピー', text: memberMessage(title, artist, url, keys.edit) } : undefined} />
-              : <span>未発行（メンバーは編集できません）</span>}
-            <button onClick={() => setConfirm('editkey')}>{meta.editKey ? '編集キーを再発行' : '編集キーを発行'}</button>
-            {meta.editKey && <button class="danger" onClick={() => setConfirm('stopedit')}>メンバーの編集を止める</button>}
-          </div>
+          <>
+            <div class="actions">
+              {meta.editKey ? <KeyView value={keys.edit} /> : <span>未発行（メンバーは編集できません）</span>}
+              <button onClick={() => setConfirm('editkey')}>{meta.editKey ? '編集キーを再発行' : '編集キーを発行'}</button>
+              {meta.editKey && <button class="danger" onClick={() => setConfirm('stopedit')}>メンバーの編集を止める</button>}
+            </div>
+            {/* 編集もしてほしいメンバーには、閲覧 URL と編集キーを送る。キーの操作とは行を分ける */}
+            {meta.editKey && keys.edit && url && (
+              <ShareButtons compact text={() => memberMessage(title, artist, url, keys.edit!)} lineLabel="LINEで送る（閲覧URL＋編集キー）" copyLabel="メンバーに送る文をコピー" />
+            )}
+          </>
         )}
       </div>
 
@@ -161,7 +165,7 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
 }
 
 // 保存してあるキーを伏せて表示し、「表示」「コピー」できるようにする
-function KeyView({ value, extra }: { value?: string; extra?: { label: string; text: string } }) {
+function KeyView({ value }: { value?: string }) {
   const [shown, setShown] = useState(false);
   const [copied, setCopied] = useState('');
   if (!value) return <span class="sub">このブラウザには保存されていません。作成時に控えたキーは、引き続き使えます（再発行すると、このブラウザで見られます）。</span>;
@@ -170,7 +174,6 @@ function KeyView({ value, extra }: { value?: string; extra?: { label: string; te
       <code>{shown ? value : `${value.slice(0, 4)}${'•'.repeat(12)}`}</code>
       <button class="small" onClick={() => setShown(!shown)}>{shown ? '隠す' : '表示'}</button>
       <button class="small" onClick={async () => setCopied((await copy(value)) ? 'key' : '')}>{copied === 'key' ? 'コピー済み' : 'コピー'}</button>
-      {extra && <button class="small" onClick={async () => setCopied((await copy(extra.text)) ? 'msg' : '')}>{copied === 'msg' ? 'コピーしました' : extra.label}</button>}
     </>
   );
 }

@@ -1,0 +1,24 @@
+<!-- LINE 等のリンクプレビュー画像（web/public/ogp.png、1200×630）の元。ライブのしおりの scripts/ogp.html と同じ作り方。作り直す場合：
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars --force-device-scale-factor=1 --window-size=1200,630 --virtual-time-budget=5000 --screenshot=web/public/ogp.png "file://$PWD/scripts/ogp.html" -->
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0}html,body{width:1200px;height:630px;overflow:hidden}
+body{background:#1d3b8f;color:#fff;font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;padding:72px 84px;position:relative}
+.brand{display:flex;align-items:center;gap:22px}
+.icon{width:80px;height:80px;border-radius:18px;box-shadow:0 0 0 2px #ffffff33}
+.name{font-size:46px;font-weight:800;letter-spacing:2px}
+.copy{margin-top:70px;font-size:66px;font-weight:800;line-height:1.35;letter-spacing:1px}
+.copy span{color:#ffd27a}
+.sub{margin-top:24px;font-size:26px;color:#c9d6f5;letter-spacing:1px}
+/* 構成のタイムライン（繰り返しの色）。ファビコンの帯と同じ色 */
+.timeline{position:absolute;left:84px;right:84px;bottom:66px;display:flex;gap:8px;height:56px}
+.timeline div{border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#0d1b44}
+.a{background:#7fb0ff}.b{background:#f2a64a}.c{background:#5cc794}.n{background:#ffffff33;color:#fff!important}
+.free{position:absolute;right:84px;top:86px;font-size:22px;color:#c9d6f5;letter-spacing:2px}
+</style></head><body>
+<div class="brand"><svg class="icon" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#16307a"/><path d="M35 9h5v27a8.5 6.5 -20 1 1-5-6z" fill="#ffffff"/><path d="M40 9c2 6 10 7 10 15c0 3-1 5-2 6c1-6-4-9-8-10z" fill="#ffffff"/><rect x="9" y="48" width="12" height="7" rx="2" fill="#7fb0ff"/><rect x="23" y="48" width="10" height="7" rx="2" fill="#f2a64a"/><rect x="35" y="48" width="9" height="7" rx="2" fill="#7fb0ff"/><rect x="46" y="48" width="9" height="7" rx="2" fill="#5cc794"/></svg><div class="name">曲のしおり</div></div>
+<div class="free">無料・登録不要</div>
+<p class="copy">曲の構成表を、<br><span>バンドメンバーと共有。</span></p>
+<p class="sub">区切り・繰り返し・小節数。聴きながら直して、LINEで送るだけ。</p>
+<div class="timeline"><div class="n" style="flex:1.4">イントロ</div><div class="a" style="flex:2">Aメロ</div><div class="c" style="flex:1.2">Bメロ</div><div class="b" style="flex:2">サビ</div><div class="a" style="flex:2">Aメロ</div><div class="b" style="flex:2.4">サビ</div></div>
+</body></html>

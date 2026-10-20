@@ -12,6 +12,7 @@ import { ImportText } from './ImportText';
 import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
+import { ShareButtons } from './ShareButtons';
 import { Timeline } from './Timeline';
 import { YouTubeAlign } from './YouTubeAlign';
 import { copy, fmt, go, groupTone, handoff, memberMessage, parseTime, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
@@ -978,11 +979,11 @@ function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; 
         <h3>閲覧URL（メンバーに共有）</h3>
         <p class="sub">URLを知っている人は構成表を見られます。</p>
         {row('閲覧URL', url, 'url')}
-        <button class="small" onClick={async () => setCopied((await copy(shareMessage(info.title, info.artist, url))) ? 'share' : '')}>{copied === 'share' ? 'コピーしました' : '曲名とURLをコピー（閲覧だけ頼むとき）'}</button>
+        <ShareButtons compact text={() => shareMessage(info.title, info.artist, url)} lineLabel="LINEで送る（閲覧のみ）" copyLabel="曲名とURLをコピー" />
         <h3>編集キー（メンバーに共有）</h3>
         <p class="sub">閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
         {row('編集キー', info.editKey, 'edit')}
-        <button class="small primary" onClick={async () => setCopied((await copy(message)) ? 'msg' : '')}>{copied === 'msg' ? 'コピーしました' : 'メンバーに送る文をコピー（閲覧URL＋編集キー）'}</button>
+        <ShareButtons compact text={() => message} lineLabel="LINEで送る（閲覧URL＋編集キー）" copyLabel="メンバーに送る文をコピー" />
         <h3>管理キー（あなただけが控える）</h3>
         <p class="warn">削除・共有の管理・キーの再発行に必要です。アカウントがないため、<strong>なくすと復旧できません</strong>。メンバーには渡さず、安全な場所に控えてください。</p>
         {row('管理キー', info.key, 'key')}
