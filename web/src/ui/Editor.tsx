@@ -190,7 +190,9 @@ export function Editor({ mode }: { mode: Mode }) {
   }, [song, loopId]);
 
   // 再生中は、鳴っている区間を画面内に表示する（入力中は動かさない）
-  const playingId = player.playing && songRef.current ? songRef.current.sections.find((x) => now >= x.start && now < x.end)?.id : undefined;
+  // 表示用の now は 0.1 秒ごとの更新なので、再生を始めた直後は古い位置のことがある。実際の再生位置で判断する
+  const playPos = player.currentTime;
+  const playingId = player.playing && songRef.current ? songRef.current.sections.find((x) => playPos >= x.start && playPos < x.end)?.id : undefined;
   useEffect(() => {
     if (!follow || !playingId) return;
     const tag = document.activeElement?.tagName;
@@ -285,10 +287,16 @@ export function Editor({ mode }: { mode: Mode }) {
   }
 
   // 再生操作（iPhone ではタップを起点にしないと音が出ない）
+  // 再生・移動の操作をしたら、表示上の再生位置もすぐに合わせる
+  function syncNow() {
+    setNow(player.currentTime);
+    setPlaying(player.playing);
+  }
+
   function togglePlay() {
     if (player.playing) player.pause();
     else player.play();
-    setPlaying(player.playing);
+    syncNow();
   }
   // シークバー・タイムラインから再生位置を動かす。ループ中に範囲の外へ動かしたらループを解除する
   function seekTo(t: number) {
@@ -301,12 +309,14 @@ export function Editor({ mode }: { mode: Mode }) {
     if (loopId) { setLoopId(s.id); player.loop = { start: s.start, end: s.end }; }
     player.play(s.start);
     setSelected(s.id);
+    syncNow();
   }
   function toggleLoop(s: Section) {
     if (loopId === s.id) { setLoopId(null); player.setLoop(null); return; }
     setLoopId(s.id);
     player.setLoop({ start: s.start, end: s.end });
     if (!player.playing) player.play(s.start);
+    syncNow();
     track('loop_play');
   }
 
