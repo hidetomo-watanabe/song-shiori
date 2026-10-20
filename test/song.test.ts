@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -35,6 +35,16 @@ describe('編集ルール', () => {
     expect(sectionAt(s, 16)?.id).toBe(s.sections[1].id);
     expect(sectionAt(s, 95.9)?.id).toBe(s.sections[3].id);
     expect(sectionAt(s, 96)).toBeUndefined();
+  });
+
+  it('メトロノームを鳴らす拍の位置（小節の頭は小節の線と同じ）', () => {
+    const s = sample();
+    const clicks = beatClicks(s)!;
+    expect(clicks.slice(0, 5)).toEqual([
+      { t: 0, head: true }, { t: 0.5, head: false }, { t: 1, head: false }, { t: 1.5, head: false }, { t: 2, head: true },
+    ]);
+    expect(clicks.filter((b) => b.head).map((b) => b.t)).toEqual(barLines(s)!.filter((t) => t >= 0));
+    expect(beatClicks(emptySong(10))).toBeNull();
   });
 
   it('曲全体を1つの区間にする', () => {

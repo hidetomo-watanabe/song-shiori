@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
@@ -32,7 +32,11 @@ let yt: YouTubePlayer | null = null;
 // 再生に使うもの。音源ファイルを選んでいればそれを、なければ YouTube の動画を使う
 const media = (): Playback => (player.buffer || !yt ? player : yt);
 const canPlay = () => !!player.buffer || !!yt;
-const metronome = new Metronome();
+// メトロノームは再生と同じ AudioContext で鳴らし、再生中は曲の拍に合わせる
+const metronome = new Metronome(() => player.context(), () => {
+  const m = media();
+  return m.playing ? { t: m.currentTime, end: m.duration, loop: m.loop } : null;
+});
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export function Editor({ mode }: { mode: Mode }) {
@@ -246,10 +250,11 @@ export function Editor({ mode }: { mode: Mode }) {
       setNotice(`ネット上の BPM（${netBpm}）を参考に、テンポを ${to} に直して作り直しました（推定 ${from} は${f === 2 ? '半分' : '2倍'}のテンポでした）。`));
   }, [netBpm, song?.bpmEst, progress]);
 
-  // メトロノームは今の BPM・拍子で鳴らす。BPM が空になったら止め、入れ直したら続きを鳴らす
+  // メトロノームは今の BPM・拍子で鳴らし、再生中は曲の拍（小節の線と同じ位置）に合わせる。BPM が空になったら止め、入れ直したら続きを鳴らす
   const tempoBpm = song ? M.bpmOf(song) : null;
   metronome.bpm = tempoBpm ?? 0;
   metronome.beatsPerBar = song?.beatsPerBar ?? 4;
+  metronome.beats = useMemo(() => (song ? M.beatClicks(song) : null), [song]);
   useEffect(() => {
     if (ticking && tempoBpm) metronome.start(); else metronome.stop();
   }, [ticking, !!tempoBpm]);
@@ -649,7 +654,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   const v = Number((e.currentTarget as HTMLInputElement).value);
                   edit((s) => M.setTempo(s, { bpmManual: v >= 20 && v <= 400 ? v : null }), { coalesce: 'bpm' });
                 }} />
-              <button class={`small${ticking && tempoBpm ? ' on' : ''}`} disabled={!tempoBpm} title="この BPM でクリック音を鳴らします。曲を再生しながら鳴らすと、テンポが合っているか聴き比べられます"
+              <button class={`small${ticking && tempoBpm ? ' on' : ''}`} disabled={!tempoBpm} title="この BPM でクリック音を鳴らします。曲を再生している間は、曲の拍に合わせて鳴らします"
                 onClick={() => {
                   // iPhone ではタップの中で鳴らし始めないと音が出ないため、ここで始める
                   if (ticking) metronome.stop(); else metronome.start();
@@ -669,6 +674,9 @@ export function Editor({ mode }: { mode: Mode }) {
             </span>
           </label>
         </div>
+        {ticking && tempoBpm && <p class="sub">{!metronome.beats?.length ? 'BPM の間隔で鳴らしています（拍の位置が分からないため、曲の拍には合わせられません）。'
+          : hasAudio ? '再生している間は、曲の拍（小節の線と同じ位置）に合わせて鳴らします。ずれて聞こえるときは、BPM や「最初の小節頭」を直してください。'
+          : 'BPM の間隔で鳴らしています。音源ファイルか YouTube の動画で再生すると、曲の拍に合わせて鳴らします。'}</p>}
         {octaveFix && (song.sections.some((s) => s.edited) || !canAnalyze) && (
           <div class="redo-bpm">
             <p>ネット上の BPM（{netBpm}）から見ると、推定 {song.bpmEst} は{netFactor === 2 ? '半分' : '2倍'}のテンポのようです。</p>

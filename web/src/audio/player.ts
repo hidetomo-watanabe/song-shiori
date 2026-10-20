@@ -44,7 +44,8 @@ export class Player {
   playing = false;
   onEnded: () => void = () => {};
 
-  private context() {
+  // 音を鳴らす AudioContext。メトロノームも同じものを使い、再生と同じ時計で拍を合わせる
+  context() {
     this.ctx ??= new AudioContext();
     return this.ctx;
   }

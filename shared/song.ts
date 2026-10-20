@@ -162,17 +162,25 @@ function beatGrid(s: Song): number[] | null {
   return beats;
 }
 
-// 小節の頭の位置の列（秒）。最初の小節頭に最も近い拍から、拍子の数ごとに取る
-export function barLines(s: Song): number[] | null {
+// 拍の位置の列と、それぞれが小節の頭か。最初の小節頭に最も近い拍から、拍子の数ごとに小節の頭にする
+function beatsWithBars(s: Song): { t: number; head: boolean }[] | null {
   const beats = beatGrid(s);
   if (!beats || beats.length < 2) return null;
   const origin = s.firstDownbeat ?? beats[0];
   let phase = 0;
   for (let i = 1; i < beats.length; i++) if (Math.abs(beats[i] - origin) < Math.abs(beats[phase] - origin)) phase = i;
   const n = Math.max(1, s.beatsPerBar);
-  const lines = beats.filter((_, i) => (((i - phase) % n) + n) % n === 0);
+  return beats.map((t, i) => ({ t, head: (((i - phase) % n) + n) % n === 0 }));
+}
+
+// 小節の頭の位置の列（秒）
+export function barLines(s: Song): number[] | null {
+  const lines = beatsWithBars(s)?.filter((b) => b.head).map((b) => b.t) ?? [];
   return lines.length >= 2 ? lines : null;
 }
+
+// メトロノームを曲の拍に合わせて鳴らす位置（曲の頭からの秒）。0 秒より前の拍は除く
+export const beatClicks = (s: Song) => beatsWithBars(s)?.filter((b) => b.t >= 0) ?? null;
 
 // 位置 t が何小節目にあたるか（小数）。線の間は直線で補い、前後は端の間隔で延長する
 function indexAt(lines: number[], t: number): number {
