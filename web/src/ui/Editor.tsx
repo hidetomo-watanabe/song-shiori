@@ -54,6 +54,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const [loopId, setLoopId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [snap, setSnap] = useState(true);
+  const [follow, setFollow] = useState(true); // 再生中の区間に自動でスクロールする
+  const rows = useRef(new Map<string, HTMLLIElement>());
 
   // 解析
   const [progress, setProgress] = useState<{ ratio: number; stage: string } | null>(null);
@@ -184,6 +186,15 @@ export function Editor({ mode }: { mode: Mode }) {
     if (!s) { setLoopId(null); player.setLoop(null); return; }
     if (player.loop?.start !== s.start || player.loop?.end !== s.end) player.setLoop({ start: s.start, end: s.end });
   }, [song, loopId]);
+
+  // 再生中は、鳴っている区間を画面内に表示する（入力中は動かさない）
+  const playingId = player.playing && songRef.current ? songRef.current.sections.find((x) => now >= x.start && now < x.end)?.id : undefined;
+  useEffect(() => {
+    if (!follow || !playingId) return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    rows.current.get(playingId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [playingId, follow]);
 
   // キーボード：スペースで再生・停止、Ctrl/⌘+Z で元に戻す、Ctrl/⌘+Shift+Z・Ctrl+Y でやり直す（入力欄の中では使わない）
   useEffect(() => {
@@ -365,7 +376,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const bar = M.barSeconds(song);
   const beat = M.bpmOf(song) ? 60 / M.bpmOf(song)! : null;
   const step = snap && beat && M.hasGrid(song) ? beat : 0.1;
-  const current = song.sections.find((s) => now >= s.start && now < s.end)?.id;
+  const currentSection = player.buffer ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
+  const current = currentSection?.id;
   const hasAudio = !!player.buffer;
   const totalBars = song.sections.reduce((p, s) => p + (s.barsManual ?? s.barsEst ?? 0), 0);
   // 手入力・ネット上の BPM が自動生成時の推定と違うとき（倍・半分の誤認など）は、そのBPMでやり直せるようにする
@@ -409,6 +421,7 @@ export function Editor({ mode }: { mode: Mode }) {
         <div class="player-row">
           <button class="primary play" onClick={togglePlay} disabled={!hasAudio}>{playing ? '一時停止' : '再生'}</button>
           <span class="time">{fmt(now)} / {fmt(hasAudio ? player.duration : song.duration)}</span>
+          {currentSection && <span class={`now-tag tone-${groupTone(currentSection.group)}`}><span class="chip" aria-hidden="true" />{playing ? '再生中' : '再生位置'}：{currentSection.name}</span>}
           {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={() => { setLoopId(null); player.setLoop(null); }}>解除</button></span>}
           <label class="button file small">
             {hasAudio ? '音源を変更' : '音源を選ぶ'}
@@ -489,6 +502,7 @@ export function Editor({ mode }: { mode: Mode }) {
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now)))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
+          {hasAudio && <label class="check follow"><input type="checkbox" checked={follow} onChange={(e) => setFollow((e.currentTarget as HTMLInputElement).checked)} />再生中の区間を追って表示</label>}
         </div>
         {confirmReset && (
           <div class="confirm">
@@ -500,7 +514,9 @@ export function Editor({ mode }: { mode: Mode }) {
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
         <ol class="section-list">
           {song.sections.map((s, i) => (
-            <li key={s.id} class={`section tone-${groupTone(s.group)}${current === s.id && hasAudio ? ' now' : ''}${selected === s.id ? ' sel' : ''}`} onClick={() => setSelected(s.id)}>
+            <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
+              class={`section tone-${groupTone(s.group)}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
+              {current === s.id && <div class="now-label">{playing ? '▶ 再生中' : '■ 再生位置'}・{fmt(now)}</div>}
               <div class="sec-main">
                 <span class="chip" aria-hidden="true" />
                 <input class="name" value={s.name} maxLength={200} aria-label="セクション名"
@@ -583,6 +599,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <span class="mini-player">
               <button class={`small${playing ? ' on' : ''}`} onClick={togglePlay} aria-label={playing ? '一時停止' : '再生'}>{playing ? '■ 停止' : '▶ 再生'}</button>
               <span class="time">{fmt(now)}</span>
+              {currentSection && <span class="mini-section">{currentSection.name}</span>}
             </span>
           )}
           <span class={`save-state ${saveState}`}>
