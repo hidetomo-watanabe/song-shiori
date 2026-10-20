@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  barPositionIn, normalize, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -181,6 +181,28 @@ describe('編集ルール', () => {
     // 最初の小節頭がずれていても、区間の小節数は変わらない
     s = setTempo(s, { firstDownbeat: 1 });
     expect(s.sections.map((x) => x.barsEst)).toEqual([8, 1, 8, 1]);
+  });
+
+  it('区間名の候補：イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ', () => {
+    // イントロ / A B サビ / A B サビ / 間奏 / サビ / アウトロ。サビは音量が大きい
+    const plan: [string | null, number, number][] = [
+      ['X', 8, -22], ['A', 16, -20], ['B', 8, -19], ['C', 16, -15], ['A', 16, -20], ['B', 8, -19], ['C', 16, -15],
+      ['Y', 8, -21], ['C', 16, -15], ['Z', 8, -23]];
+    let t = 0;
+    const sections = plan.map(([g, bars, e]) => { const s = newSection(t, t + bars * 2, { group: g, energy: e }); t += bars * 2; return s; });
+    const song = normalize({ ...emptySong(t), bpmEst: 120, firstDownbeat: 0, sections });
+    const names = suggestNames(song);
+    expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ', 'Aメロ', 'Bメロ', 'サビ', 'Aメロ', 'Bメロ', 'サビ', '間奏', 'サビ', 'アウトロ']);
+    const applied = applySuggestedNames(song);
+    expect(applied.sections.map((s) => s.name)).toEqual(['イントロ', 'Aメロ', 'Bメロ', 'サビ', 'Aメロ（2回目）', 'Bメロ（2回目）', 'サビ（2回目）', '間奏', 'サビ（3回目）', 'アウトロ']);
+  });
+
+  it('自分で付けた名前は、名前の候補で上書きしない', () => {
+    let t = 0;
+    const sections = [['A', -20], ['C', -15], ['A', -20], ['C', -15]].map(([g, e]) => { const s = newSection(t, t + 16, { group: g as string, energy: e as number }); t += 16; return s; });
+    let song = normalize({ ...emptySong(t), bpmEst: 120, firstDownbeat: 0, sections });
+    song = patchSection(song, song.sections[1].id, { name: '大サビ' });
+    expect(applySuggestedNames(song).sections[1].name).toBe('大サビ');
   });
 
   it('ネット上の BPM で倍・半分の取り違えを判定する', () => {

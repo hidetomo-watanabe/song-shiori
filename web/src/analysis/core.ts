@@ -446,11 +446,18 @@ export function analyze(
   });
 
   // 区切り単位の位置を秒に直す。最初の区間は曲頭から、最後の区間は曲末まで
-  const segments = ranges.map((r, i) => ({
-    start: i === 0 ? 0 : frameTime(bounds[r[0]]),
-    end: i === ranges.length - 1 ? duration : frameTime(bounds[r[1]]),
-    group: labels[i],
-  }));
+  // 各パートの音量（dB）。サビなどの名前の候補を推定する手がかりに使う
+  const energyDb = (a: number, b: number) => {
+    const i0 = Math.max(0, Math.floor(a * sr)), i1 = Math.min(y.length, Math.ceil(b * sr));
+    let sq = 0;
+    for (let i = i0; i < i1; i++) sq += y[i] * y[i];
+    return Math.round(10 * Math.log10(sq / Math.max(1, i1 - i0) + 1e-12) * 10) / 10;
+  };
+  const segments = ranges.map((r, i) => {
+    const start = i === 0 ? 0 : frameTime(bounds[r[0]]);
+    const end = i === ranges.length - 1 ? duration : frameTime(bounds[r[1]]);
+    return { start, end, group: labels[i], energy: energyDb(Math.max(start, leadingSilence), Math.min(end, duration - trailingSilence)) };
+  });
   progress(1, '完了');
   return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments, leadingSilence, trailingSilence };
 }

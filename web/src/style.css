@@ -160,6 +160,7 @@ label.check.follow { margin: 0; font-size: 13px; }
 .sec-main, .sec-time, .sec-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sec-main .name { flex: 1 1 160px; font-weight: 600; }
 .name-preset { width: 7.5em; }
+button.hint { border-style: dashed; color: var(--accent); }
 .origin { font-size: 12px; color: var(--sub); }
 .origin.manual { color: var(--accent); }
 .t { font-variant-numeric: tabular-nums; }

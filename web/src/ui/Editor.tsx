@@ -459,6 +459,11 @@ export function Editor({ mode }: { mode: Mode }) {
   const currentSection = player.buffer ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
   const current = currentSection?.id;
   const hasAudio = !!player.buffer;
+  // 区間名の候補（自動推定）。名前を付けていない区間にだけ示す
+  const suggested = M.suggestNames(song);
+  // 繰り返しにすでに同じ名前が付いている区間（「Aメロ（2回目）」など）には出さない
+  const hintFor = (s: Section) => (s.nameAuto && suggested[s.id] && !(s.group && song.groupNames?.[s.group] === suggested[s.id]) ? suggested[s.id] : null);
+  const hintCount = song.sections.filter((s) => hintFor(s)).length;
   const totalBars = song.sections.reduce((p, s) => p + (s.barsManual ?? s.barsEst ?? 0), 0);
   // 手入力・ネット上の BPM が自動生成時の推定と違うとき（倍・半分の誤認など）は、そのBPMでやり直せるようにする
   // 推定が遅め（90未満）なら、2倍のテンポかもしれないと知らせる（半分のテンポへの誤認がよくあるため）
@@ -637,6 +642,8 @@ export function Editor({ mode }: { mode: Mode }) {
           <h2>構成</h2>
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now, containingStart(s, now))))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
+          {hintCount > 0 && <button class="small" title="繰り返し・並び・音量から推定した候補です。聴いて確かめてください"
+            onClick={() => { edit((s) => M.applySuggestedNames(s)); setNotice('名前の候補を付けました。推定なので、聴いて確かめてください（「元に戻す」で取り消せます）。'); }}>名前の候補をまとめて付ける</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
           <label class="inline snap">境界を合わせる先
             <select value={snap} onChange={(e) => setSnap((e.currentTarget as HTMLSelectElement).value as 'bar' | 'beat' | 'off')}>
@@ -664,6 +671,10 @@ export function Editor({ mode }: { mode: Mode }) {
                 <span class="chip" aria-hidden="true" />
                 <input class="name" value={s.name} maxLength={200} aria-label="セクション名"
                   onInput={(e) => edit((x) => M.patchSection(x, s.id, { name: (e.currentTarget as HTMLInputElement).value }), { coalesce: `name-${s.id}` })} />
+                {hintFor(s) && (
+                  <button class="small hint" title="繰り返し・並び・音量から推定した候補です"
+                    onClick={() => edit((x) => M.patchSection(x, s.id, { name: hintFor(s)! }))}>候補：{hintFor(s)}</button>
+                )}
                 <select class="name-preset" aria-label="名前の候補から選ぶ" value="" onChange={(e) => {
                   const el = e.currentTarget as HTMLSelectElement;
                   if (el.value) edit((x) => M.patchSection(x, s.id, { name: el.value }));
