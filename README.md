@@ -1,7 +1,7 @@
 # 曲のしおり（試作版）
 
 音源から曲の構成（区切り・繰り返し・小節数）を下書きし、聴きながら直して、バンドメンバーと共有するWebアプリ。
-要件は `../../whathides/曲のしおり/song-structure-requirements.md`（1.2）を参照。
+要件は `../../whathides/曲のしおり/song-structure-requirements.md`（1.4）を参照。
 
 - 画面：Vite + Preact + TypeScript（`web/`）。GitHub Pages で公開する想定
 - 自動解析：ブラウザ内の Web Worker（`web/src/analysis/`）。音源はサーバーへ送らない
@@ -38,4 +38,4 @@ node scripts/analyze-raw.ts <file.f32>     # 22050Hz モノラル float32 の生
   - 設定は `npx wrangler secret put GETSONGBPM_KEY`。ローカルでは `.dev.vars` に書く
 - GitHub のリポジトリ変数 `API_BASE` に API の URL を設定する（画面のビルドで使う）
 - `web/public/CNAME` が独自ドメイン（song-shiori.whathides.co.jp）。DNS に `song-shiori` → `hidetomo-watanabe.github.io` の CNAME が必要
-- `*.workers.dev` では Cache API が働かないため、BPM 検索結果のキャッシュは独自ドメインに移すまで効かない
+- BPM 検索結果は Cache API で7日間キャッシュする（情報源が変わったら別の結果として扱う）
