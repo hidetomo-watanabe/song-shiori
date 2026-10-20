@@ -5,7 +5,7 @@
 //   4. 小節ごとの特徴量の自己類似行列から、区切り（新規性の山）と繰り返しを推定
 import type { AnalysisResult } from '../../../shared/song';
 
-export const ANALYSIS_VERSION = 'proto-0.1';
+export const ANALYSIS_VERSION = 'proto-0.2'; // 0.2：区切りを4小節の格子から選ぶ
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -255,7 +255,7 @@ function unitFeatures(f: Features, bounds: number[]): Float64Array[] {
 }
 
 // 自己類似行列のチェッカーボード核による新規性曲線から区切りを選ぶ
-function pickBoundaries(S: number[][], half: number, minGap: number, phrase: boolean): number[] {
+function novelty(S: number[][], half: number): Float64Array {
   const n = S.length;
   const nov = new Float64Array(n);
   for (let i = 1; i < n; i++) {
@@ -272,15 +272,45 @@ function pickBoundaries(S: number[][], half: number, minGap: number, phrase: boo
     }
     nov[i] = w ? s / w : 0;
   }
+  return nov;
+}
+
+const stats = (nov: Float64Array) => {
+  const vals = Array.from(nov).slice(1);
+  const mean = vals.reduce((p, v) => p + v, 0) / Math.max(1, vals.length);
+  const sd = Math.sqrt(vals.reduce((p, v) => p + (v - mean) ** 2, 0) / Math.max(1, vals.length));
+  return { mean, sd };
+};
+
+// 区切りを「unit 小節ごとの格子」の上だけから選ぶ。格子の起点（何小節目から数えるか）は、
+// 新規性が最も多く乗るものにする（ここではずれを許さない。許すと隣の起点と同点になり取り違える）。
+// 起点を決めたあとの判定では、山が格子から1小節ずれていても拾えるよう、前後1小節の最大値を使う
+// threshold：格子の上の新規性が「平均 + threshold × 標準偏差」を超えたら区切る（実曲3曲で調整し 0.4）
+function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number): number[] {
+  const n = nov.length;
+  const { mean, sd } = stats(nov);
+  const score = (i: number) => Math.max(nov[i], i > 1 ? nov[i - 1] : -Infinity, i + 1 < n ? nov[i + 1] : -Infinity);
+  let offset = 0, best = -Infinity;
+  for (let o = 0; o < unit; o++) {
+    let sum = 0;
+    for (let i = o || unit; i < n; i += unit) sum += Math.max(0, nov[i] - mean);
+    if (sum > best) { best = sum; offset = o; }
+  }
+  const chosen: number[] = [];
+  for (let i = offset || unit; i < n - 1; i += unit) if (score(i) > mean + threshold * sd) chosen.push(i);
+  return chosen;
+}
+
+function pickBoundaries(S: number[][], half: number, minGap: number, phrase: boolean): number[] {
+  const n = S.length;
+  const nov = novelty(S, half);
   // 小節単位のときは、4小節・8小節の区切りを優先する（多くの曲はこの単位でまとまる）
   if (phrase) {
     let lo = Infinity;
     for (let i = 1; i < n; i++) lo = Math.min(lo, nov[i]);
     for (let i = 1; i < n; i++) nov[i] = (nov[i] - lo) * (i % 8 === 0 ? 1.5 : i % 4 === 0 ? 1.3 : i % 2 === 0 ? 1.05 : 1);
   }
-  const vals = Array.from(nov).slice(1);
-  const mean = vals.reduce((p, v) => p + v, 0) / Math.max(1, vals.length);
-  const sd = Math.sqrt(vals.reduce((p, v) => p + (v - mean) ** 2, 0) / Math.max(1, vals.length));
+  const { mean, sd } = stats(nov);
   const peaks: number[] = [];
   for (let i = 2; i < n - 1; i++) {
     let isMax = true;
@@ -331,7 +361,11 @@ function findSilence(f: Features, frameTime: (t: number) => number, duration: nu
   return { leading: round(lead), trailing: round(trail) };
 }
 
-export function analyze(y: Float32Array, sr: number, progress: Progress = () => {}, opts: { bpm?: number } = {}): AnalysisResult {
+// opts.phrase：区切りを何小節ごとの格子から選ぶか（既定 4。0 なら格子を使わず、新規性の山から選ぶ従来の方式）
+export function analyze(
+  y: Float32Array, sr: number, progress: Progress = () => {},
+  opts: { bpm?: number; phrase?: number; phraseThreshold?: number } = {},
+): AnalysisResult {
   const duration = y.length / sr;
   const f = extract(y, sr, progress);
   if (f.frames < f.fps * 10) throw new Error('音源が短すぎます（10秒以上必要です）');
@@ -370,7 +404,8 @@ export function analyze(y: Float32Array, sr: number, progress: Progress = () => 
   const feats = unitFeatures(f, bounds);
   const n = feats.length;
   const S = feats.map((a) => feats.map((b) => dot(a, b)));
-  const cuts = n >= 8 ? pickBoundaries(S, 4, 4, !beatsUncertain) : [];
+  const phrase = opts.phrase ?? 4;
+  const cuts = n < 8 ? [] : !beatsUncertain && phrase > 0 ? pickOnPhraseGrid(novelty(S, 4), phrase, opts.phraseThreshold ?? 0.4) : pickBoundaries(S, 4, 4, !beatsUncertain);
   const unitIdx = [0, ...cuts, n];
 
   // 繰り返しのまとめ：曲全体で「普通より似ている」水準を超えたら同じグループ
