@@ -487,11 +487,11 @@ export function Editor({ mode }: { mode: Mode }) {
   return (
     <main class="page editor">
       <header class="bar">
-        <a href="#/" class="home">曲のしおり</a>
+        <a href="#/" class="home"><img src="./favicon.svg" alt="" />曲のしおり</a>
         <span class="state">{id ? (meta ? `最終保存 ${new Date(meta.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '') : '下書き（この端末にだけ保存）'}</span>
-        <button onClick={undo} disabled={!history.current.length} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
-        <button onClick={redo} disabled={!future.current.length} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
-        <a class="button new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます（音源から作る・手動で作る・テキストから作る）">＋ 新しく作る</a>
+        <button class="small" onClick={undo} disabled={!history.current.length} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
+        <button class="small" onClick={redo} disabled={!future.current.length} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
+        <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます（音源から作る・手動で作る・テキストから作る）">＋ 新しく作る</a>
       </header>
 
       {created && (
@@ -510,8 +510,10 @@ export function Editor({ mode }: { mode: Mode }) {
       {restore && (
         <section class="card notice">
           <p>この曲メモには、保存されていない変更がこの端末に残っています。{restore.baseVersion !== meta?.version && '（そのあとに別の端末で更新されています。保存するときに、どちらを残すか確認します）'}</p>
-          <button class="primary" onClick={() => { base.current = restore.baseVersion ?? base.current; edit(() => restore.song); setRestore(null); }}>変更を復元する</button>
-          <button onClick={() => { void L.removeDraft(draftKey); setRestore(null); }}>破棄する</button>
+          <div class="actions">
+            <button class="primary" onClick={() => { base.current = restore.baseVersion ?? base.current; edit(() => restore.song); setRestore(null); }}>変更を復元する</button>
+            <button onClick={() => { void L.removeDraft(draftKey); setRestore(null); }}>破棄する</button>
+          </div>
         </section>
       )}
 
@@ -530,7 +532,8 @@ export function Editor({ mode }: { mode: Mode }) {
           <span class="time">{fmt(now)} / {fmt(hasAudio ? player.duration : song.duration)}</span>
           {currentSection && <span class={`now-tag tone-${groupTone(currentSection.group)}`}><span class="chip" aria-hidden="true" />{playing ? '再生中' : '再生位置'}：{currentSection.name}</span>}
           {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={() => { setLoopId(null); player.setLoop(null); }}>解除</button></span>}
-          <label class="button file small">
+          <span class="spacer" />
+          <label class={`button file small${hasAudio ? '' : ' primary'}`}>
             {hasAudio ? '音源を変更' : '音源を選ぶ'}
             <input type="file" accept=".mp3,.wav,.m4a,.mp4,.aac,audio/*" onChange={(e) => {
               const input = e.currentTarget as HTMLInputElement;
@@ -581,7 +584,7 @@ export function Editor({ mode }: { mode: Mode }) {
         </div>
         {song.beatsUncertain && song.bpmManual == null && <p class="warn">拍・小節を確定できませんでした。BPMを入力すると小節数を数えます。</p>}
         <div class="tempo-row">
-          <label>BPM{song.bpmManual != null && <span class="sub">（手入力）</span>}
+          <label><span>BPM{song.bpmManual != null && <span class="sub">（手入力）</span>}</span>
             <span class="with-button">
               <input type="number" inputMode="decimal" min={20} max={400} step="0.1" value={song.bpmManual ?? ''}
                 placeholder={song.bpmEst ? `${song.bpmEst}（推定）` : '未確定'}
@@ -654,13 +657,17 @@ export function Editor({ mode }: { mode: Mode }) {
       </section>
 
       <section class="card sections">
-        <div class="sections-head">
+        <div class="card-head">
           <h2>構成</h2>
+          <span class="sub">{song.sections.filter((s) => !s.silence).length}区間{bar ? `・合計 ${totalBars}小節` : ''}</span>
+        </div>
+        <div class="sections-tools">
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now, containingStart(s, now))))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
           {hintCount > 0 && <button class="small" title="繰り返し・並び・音量から推定した候補です。聴いて確かめてください"
             onClick={() => { edit((s) => M.applySuggestedNames(s)); setNotice('名前の候補を付けました。推定なので、聴いて確かめてください（「元に戻す」で取り消せます）。'); }}>名前の候補をまとめて付ける</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
+          <span class="spacer" />
           <label class="inline snap">境界を合わせる先
             <select value={snap} onChange={(e) => setSnap((e.currentTarget as HTMLSelectElement).value as 'bar' | 'beat' | 'off')}>
               <option value="bar">小節の頭</option>
@@ -729,19 +736,19 @@ export function Editor({ mode }: { mode: Mode }) {
                   <span class="sub">{s.barsManual != null ? '手動' : s.barsEst != null ? '推定' : ''}</span>
                   {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
                 </label>
+                <div class="sec-actions">
+                  {hasAudio && (playing && current === s.id
+                    ? <button class="small row-play on" onClick={togglePlay}>停止</button>
+                    : <button class="small row-play" onClick={() => playSection(s)}>{current === s.id && resumeAt(s) != null ? `${fmt(now)}から再生` : 'ここから再生'}</button>)}
+                  {hasAudio && <button class={`small${loopId === s.id ? ' on' : ''}`} onClick={() => toggleLoop(s)}>{loopId === s.id ? 'ループ解除' : 'ループ'}</button>}
+                  <button class={`small ghost${splitForm?.id === s.id ? ' on' : ''}`} onClick={() => (splitForm?.id === s.id ? setSplitForm(null) : openSplit(s))}>分割</button>
+                  {i < song.sections.length - 1 && <button class="small ghost" onClick={() => edit((x) => M.mergeWithNext(x, s.id))}>次と結合</button>}
+                  {song.sections.length > 1 && <button class="small ghost danger" onClick={() => edit((x) => M.deleteSection(x, s.id))}>削除</button>}
+                </div>
               </div>
               {hasAudio && <SeekBar range={{ start: s.start, end: s.end }} now={now} onSeek={seekTo} label={`${s.name}の再生位置`} />}
               <input class="memo" value={s.memo} maxLength={2000} placeholder="メモ（入り・キメ・終わり方など）" aria-label="メモ"
                 onInput={(e) => edit((x) => M.patchSection(x, s.id, { memo: (e.currentTarget as HTMLInputElement).value }), { coalesce: `memo-${s.id}` })} />
-              <div class="sec-actions">
-                {hasAudio && (playing && current === s.id
-                  ? <button class="small row-play on" onClick={togglePlay}>停止</button>
-                  : <button class="small row-play" onClick={() => playSection(s)}>{current === s.id && resumeAt(s) != null ? `${fmt(now)}から再生` : 'ここから再生'}</button>)}
-                {hasAudio && <button class={`small${loopId === s.id ? ' on' : ''}`} onClick={() => toggleLoop(s)}>{loopId === s.id ? 'ループ解除' : 'ループ'}</button>}
-                <button class={`small${splitForm?.id === s.id ? ' on' : ''}`} onClick={() => (splitForm?.id === s.id ? setSplitForm(null) : openSplit(s))}>分割</button>
-                {i < song.sections.length - 1 && <button class="small" onClick={() => edit((x) => M.mergeWithNext(x, s.id))}>次と結合</button>}
-                {song.sections.length > 1 && <button class="small danger" onClick={() => edit((x) => M.deleteSection(x, s.id))}>削除</button>}
-              </div>
               {splitForm?.id === s.id && (
                 <form class="split-form" onSubmit={(e) => { e.preventDefault(); submitSplit(s); }}>
                   <label class="inline">先頭から
@@ -758,7 +765,7 @@ export function Editor({ mode }: { mode: Mode }) {
             </li>
           ))}
         </ol>
-        <p class="sub">削除した区間は直前の区間（先頭の場合は直後）に結合されます。音源は変更されません。</p>
+        <p class="sub section-note">削除した区間は直前の区間（先頭の場合は直後）に結合されます。音源は変更されません。</p>
         <div class="text-tools">
           <ExportText song={song} />
           {!importing && <button class="small" onClick={() => setImporting(true)}>テキストから読み込む</button>}
@@ -892,12 +899,14 @@ function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; 
         <h3>編集キー（メンバーに共有）</h3>
         <p class="sub">閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
         {row('編集キー', info.editKey, 'edit')}
-        <button class="small" onClick={async () => setCopied((await copy(message)) ? 'msg' : '')}>{copied === 'msg' ? 'コピーしました' : 'メンバーに送る文をコピー（閲覧URL＋編集キー）'}</button>
+        <button class="small primary" onClick={async () => setCopied((await copy(message)) ? 'msg' : '')}>{copied === 'msg' ? 'コピーしました' : 'メンバーに送る文をコピー（閲覧URL＋編集キー）'}</button>
         <h3>管理キー（あなただけが控える）</h3>
         <p class="warn">削除・共有の管理・キーの再発行に必要です。アカウントがないため、<strong>なくすと復旧できません</strong>。メンバーには渡さず、安全な場所に控えてください。</p>
         {row('管理キー', info.key, 'key')}
-        <label class="check"><input type="checkbox" defaultChecked onChange={(e) => onRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する</label>
-        <button class="primary" onClick={onClose}>控えました</button>
+        <div class="dialog-foot">
+          <label class="check"><input type="checkbox" defaultChecked onChange={(e) => onRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する</label>
+          <button class="primary" onClick={onClose}>控えました</button>
+        </div>
       </div>
     </div>
   );

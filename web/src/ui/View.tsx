@@ -49,13 +49,18 @@ export function View({ viewId }: { viewId: string }) {
   return (
     <main class="page view">
       <nav class="bar">
-        <a href="#/" class="home">曲のしおり</a>
+        <a href="#/" class="home"><img src="./favicon.svg" alt="" />曲のしおり</a>
         <span class="state" />
-        <a class="button new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます">＋ 新しく作る</a>
+        <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます">＋ 新しく作る</a>
       </nav>
       <header class="view-head">
         <h1>{song.title || '曲名未入力'}</h1>
         {song.artist && <p class="artist">{song.artist}</p>}
+        <div class="view-meta">
+          <span class="tag">{bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}</span>
+          <span class="tag">{timeSignature(song.beatsPerBar)}</span>
+          {song.firstDownbeat != null && <span class="tag">最初の小節頭 {fmt(song.firstDownbeat, 2)}</span>}
+        </div>
         <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
       </header>
 
@@ -70,10 +75,6 @@ export function View({ viewId }: { viewId: string }) {
       )}
 
       <section class="card">
-        <p class="tempo-line">
-          {bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}・{timeSignature(song.beatsPerBar)}
-          {song.firstDownbeat != null && `・最初の小節頭 ${fmt(song.firstDownbeat, 2)}`}
-        </p>
         <table class="structure">
           <thead><tr><th>開始</th><th>終了</th><th>セクション</th><th class="num">小節数</th><th>メモ</th></tr></thead>
           <tbody>
