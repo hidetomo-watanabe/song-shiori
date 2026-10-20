@@ -60,7 +60,12 @@ async function limit(req: Request, env: Env, kind: string, max: number) {
   if ((row?.count ?? 0) > max) throw new HttpError(429, '短時間に操作が集中しています。しばらくしてから再試行してください');
 }
 
-type MemoRow = { id: string; view_id: string | null; key_hash: string; key_gen: number; version: number; updated_at: number; expires_at: number };
+type MemoRow = {
+  id: string; view_id: string | null; key_hash: string; key_gen: number;
+  edit_key_hash: string | null; edit_key_gen: number; version: number; updated_at: number; expires_at: number;
+};
+// admin：管理キー（作成者）。すべての操作ができる。edit：編集キー（メンバー）。構成の編集と保存だけ
+type Role = 'admin' | 'edit';
 
 async function findMemo(env: Env, id: string): Promise<MemoRow> {
   if (!HEX(24).test(id)) throw new HttpError(404, NOT_FOUND);
@@ -69,25 +74,37 @@ async function findMemo(env: Env, id: string): Promise<MemoRow> {
   return row;
 }
 
-async function newSession(env: Env, memo: { id: string; key_gen: number }) {
+async function newSession(env: Env, memo: { id: string; key_gen: number; edit_key_gen?: number }, role: Role = 'admin') {
   const token = random(32);
-  await env.DB.prepare('INSERT INTO sessions (token_hash, memo_id, key_gen, expires_at) VALUES (?, ?, ?, ?)')
-    .bind(await digest(token), memo.id, memo.key_gen, Date.now() + SESSION_DAYS * DAY).run();
+  await env.DB.prepare('INSERT INTO sessions (token_hash, memo_id, key_gen, expires_at, role) VALUES (?, ?, ?, ?, ?)')
+    .bind(await digest(token), memo.id, role === 'admin' ? memo.key_gen : memo.edit_key_gen ?? 1, Date.now() + SESSION_DAYS * DAY, role).run();
   return token;
 }
 
-// 編集セッションを検証する。キー再発行で世代が変わったセッションは無効
-async function authorize(req: Request, env: Env, id: string): Promise<MemoRow> {
-  const memo = await findMemo(env, id);
-  const token = bearer(req);
-  if (!token || !HEX(64).test(token)) throw new HttpError(401, '編集するには秘密キーを入力してください');
-  const s = await env.DB.prepare('SELECT key_gen, expires_at FROM sessions WHERE token_hash = ? AND memo_id = ?')
-    .bind(await digest(token), id).first<{ key_gen: number; expires_at: number }>();
-  if (!s || s.key_gen !== memo.key_gen || s.expires_at < Date.now()) throw new HttpError(401, '編集の有効期限が切れました。秘密キーを入力し直してください');
-  return memo;
+// キーから役割を決める（管理キーなら admin、編集キーなら edit、どちらでもなければ null）
+async function roleOf(memo: MemoRow, key: string | null): Promise<Role | null> {
+  if (!isKey(key)) return null;
+  const h = await digest(key);
+  return h === memo.key_hash ? 'admin' : memo.edit_key_hash && h === memo.edit_key_hash ? 'edit' : null;
 }
 
-const info = (m: MemoRow) => ({ id: m.id, viewId: m.view_id, version: m.version, updatedAt: m.updated_at, expiresAt: m.expires_at });
+// 編集セッションを検証する。キー再発行で世代が変わったセッションは無効
+// 編集セッションを検証する。キー再発行で世代が変わったセッションは無効。need が admin なら管理キーのセッションだけ通す
+async function authorize(req: Request, env: Env, id: string, need: Role = 'edit'): Promise<MemoRow & { role: Role }> {
+  const memo = await findMemo(env, id);
+  const token = bearer(req);
+  if (!token || !HEX(64).test(token)) throw new HttpError(401, '編集するには編集キーか管理キーを入力してください');
+  const s = await env.DB.prepare('SELECT key_gen, expires_at, role FROM sessions WHERE token_hash = ? AND memo_id = ?')
+    .bind(await digest(token), id).first<{ key_gen: number; expires_at: number; role: Role }>();
+  const gen = s?.role === 'edit' ? memo.edit_key_gen : memo.key_gen;
+  if (!s || s.key_gen !== gen || s.expires_at < Date.now() || (s.role === 'edit' && !memo.edit_key_hash)) {
+    throw new HttpError(401, '編集の有効期限が切れたか、キーが再発行されました。キーを入力し直してください');
+  }
+  if (need === 'admin' && s.role !== 'admin') throw new HttpError(403, 'この操作は管理キーでのみできます');
+  return { ...memo, role: s.role };
+}
+
+const info = (m: MemoRow) => ({ id: m.id, viewId: m.view_id, version: m.version, updatedAt: m.updated_at, expiresAt: m.expires_at, editKey: !!m.edit_key_hash });
 
 function checkSong(song: unknown): Song {
   const err = validateSong(song);
@@ -101,26 +118,27 @@ async function readVersion(env: Env, id: string, version: number) {
 }
 
 async function createMemo(req: Request, env: Env) {
-  const { requestId, key, song } = await body<{ requestId: string; key: string; song: unknown }>(req);
-  if (typeof requestId !== 'string' || !HEX(32).test(requestId) || !isKey(key)) throw new HttpError(400, '形式が正しくありません');
+  const { requestId, key, editKey, song } = await body<{ requestId: string; key: string; editKey?: string; song: unknown }>(req);
+  if (typeof requestId !== 'string' || !HEX(32).test(requestId) || !isKey(key) || (editKey != null && (!isKey(editKey) || editKey === key))) throw new HttpError(400, '形式が正しくありません');
   const data = checkSong(song);
   const keyHash = await digest(key);
   // 同じ作成リクエストの再送には、同じ曲メモを返す
   const existing = await env.DB.prepare('SELECT * FROM memos WHERE create_request = ?').bind(requestId).first<MemoRow>();
   if (existing) {
     if (existing.key_hash !== keyHash) throw new HttpError(409, '作成済みです');
-    return json({ ...info(existing), session: await newSession(env, existing) });
+    return json({ ...info(existing), session: await newSession(env, existing), role: 'admin' });
   }
   await limit(req, env, 'create', 30);
   const now = Date.now();
-  const memo: MemoRow = { id: random(12), view_id: random(16), key_hash: keyHash, key_gen: 1, version: 1, updated_at: now, expires_at: now + KEEP_DAYS * DAY };
+  const editHash = editKey ? await digest(editKey) : null;
+  const memo: MemoRow = { id: random(12), view_id: random(16), key_hash: keyHash, key_gen: 1, edit_key_hash: editHash, edit_key_gen: 1, version: 1, updated_at: now, expires_at: now + KEEP_DAYS * DAY };
   await env.DB.batch([
-    env.DB.prepare('INSERT INTO memos (id, view_id, key_hash, key_gen, create_request, version, title, created_at, updated_at, expires_at) VALUES (?, ?, ?, 1, ?, 1, ?, ?, ?, ?)')
-      .bind(memo.id, memo.view_id, keyHash, requestId, data.title, now, now, memo.expires_at),
+    env.DB.prepare('INSERT INTO memos (id, view_id, key_hash, key_gen, edit_key_hash, edit_key_gen, create_request, version, title, created_at, updated_at, expires_at) VALUES (?, ?, ?, 1, ?, 1, ?, 1, ?, ?, ?, ?)')
+      .bind(memo.id, memo.view_id, keyHash, editHash, requestId, data.title, now, now, memo.expires_at),
     env.DB.prepare('INSERT INTO memo_versions (memo_id, version, saved_at, data, note, notify) VALUES (?, 1, ?, ?, \'\', 1)')
       .bind(memo.id, now, JSON.stringify(data)),
   ]);
-  return json({ ...info(memo), session: await newSession(env, memo) }, 201);
+  return json({ ...info(memo), session: await newSession(env, memo), role: 'admin' }, 201);
 }
 
 // 閲覧：最新版と、差分表示の基準になる版を返す
@@ -222,36 +240,61 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/api/bpm' && m === 'GET') return bpmInfo(req, env);
   let match = path.match(/^\/api\/view\/([^/]+)$/);
   if (match && m === 'GET') return viewMemo(req, env, match[1]);
+  // 閲覧ページから編集を始める：閲覧識別子と、編集キーまたは管理キー
+  match = path.match(/^\/api\/view\/([a-f0-9]{32})\/session$/);
+  if (match && m === 'POST') {
+    await limit(req, env, 'session', 30);
+    const memo = await env.DB.prepare('SELECT * FROM memos WHERE view_id = ?').bind(match[1]).first<MemoRow>();
+    if (!memo || memo.expires_at < Date.now()) throw new HttpError(404, NOT_FOUND);
+    const role = await roleOf(memo, bearer(req));
+    if (!role) throw new HttpError(403, 'キーが正しくありません');
+    return json({ id: memo.id, role, session: await newSession(env, memo, role) });
+  }
 
-  match = path.match(/^\/api\/memos\/([^/]+)(\/session|\/keys|\/share|\/extend)?$/);
+  match = path.match(/^\/api\/memos\/([^/]+)(\/session|\/keys|\/edit-key|\/share|\/extend)?$/);
   if (!match) throw new HttpError(404, '見つかりません');
   const [, id, sub] = match;
 
   if (sub === '/session' && m === 'POST') {
     await limit(req, env, 'session', 30);
     const memo = await findMemo(env, id);
-    const key = bearer(req);
-    if (!isKey(key) || (await digest(key)) !== memo.key_hash) throw new HttpError(403, '秘密キーが正しくありません');
-    return json({ session: await newSession(env, memo) });
+    const role = await roleOf(memo, bearer(req));
+    if (!role) throw new HttpError(403, 'キーが正しくありません');
+    return json({ session: await newSession(env, memo, role), role });
   }
 
-  const memo = await authorize(req, env, id);
+  // 構成の取得と保存は編集キーでもできる。それ以外（削除・キーや共有の管理・期限の延長）は管理キーだけ
+  const memo = await authorize(req, env, id, !sub && (m === 'GET' || m === 'PUT') ? 'edit' : 'admin');
   if (!sub && m === 'GET') {
     const song = await readVersion(env, id, memo.version);
-    return json({ ...info(memo), song });
+    return json({ ...info(memo), song, role: memo.role });
   }
   if (!sub && m === 'PUT') return saveMemo(req, env, memo);
   if (!sub && m === 'DELETE') { await deleteMemo(env, id); return json(null, 204); }
   if (sub === '/keys' && m === 'POST') {
-    // 秘密キーの再発行：旧キーと旧セッションをすべて無効にする
+    // 管理キーの再発行：旧管理キーと管理キーのセッションを無効にする（編集キーはそのまま）
     const { key } = await body<{ key: string }>(req);
-    if (!isKey(key)) throw new HttpError(400, '形式が正しくありません');
+    if (!isKey(key) || (memo.edit_key_hash && (await digest(key)) === memo.edit_key_hash)) throw new HttpError(400, '形式が正しくありません');
     const gen = memo.key_gen + 1;
     await env.DB.batch([
       env.DB.prepare('UPDATE memos SET key_hash = ?, key_gen = ? WHERE id = ?').bind(await digest(key), gen, id),
-      env.DB.prepare('DELETE FROM sessions WHERE memo_id = ?').bind(id),
+      env.DB.prepare("DELETE FROM sessions WHERE memo_id = ? AND role = 'admin'").bind(id),
     ]);
     return json({ session: await newSession(env, { id, key_gen: gen }) });
+  }
+  if (sub === '/edit-key' && (m === 'POST' || m === 'DELETE')) {
+    // 編集キーの発行・再発行（POST）とメンバーの編集の停止（DELETE）。どちらも、それまでの編集キーのセッションを無効にする
+    let hash: string | null = null;
+    if (m === 'POST') {
+      const { key } = await body<{ key: string }>(req);
+      if (!isKey(key) || (await digest(key)) === memo.key_hash) throw new HttpError(400, '形式が正しくありません');
+      hash = await digest(key);
+    }
+    await env.DB.batch([
+      env.DB.prepare('UPDATE memos SET edit_key_hash = ?, edit_key_gen = edit_key_gen + 1 WHERE id = ?').bind(hash, id),
+      env.DB.prepare("DELETE FROM sessions WHERE memo_id = ? AND role = 'edit'").bind(id),
+    ]);
+    return json(info({ ...memo, edit_key_hash: hash, edit_key_gen: memo.edit_key_gen + 1 }));
   }
   if (sub === '/share' && (m === 'POST' || m === 'DELETE')) {
     const viewId = m === 'POST' ? random(16) : null;

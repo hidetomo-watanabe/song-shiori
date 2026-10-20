@@ -37,4 +37,4 @@ export async function copy(text: string): Promise<boolean> {
 export const viewUrl = (viewId: string) => `${location.origin}${location.pathname}#/v/${viewId}`;
 
 // 画面間の受け渡し（選択したファイル、作成直後の秘密キー）
-export const handoff: { file: File | null; created: { id: string; viewId: string; key: string } | null } = { file: null, created: null };
+export const handoff: { file: File | null; created: { id: string; viewId: string; key: string; editKey: string; title: string } | null } = { file: null, created: null };

@@ -3,7 +3,7 @@ import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
 import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/run';
-import { api, ApiError, randomHex, track, type MemoInfo } from '../api';
+import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
 import { ExportText } from './ExportText';
@@ -36,7 +36,8 @@ export function Editor({ mode }: { mode: Mode }) {
   // 保存済みメモの情報と権限
   const [meta, setMeta] = useState<MemoInfo | null>(null);
   const base = useRef<number | null>(null); // 編集の元になった版番号
-  const createInfo = useRef<{ requestId: string; key: string } | null>(null);
+  const createInfo = useRef<{ requestId: string; key: string; editKey?: string } | null>(null);
+  const [role, setRole] = useState<Role | null>(null); // admin：管理キー、edit：編集キー
   const [session, setSessionState] = useState<string | null>(id ? L.getSession(id) : null);
   const [needKey, setNeedKey] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -158,6 +159,7 @@ export function Editor({ mode }: { mode: Mode }) {
     try {
       const d = await api.get(id, token);
       setMeta(d);
+      setRole(d.role);
       base.current = d.version;
       init(d.song);
       setDirty(false);
@@ -396,12 +398,13 @@ export function Editor({ mode }: { mode: Mode }) {
     try {
       if (!id) {
         createInfo.current ??= { requestId: randomHex(16), key: randomHex(24) };
+        createInfo.current.editKey ??= randomHex(24);
         await L.saveDraft('draft', { song: s, updatedAt: Date.now(), create: createInfo.current });
-        const c = await api.create(createInfo.current.requestId, createInfo.current.key, s);
+        const c = await api.create(createInfo.current.requestId, createInfo.current.key, createInfo.current.editKey, s);
         L.setSession(c.id, c.session, true);
         L.rememberMine({ id: c.id, title: s.title, updatedAt: c.updatedAt });
         await L.removeDraft('draft');
-        handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key };
+        handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key, editKey: createInfo.current.editKey, title: s.title };
         go(`#/e/${c.id}`, true);
         return;
       }
@@ -422,7 +425,7 @@ export function Editor({ mode }: { mode: Mode }) {
         setConflict({ version: e.body?.version });
         setSaveError('他の端末で更新されています。最新の版を読み込むか、この内容で上書きするかを選んでください。');
       } else if (e instanceof ApiError && e.status === 401) {
-        setSaveError('編集の有効期限が切れました。秘密キーを入力すると、変更を保持したまま保存できます。');
+        setSaveError('編集の有効期限が切れたか、キーが再発行されました。キーを入力すると、変更を保持したまま保存できます。');
         setSessionState(null);
         setNeedKey(true);
       } else setSaveError(`${e instanceof Error ? e.message : '保存できませんでした'}。変更はこの端末に残っています。`);
@@ -440,9 +443,10 @@ export function Editor({ mode }: { mode: Mode }) {
   async function submitKey(key: string, remember: boolean) {
     if (!id) return;
     try {
-      const { session: s } = await api.session(id, key.trim().toLowerCase());
+      const { session: s, role: r } = await api.session(id, key.trim().toLowerCase());
       L.setSession(id, s, remember);
       setSessionState(s);
+      setRole(r);
       if (songRef.current && dirty) { setNeedKey(false); setSaveState('idle'); setSaveError(''); return; }
       await loadSaved(s);
     } catch (e) {
@@ -763,7 +767,12 @@ export function Editor({ mode }: { mode: Mode }) {
           onInput={(e) => edit((s) => ({ ...s, memo: (e.currentTarget as HTMLTextAreaElement).value }), { coalesce: 'memo' })} />
       </section>
 
-      {id && meta && session && (
+      {id && meta && session && role === 'edit' && (
+        <section class="card">
+          <p class="sub">編集キーで編集しています。構成の編集と保存ができます。削除や共有の管理は、管理キーを持つ人（作成者）だけができます。</p>
+        </section>
+      )}
+      {id && meta && session && role === 'admin' && (
         <Manage id={id} meta={meta} session={session}
           onMeta={setMeta}
           onSession={(s) => { L.setSession(id, s, !!localStorage.getItem(`ks-session-${id}`)); setSessionState(s); }}
@@ -843,8 +852,8 @@ function KeyForm({ onSubmit, inline }: { onSubmit: (key: string, remember: boole
   const [error, setError] = useState('');
   const body = (
     <section class="card">
-      <h2>秘密キーを入力</h2>
-      <p>この曲メモを編集するには、作成時に表示された秘密キーが必要です。</p>
+      <h2>キーを入力</h2>
+      <p>この曲メモを編集するには、<strong>編集キー</strong>（メンバー用）か<strong>管理キー</strong>（作成者用）が必要です。</p>
       <form onSubmit={async (e) => { e.preventDefault(); setError((await onSubmit(key, remember)) ?? ''); }}>
         <input value={key} autoComplete="off" spellcheck={false} placeholder="48桁の英数字" onInput={(e) => setKey((e.currentTarget as HTMLInputElement).value)} />
         <label class="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する（共用端末では外してください）</label>
@@ -856,18 +865,28 @@ function KeyForm({ onSubmit, inline }: { onSubmit: (key: string, remember: boole
   return inline ? body : <main class="page narrow">{body}<a href="#/">トップへ</a></main>;
 }
 
-function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; key: string }; onRemember: (r: boolean) => void; onClose: () => void }) {
+function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; key: string; editKey: string; title: string }; onRemember: (r: boolean) => void; onClose: () => void }) {
   const [copied, setCopied] = useState('');
   const url = viewUrl(info.viewId);
+  // メンバーに送る文：閲覧 URL と編集キー（管理キーは入れない）
+  const message = `曲のしおり「${info.title || '曲名未入力'}」の構成表です。\n${url}\n\n直すときは、ページの下の「編集する」で次の編集キーを入れてください。\n編集キー：${info.editKey}`;
+  const row = (label: string, value: string, k: string) => (
+    <div class="copy-row"><code>{value}</code><button onClick={async () => setCopied((await copy(value)) ? k : '')}>{copied === k ? 'コピー済み' : 'コピー'}</button></div>
+  );
   return (
     <div class="dialog-back">
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="created-title">
         <h2 id="created-title">保存しました</h2>
-        <p>この閲覧URLをメンバーに共有してください（LINE などに貼り付け）。URLを知っている人は構成表を見られます。</p>
-        <div class="copy-row"><code>{url}</code><button onClick={async () => setCopied((await copy(url)) ? 'url' : '')}>{copied === 'url' ? 'コピー済み' : 'コピー'}</button></div>
-        <h3>秘密キー（編集用）</h3>
-        <p class="warn">編集・削除に必要です。アカウントがないため、<strong>なくすと復旧できません</strong>。メンバーには共有せず、安全な場所に控えてください。</p>
-        <div class="copy-row"><code>{info.key}</code><button onClick={async () => setCopied((await copy(info.key)) ? 'key' : '')}>{copied === 'key' ? 'コピー済み' : 'コピー'}</button></div>
+        <h3>閲覧URL（メンバーに共有）</h3>
+        <p class="sub">URLを知っている人は構成表を見られます。</p>
+        {row('閲覧URL', url, 'url')}
+        <h3>編集キー（メンバーに共有）</h3>
+        <p class="sub">閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
+        {row('編集キー', info.editKey, 'edit')}
+        <button class="small" onClick={async () => setCopied((await copy(message)) ? 'msg' : '')}>{copied === 'msg' ? 'コピーしました' : 'メンバーに送る文をコピー（閲覧URL＋編集キー）'}</button>
+        <h3>管理キー（あなただけが控える）</h3>
+        <p class="warn">削除・共有の管理・キーの再発行に必要です。アカウントがないため、<strong>なくすと復旧できません</strong>。メンバーには渡さず、安全な場所に控えてください。</p>
+        {row('管理キー', info.key, 'key')}
         <label class="check"><input type="checkbox" defaultChecked onChange={(e) => onRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する</label>
         <button class="primary" onClick={onClose}>控えました</button>
       </div>

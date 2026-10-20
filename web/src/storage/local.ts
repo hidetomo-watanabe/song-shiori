@@ -6,7 +6,7 @@ const STORE = 'drafts';
 export const DRAFT_DAYS = 30;
 
 // create は初回保存の再送用（同じリクエストIDと秘密キーで再送すると同じ曲メモになる）
-export type DraftRecord = { song: Song; updatedAt: number; baseVersion?: number; create?: { requestId: string; key: string } };
+export type DraftRecord = { song: Song; updatedAt: number; baseVersion?: number; create?: { requestId: string; key: string; editKey?: string } };
 
 function open(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {

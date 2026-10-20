@@ -129,6 +129,8 @@ label.inline.snap select { font-size: 13px; min-height: 32px; }
 .split-form p { flex: 1 1 100%; margin: 0; }
 label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
 label.inline input { width: 72px; }
+.view-foot { display: grid; justify-items: center; gap: 8px; margin: 12px 0; }
+.start-edit { width: 100%; max-width: 520px; display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--card); }
 .text-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
 .text-tools .export { margin-top: 0; }
 .import { border: 1px dashed var(--accent); border-radius: 8px; padding: 10px; margin-top: 8px; display: grid; gap: 8px; }

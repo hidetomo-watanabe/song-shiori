@@ -28,9 +28,11 @@ async function call<T>(method: string, path: string, body?: unknown, token?: str
 export const randomHex = (bytes: number) =>
   Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join('');
 
-export type MemoInfo = { id: string; viewId: string | null; version: number; updatedAt: number; expiresAt: number };
-export type Created = MemoInfo & { session: string };
-export type EditData = MemoInfo & { song: Song };
+// role：admin は管理キー（作成者。すべての操作）、edit は編集キー（メンバー。構成の編集と保存だけ）
+export type Role = 'admin' | 'edit';
+export type MemoInfo = { id: string; viewId: string | null; version: number; updatedAt: number; expiresAt: number; editKey: boolean };
+export type Created = MemoInfo & { session: string; role: Role };
+export type EditData = MemoInfo & { song: Song; role: Role };
 export type ViewData = {
   version: number; updatedAt: number; expiresAt: number; song: Song;
   base: { version: number; song: Song } | null; notify: boolean; notes: { version: number; note: string }[];
@@ -39,14 +41,18 @@ export type ViewData = {
 export type BpmCandidate = { source: 'GetSongBPM' | 'Deezer'; title: string; artist: string; bpm: number; url: string | null };
 
 export const api = {
-  // 秘密キーは端末で作り、サーバーにはハッシュだけを保存する。再送しても同じ曲メモになる
-  create: (requestId: string, key: string, song: Song) => call<Created>('POST', '/api/memos', { requestId, key, song }),
+  // キー（管理キー・編集キー）は端末で作り、サーバーにはハッシュだけを保存する。再送しても同じ曲メモになる
+  create: (requestId: string, key: string, editKey: string, song: Song) => call<Created>('POST', '/api/memos', { requestId, key, editKey, song }),
   view: (viewId: string, since: number | null) => call<ViewData>('GET', `/api/view/${viewId}${since ? `?since=${since}` : ''}`),
-  session: (id: string, key: string) => call<{ session: string }>('POST', `/api/memos/${id}/session`, {}, key),
+  session: (id: string, key: string) => call<{ session: string; role: Role }>('POST', `/api/memos/${id}/session`, {}, key),
+  // 閲覧ページから編集を始める（閲覧識別子と、編集キーまたは管理キー）
+  viewSession: (viewId: string, key: string) => call<{ id: string; session: string; role: Role }>('POST', `/api/view/${viewId}/session`, {}, key),
   get: (id: string, s: string) => call<EditData>('GET', `/api/memos/${id}`, undefined, s),
   save: (id: string, s: string, baseVersion: number, song: Song, note: string, notify: boolean) =>
     call<MemoInfo>('PUT', `/api/memos/${id}`, { baseVersion, song, note, notify }, s),
   rekey: (id: string, s: string, key: string) => call<{ session: string }>('POST', `/api/memos/${id}/keys`, { key }, s),
+  editKey: (id: string, s: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/edit-key`, { key }, s),
+  stopEdit: (id: string, s: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/edit-key`, undefined, s),
   reshare: (id: string, s: string) => call<MemoInfo>('POST', `/api/memos/${id}/share`, {}, s),
   unshare: (id: string, s: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/share`, undefined, s),
   extend: (id: string, s: string) => call<MemoInfo>('POST', `/api/memos/${id}/extend`, {}, s),

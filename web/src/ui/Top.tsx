@@ -68,7 +68,7 @@ export function Top() {
 
       {mine.length > 0 && (
         <section class="card">
-          <h2>このブラウザで作った曲メモ</h2>
+          <h2>このブラウザで編集した曲メモ</h2>
           <ul class="mine">
             {mine.map((m) => (
               <li key={m.id}>

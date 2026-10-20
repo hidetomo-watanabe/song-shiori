@@ -3,6 +3,7 @@ import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
 import { bpmOf } from '../../../shared/song';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
+import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
 import { fmt, fmtDate, fmtDay, groupTone, timeSignature } from './util';
 
@@ -99,7 +100,10 @@ export function View({ viewId }: { viewId: string }) {
           <p class="pre">{song.memo}</p>
         </section>
       )}
-      <p class="sub center">この構成メモは {fmtDay(data.expiresAt)} まで保管されます。</p>
+      <div class="view-foot">
+        <StartEdit viewId={viewId} title={song.title} />
+        <p class="sub">この構成メモは {fmtDay(data.expiresAt)} まで保管されます。</p>
+      </div>
     </main>
   );
 }

@@ -18,11 +18,11 @@ const check = (label: string, ok: boolean, detail?: unknown) => {
 };
 
 const song = normalize({ ...emptySong(32), title: 'テスト', bpmManual: 120, sections: [newSection(0, 16, { group: 'A' }), newSection(16, 32, { group: 'B' })] });
-const key = hex(24), requestId = hex(16);
+const key = hex(24), editKey = hex(24), requestId = hex(16);
 
-const c1 = await call('POST', '/api/memos', { requestId, key, song });
+const c1 = await call('POST', '/api/memos', { requestId, key, editKey, song });
 check('作成', c1.status === 201, c1);
-const c2 = await call('POST', '/api/memos', { requestId, key, song });
+const c2 = await call('POST', '/api/memos', { requestId, key, editKey, song });
 check('同じ作成リクエストの再送は同じ曲メモ', c2.status === 200 && c2.data.id === c1.data.id, c2);
 const { id, viewId } = c1.data;
 let session = c1.data.session;
@@ -49,6 +49,32 @@ check('閲覧（最新を見た端末は差分なし）', v.data.base === null &
 const quiet = await call('PUT', `/api/memos/${id}`, { baseVersion: 2, song: s2, notify: false }, session);
 v = await call('GET', `/api/view/${viewId}?since=2`);
 check('知らせない保存では更新案内なし', quiet.status === 200 && v.data.version === 3 && v.data.notify === false && v.data.base === null, v);
+
+// 編集キー：閲覧識別子から編集を始められ、構成の保存はできるが、管理の操作はできない
+const eview = await call('POST', `/api/view/${viewId}/session`, {}, editKey);
+check('閲覧識別子＋編集キーで編集を始められる', eview.status === 200 && eview.data.id === id && eview.data.role === 'edit', eview);
+const es = eview.data.session;
+const eget = await call('GET', `/api/memos/${id}`, undefined, es);
+check('編集キーで構成を取得できる', eget.status === 200 && eget.data.role === 'edit', eget);
+const esave = await call('PUT', `/api/memos/${id}`, { baseVersion: eget.data.version, song: s2, notify: false }, es);
+check('編集キーで保存できる', esave.status === 200, esave);
+const edel = await call('DELETE', `/api/memos/${id}`, undefined, es);
+const eshare = await call('POST', `/api/memos/${id}/share`, {}, es);
+const ekeys = await call('POST', `/api/memos/${id}/keys`, { key: hex(24) }, es);
+check('編集キーでは削除・共有・キー再発行ができない', edel.status === 403 && eshare.status === 403 && ekeys.status === 403, { edel, eshare, ekeys });
+const aview = await call('POST', `/api/view/${viewId}/session`, {}, key);
+check('閲覧識別子＋管理キーでも始められる', aview.status === 200 && aview.data.role === 'admin', aview);
+const badview = await call('POST', `/api/view/${viewId}/session`, {}, hex(24));
+check('閲覧識別子＋誤ったキーは拒否', badview.status === 403, badview);
+const newEdit = hex(24);
+const rek = await call('POST', `/api/memos/${id}/edit-key`, { key: newEdit }, session);
+const oldEdit = await call('GET', `/api/memos/${id}`, undefined, es);
+const newEs = await call('POST', `/api/memos/${id}/session`, {}, newEdit);
+check('編集キーの再発行で、旧編集キーのセッションは無効・新しい編集キーは有効', rek.status === 200 && oldEdit.status === 401 && newEs.data?.role === 'edit', { rek, oldEdit, newEs });
+const stop = await call('DELETE', `/api/memos/${id}/edit-key`, undefined, session);
+const afterStop = await call('GET', `/api/memos/${id}`, undefined, newEs.data.session);
+const afterStopKey = await call('POST', `/api/memos/${id}/session`, {}, newEdit);
+check('メンバーの編集を止めると、編集キーもそのセッションも使えない', stop.status === 200 && stop.data.editKey === false && afterStop.status === 401 && afterStopKey.status === 403, { stop, afterStop, afterStopKey });
 
 const wrong = await call('POST', `/api/memos/${id}/session`, {}, hex(24));
 check('誤った秘密キーは拒否', wrong.status === 403, wrong);
