@@ -165,7 +165,9 @@ label.check input { min-height: 0; }
 .bpm-value { font-size: 20px; font-weight: 700; min-width: 56px; font-variant-numeric: tabular-nums; }
 .bpm-meta { flex: 1 1 200px; font-size: 13px; }
 .bpm-meta .tag { margin-left: 6px; }
-.site-foot { margin-top: 24px; }
+.site-foot { padding: 0 16px 24px; }
+/* 編集画面では下部の保存バーに隠れないよう余白を取る */
+body:has(.savebar) .site-foot { padding-bottom: 180px; }
 
 /* 閲覧ページ */
 .view-head { margin: 8px 0 4px; }

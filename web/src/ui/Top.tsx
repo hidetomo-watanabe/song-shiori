@@ -80,9 +80,6 @@ export function Top() {
           </ul>
         </section>
       )}
-      <footer class="site-foot sub center">
-        BPM情報の提供：<a href="https://getsongbpm.com" target="_blank" rel="noopener">GetSongBPM</a>・Deezer
-      </footer>
     </main>
   );
 }
