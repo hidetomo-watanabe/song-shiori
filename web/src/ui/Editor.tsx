@@ -575,10 +575,10 @@ export function Editor({ mode }: { mode: Mode }) {
           <label>拍子
             <select value={song.beatsPerBar} onChange={(e) => edit((s) => M.setTempo(s, { beatsPerBar: Number((e.currentTarget as HTMLSelectElement).value) }))}>
               {(TIME_SIGNATURES.includes(song.beatsPerBar) ? TIME_SIGNATURES : [...TIME_SIGNATURES, song.beatsPerBar]).map((n) =>
-                <option key={n} value={n}>{timeSignature(n)}{n === 4 ? '（ほとんどの曲）' : n === 3 ? '（ワルツなど）' : ''}</option>)}
+                <option key={n} value={n}>{timeSignature(n)}</option>)}
             </select>
           </label>
-          <p class="sub">ほとんどの曲は 4/4 のままで大丈夫です。変えると小節数の数え方が変わります。6/8・7/8 は8分音符1つを1拍として数えます。</p>
+          <p class="sub">変えると小節数の数え方が変わります。6/8・7/8 は8分音符1つを1拍として数えます。</p>
           {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM と最初の小節頭から等間隔に引いています。'}</p>}
         </details>
       </section>
