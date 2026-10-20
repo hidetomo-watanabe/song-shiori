@@ -606,6 +606,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
                 </label>
               </div>
+              {hasAudio && <SeekBar range={{ start: s.start, end: s.end }} now={now} onSeek={seekTo} label={`${s.name}の再生位置`} />}
               <input class="memo" value={s.memo} maxLength={2000} placeholder="メモ（入り・キメ・終わり方など）" aria-label="メモ"
                 onInput={(e) => edit((x) => M.patchSection(x, s.id, { memo: (e.currentTarget as HTMLInputElement).value }), { coalesce: `memo-${s.id}` })} />
               <div class="sec-actions">
