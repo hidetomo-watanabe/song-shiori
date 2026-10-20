@@ -337,6 +337,8 @@ button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 
 .view-head { margin: 16px 0 4px; }
 .view-head h1 { font-size: 28px; margin-bottom: 2px; }
 .artist { font-size: 16px; margin: 0; color: var(--sub); font-weight: 600; }
+.view-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.view-sub .sub { margin: 0; }
 .view-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
 .view-meta .tag { font-size: 13px; padding: 3px 12px; color: var(--text); }
 .update { border-color: var(--warn); background: color-mix(in srgb, var(--warn-bg) 55%, var(--card)); }

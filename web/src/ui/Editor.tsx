@@ -14,7 +14,7 @@ import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { Timeline } from './Timeline';
 import { YouTubeAlign } from './YouTubeAlign';
-import { copy, fmt, go, groupTone, handoff, parseTime, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
+import { copy, fmt, go, groupTone, handoff, memberMessage, parseTime, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
 type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: 'saved'; id: string };
 
@@ -459,7 +459,7 @@ export function Editor({ mode }: { mode: Mode }) {
         L.setKeys(c.id, { admin: createInfo.current.key, edit: createInfo.current.editKey });
         L.rememberMine({ id: c.id, title: s.title, updatedAt: c.updatedAt });
         await L.removeDraft('draft');
-        handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key, editKey: createInfo.current.editKey, title: s.title };
+        handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key, editKey: createInfo.current.editKey, title: s.title, artist: s.artist };
         go(`#/e/${c.id}`, true);
         return;
       }
@@ -872,7 +872,7 @@ export function Editor({ mode }: { mode: Mode }) {
         </section>
       )}
       {id && meta && session && role === 'admin' && (
-        <Manage id={id} meta={meta} session={session}
+        <Manage id={id} title={song.title} artist={song.artist} meta={meta} session={session}
           onMeta={setMeta}
           onSession={(s) => { L.setSession(id, s, L.remembersSession(id)); setSessionState(s); }}
           onDeleted={async () => { await L.removeDraft(draftKey); L.forgetMine(id); L.forgetKeys(id); go('#/', true); }} />
@@ -964,11 +964,10 @@ function KeyForm({ onSubmit, inline }: { onSubmit: (key: string, remember: boole
   return inline ? body : <main class="page narrow">{body}<a href="#/">トップへ</a></main>;
 }
 
-function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; key: string; editKey: string; title: string }; onRemember: (r: boolean) => void; onClose: () => void }) {
+function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; key: string; editKey: string; title: string; artist: string }; onRemember: (r: boolean) => void; onClose: () => void }) {
   const [copied, setCopied] = useState('');
   const url = viewUrl(info.viewId);
-  // メンバーに送る文：閲覧 URL と編集キー（管理キーは入れない）
-  const message = `曲のしおり「${info.title || '曲名未入力'}」の構成表です。\n${url}\n\n直すときは、ページの下の「編集する」で次の編集キーを入れてください。\n編集キー：${info.editKey}`;
+  const message = memberMessage(info.title, info.artist, url, info.editKey);
   const row = (label: string, value: string, k: string) => (
     <div class="copy-row"><code>{value}</code><button onClick={async () => setCopied((await copy(value)) ? k : '')}>{copied === k ? 'コピー済み' : 'コピー'}</button></div>
   );
@@ -979,6 +978,7 @@ function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; 
         <h3>閲覧URL（メンバーに共有）</h3>
         <p class="sub">URLを知っている人は構成表を見られます。</p>
         {row('閲覧URL', url, 'url')}
+        <button class="small" onClick={async () => setCopied((await copy(shareMessage(info.title, info.artist, url))) ? 'share' : '')}>{copied === 'share' ? 'コピーしました' : '曲名とURLをコピー（閲覧だけ頼むとき）'}</button>
         <h3>編集キー（メンバーに共有）</h3>
         <p class="sub">閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
         {row('編集キー', info.editKey, 'edit')}

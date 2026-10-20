@@ -36,5 +36,13 @@ export async function copy(text: string): Promise<boolean> {
 
 export const viewUrl = (viewId: string) => `${location.origin}${location.pathname}#/v/${viewId}`;
 
+// 共有の文。LINE などのリンクの表示は曲によらず同じ（閲覧ページの URL は # 以降がサーバーに届かないため）なので、
+// どの曲の構成表か分かるよう、文のほうに曲名を入れる
+export const shareTitle = (title: string, artist = '') => `曲のしおり「${title || '曲名未入力'}」${artist ? `（${artist}）` : ''}の構成表`;
+export const shareMessage = (title: string, artist: string, url: string) => `${shareTitle(title, artist)}\n${url}`;
+// メンバーに送る文：閲覧 URL と編集キー（管理キーは入れない）
+export const memberMessage = (title: string, artist: string, url: string, editKey: string) =>
+  `${shareTitle(title, artist)}です。\n${url}\n\n直すときは、ページの下の「編集する」で次の編集キーを入れてください。\n編集キー：${editKey}`;
+
 // 画面間の受け渡し（選択したファイル、作成直後の秘密キー）
-export const handoff: { file: File | null; created: { id: string; viewId: string; key: string; editKey: string; title: string } | null } = { file: null, created: null };
+export const handoff: { file: File | null; created: { id: string; viewId: string; key: string; editKey: string; title: string; artist: string } | null } = { file: null, created: null };

@@ -7,7 +7,7 @@ import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
-import { fmt, fmtDate, fmtDay, groupTone, timeSignature } from './util';
+import { copy, fmt, fmtDate, fmtDay, groupTone, shareMessage, shareTitle, timeSignature, viewUrl } from './util';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
 export function View({ viewId }: { viewId: string }) {
@@ -67,6 +67,27 @@ export function View({ viewId }: { viewId: string }) {
     return () => { clearInterval(t); yt.destroy(); };
   }, [yt]);
 
+  // タブ・ブックマークの名前を曲名にする
+  useEffect(() => {
+    if (!data) return;
+    const before = document.title;
+    document.title = `${data.song.title || '曲名未入力'} - 曲のしおり`;
+    return () => { document.title = before; };
+  }, [data?.song.title]);
+
+  // 共有：スマホなどは共有シート（LINE を選べる）、なければ曲名入りの文をコピーする
+  const [shared, setShared] = useState(false);
+  async function share() {
+    if (!data) return;
+    const { title, artist } = data.song;
+    const url = viewUrl(viewId);
+    if (navigator.share) {
+      try { await navigator.share({ title: shareTitle(title, artist), text: shareTitle(title, artist), url }); } catch { /* 共有をやめた */ }
+      return;
+    }
+    if (await copy(shareMessage(title, artist, url))) { setShared(true); setTimeout(() => setShared(false), 2000); }
+  }
+
   if (error) return <main class="page narrow"><p class="error">{error}</p></main>;
   if (!data) return <main class="page narrow"><p>読み込んでいます…</p></main>;
 
@@ -98,7 +119,10 @@ export function View({ viewId }: { viewId: string }) {
           <span class="tag">{timeSignature(song.beatsPerBar)}</span>
           {song.firstDownbeat != null && <span class="tag">最初の小節頭 {fmt(song.firstDownbeat, 2)}</span>}
         </div>
-        <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
+        <div class="view-sub">
+          <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
+          <button class="small" onClick={() => void share()} title="曲名と URL を送ります">{shared ? '曲名とURLをコピーしました' : '共有（LINE など）'}</button>
+        </div>
       </header>
 
       {diff?.changed && (

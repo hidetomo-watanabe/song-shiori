@@ -1,10 +1,12 @@
 import { useState } from 'preact/hooks';
 import { api, randomHex, type MemoInfo } from '../api';
 import * as L from '../storage/local';
-import { copy, fmtDay, viewUrl } from './util';
+import { copy, fmtDay, memberMessage, shareMessage, viewUrl } from './util';
 
 type Props = {
   id: string;
+  title: string;
+  artist: string;
   meta: MemoInfo;
   session: string;
   onMeta: (m: MemoInfo) => void;
@@ -13,7 +15,7 @@ type Props = {
 };
 
 // 共有URL・編集キー・管理キー・保持期限・削除の管理（要件定義書 5.4）。管理キーで開いているときだけ表示する
-export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Props) {
+export function Manage({ id, title, artist, meta, session, onMeta, onSession, onDeleted }: Props) {
   const [error, setError] = useState('');
   const [newKey, setNewKey] = useState('');
   const [keys, setKeysState] = useState(() => L.getKeys(id));
@@ -25,7 +27,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
   };
   const [newEditKey, setNewEditKey] = useState('');
   const [confirm, setConfirm] = useState<'' | 'rekey' | 'editkey' | 'stopedit' | 'unshare' | 'reshare' | 'delete'>('');
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'' | 'url' | 'share'>('');
 
   const run = async (fn: () => Promise<void>) => {
     setError('');
@@ -43,7 +45,10 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         {url ? (
           <div class="copy-row">
             <code>{url}</code>
-            <button onClick={async () => setCopied(await copy(url))}>{copied ? 'コピー済み' : 'コピー'}</button>
+            <button onClick={async () => setCopied((await copy(url)) ? 'url' : '')}>{copied === 'url' ? 'コピー済み' : 'コピー'}</button>
+            <button onClick={async () => setCopied((await copy(shareMessage(title, artist, url))) ? 'share' : '')} title="LINE などに貼ると、どの曲の構成表か分かります">
+              {copied === 'share' ? 'コピー済み' : '曲名とURLをコピー'}
+            </button>
             <a class="button" href={url} target="_blank" rel="noopener">開く</a>
           </div>
         ) : <p class="warn">共有は無効になっています。</p>}
@@ -93,7 +98,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
         ) : (
           <div class="actions">
             {meta.editKey
-              ? <KeyView value={keys.edit} extra={keys.edit && url ? { label: 'メンバーに送る文をコピー', text: memberMessage(url, keys.edit) } : undefined} />
+              ? <KeyView value={keys.edit} extra={keys.edit && url ? { label: 'メンバーに送る文をコピー', text: memberMessage(title, artist, url, keys.edit) } : undefined} />
               : <span>未発行（メンバーは編集できません）</span>}
             <button onClick={() => setConfirm('editkey')}>{meta.editKey ? '編集キーを再発行' : '編集キーを発行'}</button>
             {meta.editKey && <button class="danger" onClick={() => setConfirm('stopedit')}>メンバーの編集を止める</button>}
@@ -154,10 +159,6 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
     </section>
   );
 }
-
-// メンバーに送る文：閲覧 URL と編集キー（管理キーは入れない）
-export const memberMessage = (url: string, editKey: string) =>
-  `曲のしおりの構成表です。\n${url}\n\n直すときは、ページの下の「編集する」で次の編集キーを入れてください。\n編集キー：${editKey}`;
 
 // 保存してあるキーを伏せて表示し、「表示」「コピー」できるようにする
 function KeyView({ value, extra }: { value?: string; extra?: { label: string; text: string } }) {
