@@ -4,6 +4,7 @@ import { bpmOf, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
+import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
 import { fmt, fmtDate, fmtDay, groupTone, timeSignature } from './util';
@@ -38,7 +39,9 @@ export function View({ viewId }: { viewId: string }) {
   const [yt, setYt] = useState<YouTubePlayer | null>(null);
   const [ytState, setYtState] = useState<'off' | 'loading' | 'ready'>('loading');
   const [ytError, setYtError] = useState('');
-  const [now, setNow] = useState(-1); // 再生中の位置。止まっているときは -1（どの区間も示さない）
+  const [now, setNow] = useState(0); // 再生位置（構成表の時刻）
+  const [playing, setPlaying] = useState(false);
+  const [started, setStarted] = useState(false); // 一度でも再生したか。再生前はどの区間も示さない
   useEffect(() => {
     if (ytState !== 'loading' || !data?.song.youtube || !ytHost.current) return;
     let alive = true;
@@ -55,7 +58,11 @@ export function View({ viewId }: { viewId: string }) {
   }, [ytState, !!data]);
   useEffect(() => {
     if (!yt) return;
-    const t = setInterval(() => setNow(yt.playing ? yt.currentTime : -1), 200);
+    const t = setInterval(() => {
+      setNow(yt.currentTime);
+      setPlaying(yt.playing);
+      if (yt.playing) setStarted(true);
+    }, 200);
     return () => { clearInterval(t); yt.destroy(); };
   }, [yt]);
 
@@ -63,6 +70,7 @@ export function View({ viewId }: { viewId: string }) {
   if (!data) return <main class="page narrow"><p>読み込んでいます…</p></main>;
 
   const { song } = data;
+  const current = started ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
   const diff: SongDiff | null = data.base ? diffSongs(data.base.song, song) : null;
   const bpm = bpmOf(song);
   // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える
@@ -111,7 +119,16 @@ export function View({ viewId }: { viewId: string }) {
           ) : (
             <>
               <div class="yt-frame"><div ref={ytHost} /></div>
-              {ytState === 'ready' && <p class="sub">表の区間を押すと、そこから再生します。</p>}
+              {ytState === 'ready' && yt && (
+                <>
+                  <div class="view-player">
+                    <button class={`small${playing ? ' on' : ''}`} aria-label={playing ? '一時停止' : '再生'}
+                      onClick={() => { if (yt.playing) yt.pause(); else yt.play(); setPlaying(yt.playing); }}>{playing ? '■ 停止' : '▶ 再生'}</button>
+                    <SeekBar now={now} duration={yt.duration} onSeek={(t) => { yt.seek(t); setNow(t); setStarted(true); }} />
+                  </div>
+                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。</p>
+                </>
+              )}
             </>
           )}
           {ytError && <p class="error">{ytError}</p>}
@@ -125,7 +142,7 @@ export function View({ viewId }: { viewId: string }) {
             {song.sections.map((s) => {
               const changes = diff?.sections[s.id] ?? [];
               return (
-                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.silence ? ' silence' : ''}${now >= s.start && now < s.end ? ' now' : ''}`}
+                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.silence ? ' silence' : ''}${current?.id === s.id ? ' now' : ''}`}
                   onClick={yt ? () => yt.play(s.start) : undefined}>
                   <td data-label="開始">
                     {yt && <button class="tiny ghost row-go" aria-label={`${s.name}から再生`} onClick={(e) => { e.stopPropagation(); yt.play(s.start); }}>▶</button>}
