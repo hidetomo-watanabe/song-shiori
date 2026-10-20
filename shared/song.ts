@@ -71,6 +71,9 @@ export const newId = () => {
 
 export const bpmOf = (s: Song) => s.bpmManual ?? s.bpmEst;
 
+// 時刻 t を含む区間。なければ undefined
+export const sectionAt = (s: Song, t: number) => s.sections.find((x) => t >= x.start && t < x.end);
+
 // YouTube の URL（watch・youtu.be・shorts・embed・music.youtube.com）か動画 ID から、動画 ID を取り出す。読めなければ null
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
 export function youtubeId(text: string): string | null {
@@ -212,6 +215,11 @@ export function newSection(start: number, end: number, init: Partial<Section> = 
     id: newId(), start, end, name: '', nameAuto: true, group: null, groupManual: false,
     barsEst: null, barsManual: null, barsNeedsCheck: false, memo: '', edited: false, ...init,
   };
+}
+
+// 曲全体を1つの区間にする（手動で作り始めたとき・自動生成に失敗したとき）。音源ファイルの長さなら、構成を作った音源として残す
+export function wholeSong(song: Song, duration: number, fromFile = false): Song {
+  return normalize({ ...song, duration, sections: [newSection(0, duration)], ...(fromFile ? { audio: { offset: 0, duration } } : {}) });
 }
 
 // 推定小節数を再計算し、自動の名前を付け直す

@@ -1,8 +1,9 @@
 import { useState } from 'preact/hooks';
 import { api, randomHex, type MemoInfo } from '../api';
 import * as L from '../storage/local';
+import { CopyRow } from './CopyRow';
 import { ShareButtons } from './ShareButtons';
-import { copy, fmtDay, memberMessage, shareMessage, viewUrl } from './util';
+import { copy, errorText, fmtDay, memberMessage, shareMessage, viewUrl } from './util';
 
 type Props = {
   id: string;
@@ -28,11 +29,10 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
   };
   const [newEditKey, setNewEditKey] = useState('');
   const [confirm, setConfirm] = useState<'' | 'rekey' | 'editkey' | 'stopedit' | 'unshare' | 'reshare' | 'delete'>('');
-  const [copied, setCopied] = useState(false);
 
   const run = async (fn: () => Promise<void>) => {
     setError('');
-    try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : '操作できませんでした'); }
+    try { await fn(); } catch (e) { setError(errorText(e, '操作できませんでした')); }
     setConfirm('');
   };
 
@@ -44,11 +44,9 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
       <div class="manage-row">
         <h3>閲覧URL</h3>
         {url ? (
-          <div class="copy-row">
-            <code>{url}</code>
-            <button onClick={async () => setCopied(await copy(url))}>{copied ? 'コピー済み' : 'コピー'}</button>
+          <CopyRow value={url}>
             <a class="button" href={url} target="_blank" rel="noopener">開く</a>
-          </div>
+          </CopyRow>
         ) : <p class="warn">共有は無効になっています。</p>}
         {/* 見てもらうだけのときは、曲名と閲覧 URL を送る（編集キーは入れない） */}
         {url && <ShareButtons text={() => shareMessage(title, artist, url)} />}
@@ -76,7 +74,7 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
         {newEditKey ? (
           <>
             <p class="warn">新しい編集キーを発行しました。古い編集キーは使えなくなりました。メンバーに新しい編集キーを送り直してください。</p>
-            <div class="copy-row"><code>{newEditKey}</code><button onClick={() => void copy(newEditKey)}>コピー</button></div>
+            <CopyRow value={newEditKey} />
           </>
         ) : confirm === 'editkey' ? (
           <div class="actions">
@@ -115,7 +113,7 @@ export function Manage({ id, title, artist, meta, session, onMeta, onSession, on
         {newKey ? (
           <>
             <p class="warn">新しい管理キーを発行しました。古い管理キーは使えなくなり、古い管理キーで開いていたほかの端末では入れ直しが必要です。<strong>新しいキーは、なくすと復旧できません。</strong></p>
-            <div class="copy-row"><code>{newKey}</code><button onClick={() => void copy(newKey)}>コピー</button></div>
+            <CopyRow value={newKey} />
           </>
         ) : confirm === 'rekey' ? (
           <div class="actions">
@@ -196,7 +194,7 @@ function StoreKey({ id, role, note, onStored }: { id: string; role: 'admin' | 'e
         L.setKeys(id, { [role]: k });
         onStored();
       } catch (err) {
-        setError(err instanceof Error ? err.message : '確認できませんでした');
+        setError(errorText(err, '確認できませんでした'));
       }
     }}>
       <input value={key} autoComplete="off" spellcheck={false} placeholder="48桁の英数字" onInput={(e) => setKey((e.currentTarget as HTMLInputElement).value)} />

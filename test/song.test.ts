@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -26,6 +26,22 @@ describe('編集ルール', () => {
     const s = sample();
     expect(s.sections.map((x) => x.barsEst)).toEqual([8, 16, 8, 16]);
     expect(s.sections.map((x) => x.name)).toEqual(['パートA', 'パートB（1回目）', 'パートC', 'パートB（2回目）']);
+    invariant(s);
+  });
+
+  it('時刻を含む区間を探す（境界は後ろの区間に含める）', () => {
+    const s = sample();
+    expect(sectionAt(s, 0)?.id).toBe(s.sections[0].id);
+    expect(sectionAt(s, 16)?.id).toBe(s.sections[1].id);
+    expect(sectionAt(s, 95.9)?.id).toBe(s.sections[3].id);
+    expect(sectionAt(s, 96)).toBeUndefined();
+  });
+
+  it('曲全体を1つの区間にする', () => {
+    const s = wholeSong(emptySong(), 30);
+    expect(s.sections.map((x) => [x.start, x.end])).toEqual([[0, 30]]);
+    expect(s.audio).toBeUndefined();
+    expect(wholeSong(emptySong(), 30, true).audio).toEqual({ offset: 0, duration: 30 });
     invariant(s);
   });
 

@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, sectionAt, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
-import { fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
+import { errorText, fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
 import { ShareButtons } from './ShareButtons';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
@@ -32,7 +32,7 @@ export function View({ viewId }: { viewId: string }) {
       setData(d);
       if (seen && d.base) track('view_after_update');
       setSeen(viewId, d.version);
-    }).catch((e) => setError(e instanceof Error ? e.message : '読み込めませんでした'));
+    }).catch((e) => setError(errorText(e, '読み込めませんでした')));
   }, []);
 
   // YouTube の動画。開いたときに表示する（読み込めなかったときは、押して読み込み直せるようにする）
@@ -55,7 +55,7 @@ export function View({ viewId }: { viewId: string }) {
       p.onPlay = () => { track('youtube_view_play'); p.onPlay = () => {}; };
       setYt(p);
       setYtState('ready');
-    }).catch((e) => { if (alive) { setYtError(e instanceof Error ? e.message : '動画を読み込めませんでした'); setYtState('off'); } });
+    }).catch((e) => { if (alive) { setYtError(errorText(e, '動画を読み込めませんでした')); setYtState('off'); } });
     return () => { alive = false; };
   }, [ytState, !!data]);
   useEffect(() => {
@@ -84,7 +84,7 @@ export function View({ viewId }: { viewId: string }) {
 
   // 以前の形式（無音の区間）は、曲の頭を 0:00 にした形に直して表示する
   const song = trimSilence(data.song);
-  const current = started ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
+  const current = started ? sectionAt(song, now) ?? null : null;
   const diff: SongDiff | null = data.base ? diffSongs(data.base.song, song) : null;
   const bpm = bpmOf(song);
   // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える

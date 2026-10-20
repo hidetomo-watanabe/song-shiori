@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, track, type BpmCandidate } from '../api';
+import { errorText } from './util';
 
 type Props = {
   title: string;
@@ -42,7 +43,7 @@ export function BpmLookup({ title, artist, bpmEst, bpm, onApply, onResult }: Pro
         onResult?.(r.candidates);
       }
     } catch (e) {
-      if (last.current === key) setState({ status: 'error', candidates: [], sources: [], error: e instanceof Error ? e.message : '調べられませんでした' });
+      if (last.current === key) setState({ status: 'error', candidates: [], sources: [], error: errorText(e, '調べられませんでした') });
     }
   }
 

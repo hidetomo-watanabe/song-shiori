@@ -7,15 +7,20 @@ import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/ru
 import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
+import { CreatedDialog } from './CreatedDialog';
 import { ExportText } from './ExportText';
 import { ImportText } from './ImportText';
+import { KeyForm } from './KeyForm';
+import { Progress } from './Progress';
 import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { ShareButtons } from './ShareButtons';
+import { TimeInput } from './TimeInput';
 import { Timeline } from './Timeline';
+import { useSongHistory, type EditOptions } from './useSongHistory';
 import { YouTubeAlign } from './YouTubeAlign';
-import { copy, fmt, go, groupTone, handoff, memberMessage, parseTime, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
+import { errorText, fmt, go, groupTone, handoff, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
 type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: 'saved'; id: string };
 
@@ -33,12 +38,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const draftKey = id ? `pending:${id}` : 'draft';
 
   // 構成データと「元に戻す」「やり直す」の履歴
-  const [song, setSong] = useState<Song | null>(null);
-  const songRef = useRef<Song | null>(null);
-  const history = useRef<Song[]>([]);
-  const future = useRef<Song[]>([]); // 元に戻した変更。新しく編集すると消える
-  const coalesce = useRef<{ key: string; at: number } | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const h = useSongHistory();
+  const { song, ref: songRef, dirty, setDirty, undo, redo } = h;
 
   // 保存済みメモの情報と権限
   const [meta, setMeta] = useState<MemoInfo | null>(null);
@@ -97,50 +98,15 @@ export function Editor({ mode }: { mode: Mode }) {
   const [note, setNote] = useState('');
   const [notify, setNotify] = useState(true);
 
-  function init(loaded: Song) {
-    // 以前の形式（無音の区間）は、曲の頭を 0:00 にした形に直して開く。保存すると直した形で残る
-    const s = M.trimSilence(loaded);
-    songRef.current = s;
-    history.current = [];
-    future.current = [];
-    setSong(s);
+  // 以前の形式（無音の区間）は、曲の頭を 0:00 にした形に直して開く。保存すると直した形で残る
+  const init = (loaded: Song) => h.init(M.trimSilence(loaded));
+
+  function edit(fn: (s: Song) => Song, opts?: EditOptions) {
+    if (h.edit(fn, opts) && saveState === 'saved') setSaveState('idle');
   }
 
-  function edit(fn: (s: Song) => Song, opts: { history?: boolean; coalesce?: string } = {}) {
-    const cur = songRef.current;
-    if (!cur) return;
-    const next = fn(cur);
-    if (next === cur) return;
-    const c = coalesce.current;
-    const merge = opts.history === false || (opts.coalesce && c?.key === opts.coalesce && Date.now() - c.at < 1500);
-    if (!merge) history.current = [...history.current.slice(-99), cur];
-    future.current = [];
-    coalesce.current = opts.coalesce ? { key: opts.coalesce, at: Date.now() } : null;
-    songRef.current = next;
-    setSong(next);
-    setDirty(true);
-    if (saveState === 'saved') setSaveState('idle');
-  }
-
-  function undo() {
-    const prev = history.current.pop();
-    if (!prev) return;
-    future.current.push(songRef.current!);
-    coalesce.current = null;
-    songRef.current = prev;
-    setSong(prev);
-    setDirty(true);
-  }
-
-  function redo() {
-    const next = future.current.pop();
-    if (!next) return;
-    history.current.push(songRef.current!);
-    coalesce.current = null;
-    songRef.current = next;
-    setSong(next);
-    setDirty(true);
-  }
+  // 自動生成をやり直すとき、手で直した区間があれば結果を見て選んでもらい、なければそのまま置き換える
+  const redoHow = (s: Song) => (s.sections.some((x) => x.edited) ? 'propose' : 'replace');
 
   // 初期化：下書き・音源・保存済みメモを読み込む
   useEffect(() => {
@@ -188,7 +154,7 @@ export function Editor({ mode }: { mode: Mode }) {
         L.setSession(id, null, false);
         setSessionState(null);
         setNeedKey(true);
-      } else setLoadError(e instanceof Error ? e.message : '読み込めませんでした');
+      } else setLoadError(errorText(e, '読み込めませんでした'));
     }
   }
 
@@ -217,8 +183,8 @@ export function Editor({ mode }: { mode: Mode }) {
       setYtReady(true);
       // 手動で作り始めたばかりなら動画の長さで区間を作る（長さの違いは「音源とのずれを合わせる」で示す）
       const d = p.duration;
-      if (d > 0 && !songRef.current!.sections.length) edit((s) => M.normalize({ ...s, duration: d, sections: [M.newSection(0, d)] }), { history: false });
-    }).catch((e) => { if (alive) setYtError(e instanceof Error ? e.message : '動画を読み込めませんでした'); });
+      if (d > 0 && !songRef.current!.sections.length) edit((s) => M.wholeSong(s, d), { history: false });
+    }).catch((e) => { if (alive) setYtError(errorText(e, '動画を読み込めませんでした')); });
     return () => {
       alive = false;
       setYtReady(false);
@@ -254,7 +220,7 @@ export function Editor({ mode }: { mode: Mode }) {
   // 再生中は、鳴っている区間を画面内に表示する（入力中は動かさない）
   // 表示用の now は 0.1 秒ごとの更新なので、再生を始めた直後は古い位置のことがある。実際の再生位置で判断する
   const playPos = media().currentTime;
-  const playingId = media().playing && songRef.current ? songRef.current.sections.find((x) => playPos >= x.start && playPos < x.end)?.id : undefined;
+  const playingId = media().playing && songRef.current ? M.sectionAt(songRef.current, playPos)?.id : undefined;
   useEffect(() => {
     if (!follow || !playingId) return;
     const tag = document.activeElement?.tagName;
@@ -311,7 +277,7 @@ export function Editor({ mode }: { mode: Mode }) {
       yt?.pause();
       const cur = songRef.current!;
       if (!cur.sections.length && !analyzeNow) {
-        edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)], audio: { offset: 0, duration: buf.duration } }));
+        edit((s) => M.wholeSong(s, buf.duration, true));
       } else if (cur.sections.length && Math.abs((cur.audio?.duration ?? cur.duration) - buf.duration) > 1) {
         // 構成を作った音源ファイルの長さと比べる（構成表の長さは曲頭・曲末の無音を含まないため）
         setAudioNote(`構成表を作った音源の長さ（${fmt(cur.audio?.duration ?? cur.duration)}）と、選んだ音源の長さ（${fmt(buf.duration)}）が違います。別バージョンの音源かもしれません。`);
@@ -320,7 +286,7 @@ export function Editor({ mode }: { mode: Mode }) {
       else setProgress(null);
     } catch (e) {
       setProgress(null);
-      setAudioNote(e instanceof Error ? e.message : '音源を読み込めませんでした');
+      setAudioNote(errorText(e, '音源を読み込めませんでした'));
     }
   }
 
@@ -340,12 +306,10 @@ export function Editor({ mode }: { mode: Mode }) {
         setSelected(null);
       } else setProposal(result);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '解析に失敗しました';
+      const msg = errorText(e, '解析に失敗しました');
       setAnalysisError(msg);
       if (msg !== '解析を中止しました') track('analysis_fail', { error: msg.slice(0, 60), audioSec: buf.duration });
-      if (!songRef.current?.sections.length) {
-        edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)], audio: { offset: 0, duration: buf.duration } }));
-      }
+      if (!songRef.current?.sections.length) edit((s) => M.wholeSong(s, buf.duration, true));
     } finally {
       job.current = null;
       setProgress(null);
@@ -415,7 +379,7 @@ export function Editor({ mode }: { mode: Mode }) {
     return snap === 'bar' ? M.snapToBar(s, t, anchor) : M.snapToBeat(s, t);
   };
   const prevStart = (s: Song, i: number) => s.sections[i - 1]?.start;
-  const containingStart = (s: Song, t: number) => s.sections.find((x) => t >= x.start && t < x.end)?.start;
+  const containingStart = (s: Song, t: number) => M.sectionAt(s, t)?.start;
 
   // 「分割」：小節が分かれば「先頭から何小節で分けるか」を入力してもらう。分からなければ再生位置か真ん中で分ける
   function openSplit(s: Section) {
@@ -484,7 +448,7 @@ export function Editor({ mode }: { mode: Mode }) {
         setSaveError('編集の有効期限が切れたか、キーが再発行されました。キーを入力すると、変更を保持したまま保存できます。');
         setSessionState(null);
         setNeedKey(true);
-      } else setSaveError(`${e instanceof Error ? e.message : '保存できませんでした'}。変更はこの端末に残っています。`);
+      } else setSaveError(`${errorText(e, '保存できませんでした')}。変更はこの端末に残っています。`);
     }
   }
 
@@ -508,7 +472,7 @@ export function Editor({ mode }: { mode: Mode }) {
       if (songRef.current && dirty) { setNeedKey(false); setSaveState('idle'); setSaveError(''); return; }
       await loadSaved(s);
     } catch (e) {
-      return e instanceof Error ? e.message : '確認できませんでした';
+      return errorText(e, '確認できませんでした');
     }
   }
 
@@ -521,7 +485,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const bar = M.barSeconds(song);
   const beat = M.bpmOf(song) ? 60 / M.bpmOf(song)! : null;
   const step = snap === 'bar' && bar ? bar : snap !== 'off' && beat && M.hasGrid(song) ? beat : 0.1;
-  const currentSection = canPlay() ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
+  const currentSection = canPlay() ? M.sectionAt(song, now) ?? null : null;
   const current = currentSection?.id;
   // 曲の頭が音源ファイル・動画の何秒目か（ずれ）を、再生に反映する。再生の時刻や長さを表示する前に合わせる
   // （止まっているときは再描画が起きないため、描画のあとで合わせると古い長さが表示されたままになる）
@@ -549,8 +513,8 @@ export function Editor({ mode }: { mode: Mode }) {
       <header class="bar">
         <a href="#/" class="home"><img src="./favicon.svg" alt="" />曲のしおり</a>
         <span class="state">{id ? (meta ? `最終保存 ${new Date(meta.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '') : '下書き（この端末にだけ保存）'}</span>
-        <button class="small" onClick={undo} disabled={!history.current.length} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
-        <button class="small" onClick={redo} disabled={!future.current.length} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
+        <button class="small" onClick={undo} disabled={!h.canUndo} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
+        <button class="small" onClick={redo} disabled={!h.canRedo} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます（音源から作る・手動で作る・テキストから作る）">＋ 新しく作る</a>
       </header>
 
@@ -605,7 +569,7 @@ export function Editor({ mode }: { mode: Mode }) {
           {canAnalyze && !progress && (
             // 今の BPM（推定・手入力）を前提にやり直す。前提なしで推定し直すと、半分のテンポへの誤認などに戻ってしまうため
             <button class="small" title={M.bpmOf(song) ? `BPM ${M.bpmOf(song)} を前提に作り直します` : undefined}
-              onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', M.bpmOf(song) ?? undefined)}>自動生成をやり直す</button>
+              onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), M.bpmOf(song) ?? undefined)}>自動生成をやり直す</button>
           )}
         </div>
         {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
@@ -654,7 +618,7 @@ export function Editor({ mode }: { mode: Mode }) {
           selected={selected}
           onSeek={(t) => { if (hasAudio) seekTo(t); }}
           onSelect={setSelected}
-          onDragStart={() => { history.current = [...history.current.slice(-99), songRef.current!]; future.current = []; coalesce.current = null; }}
+          onDragStart={h.checkpoint}
           onDrag={(i, t) => edit((s) => M.moveBoundary(s, i, snapT(t, prevStart(s, i))), { history: false })}
         />
       </section>
@@ -700,7 +664,7 @@ export function Editor({ mode }: { mode: Mode }) {
           <div class="redo-bpm">
             <p>推定テンポは {song.bpmEst} と遅めです。速い曲なら、実際は2倍の <strong>{slowBpm}</strong> かもしれません（テンポを半分に聞き取る誤りはよくあります）。</p>
             {canAnalyze
-              ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', slowBpm)}>{slowBpm} で作り直す</button>
+              ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), slowBpm)}>{slowBpm} で作り直す</button>
               : <span class="sub">音源ファイルを選ぶと {slowBpm} で作り直せます。</span>}
             <button class="small" onClick={() => setSlowDismissed(true)}>{song.bpmEst} のままでよい</button>
           </div>
@@ -719,7 +683,7 @@ export function Editor({ mode }: { mode: Mode }) {
         ) : redoBpm && bpmCheck?.hint !== -1 && (canAnalyze
           ? <div class="redo-bpm">
               <p>区切りは推定テンポ {song.bpmEst ?? '未確定'} で作られています。BPM {redoBpm} で作り直すと、区切りと小節数が正確になります。</p>
-              <button class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', redoBpm)}>BPM {redoBpm} で自動生成をやり直す</button>
+              <button class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), redoBpm)}>BPM {redoBpm} で自動生成をやり直す</button>
             </div>
           : <p class="sub">音源ファイルを選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
@@ -915,85 +879,5 @@ export function Editor({ mode }: { mode: Mode }) {
         )}
       </footer>
     </main>
-  );
-}
-
-function Progress({ p, onCancel }: { p: { ratio: number; stage: string }; onCancel?: () => void }) {
-  return (
-    <div class="progress" role="status">
-      <div class="meter"><div style={{ width: `${Math.round(p.ratio * 100)}%` }} /></div>
-      <span>{p.stage}（{Math.round(p.ratio * 100)}%）この端末の中で解析しています。ページを閉じると中断されます。</span>
-      {onCancel && <button class="small" onClick={onCancel}>中止</button>}
-    </div>
-  );
-}
-
-function TimeInput({ value, onChange }: { value: number | null; onChange: (t: number | null) => void }) {
-  const [text, setText] = useState(value == null ? '' : fmt(value, 2));
-  const [focus, setFocus] = useState(false);
-  useEffect(() => { if (!focus) setText(value == null ? '' : fmt(value, 2)); }, [value, focus]);
-  const commit = () => {
-    setFocus(false);
-    if (text.trim() === '') { onChange(null); return; }
-    const t = parseTime(text);
-    if (t == null) setText(value == null ? '' : fmt(value, 2));
-    else onChange(t);
-  };
-  return (
-    <input class="time-input" value={text} placeholder="未設定" inputMode="decimal" aria-label="時刻（分:秒）"
-      onFocus={() => setFocus(true)}
-      onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }} />
-  );
-}
-
-function KeyForm({ onSubmit, inline }: { onSubmit: (key: string, remember: boolean) => Promise<string | undefined>; inline?: boolean }) {
-  const [key, setKey] = useState('');
-  const [remember, setRemember] = useState(true);
-  const [error, setError] = useState('');
-  const body = (
-    <section class="card">
-      <h2>キーを入力</h2>
-      <p>この曲メモを編集するには、<strong>編集キー</strong>（メンバー用）か<strong>管理キー</strong>（作成者用）が必要です。</p>
-      <form onSubmit={async (e) => { e.preventDefault(); setError((await onSubmit(key, remember)) ?? ''); }}>
-        <input value={key} autoComplete="off" spellcheck={false} placeholder="48桁の英数字" onInput={(e) => setKey((e.currentTarget as HTMLInputElement).value)} />
-        <label class="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する（共用端末では外してください）</label>
-        <button class="primary" type="submit">編集を始める</button>
-      </form>
-      {error && <p class="error">{error}</p>}
-    </section>
-  );
-  return inline ? body : <main class="page narrow">{body}<a href="#/">トップへ</a></main>;
-}
-
-function CreatedDialog({ info, onRemember, onClose }: { info: { viewId: string; key: string; editKey: string; title: string; artist: string }; onRemember: (r: boolean) => void; onClose: () => void }) {
-  const [copied, setCopied] = useState('');
-  const url = viewUrl(info.viewId);
-  const message = memberMessage(info.title, info.artist, url, info.editKey);
-  const row = (label: string, value: string, k: string) => (
-    <div class="copy-row"><code>{value}</code><button onClick={async () => setCopied((await copy(value)) ? k : '')}>{copied === k ? 'コピー済み' : 'コピー'}</button></div>
-  );
-  return (
-    <div class="dialog-back">
-      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="created-title">
-        <h2 id="created-title">保存しました</h2>
-        <h3>閲覧URL（メンバーに共有）</h3>
-        <p class="sub">URLを知っている人は構成表を見られます。</p>
-        {row('閲覧URL', url, 'url')}
-        <ShareButtons text={() => shareMessage(info.title, info.artist, url)} />
-        <h3>編集キー（メンバーに共有）</h3>
-        <p class="sub">閲覧ページの「編集する」で入れると、構成を直して保存できます。削除や共有の管理はできません。</p>
-        {row('編集キー', info.editKey, 'edit')}
-        <ShareButtons text={() => message} copyLabel="メンバーに送る文をコピー" copied="閲覧URLと編集キーをコピーしました。" />
-        <h3>管理キー（あなただけが控える）</h3>
-        <p class="warn">削除・共有の管理・キーの再発行に必要です。アカウントがないため、<strong>なくすと復旧できません</strong>。メンバーには渡さず、安全な場所に控えてください。</p>
-        {row('管理キー', info.key, 'key')}
-        <div class="dialog-foot">
-          <label class="check"><input type="checkbox" defaultChecked onChange={(e) => onRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する</label>
-          <button class="primary" onClick={onClose}>控えました</button>
-        </div>
-      </div>
-    </div>
   );
 }

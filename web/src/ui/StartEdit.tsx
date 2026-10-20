@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api } from '../api';
 import * as L from '../storage/local';
-import { go } from './util';
+import { errorText, go } from './util';
 
 // 閲覧ページから編集を始める。編集キー（メンバー用）か管理キー（作成者用）を入れると、その曲の編集画面に移る
 export function StartEdit({ viewId, title }: { viewId: string; title: string }) {
@@ -24,7 +24,7 @@ export function StartEdit({ viewId, title }: { viewId: string; title: string }) 
         L.rememberMine({ id: r.id, title, updatedAt: Date.now() });
         go(`#/e/${r.id}`);
       } catch (err) {
-        setError(err instanceof Error ? err.message : '確認できませんでした');
+        setError(errorText(err, '確認できませんでした'));
       } finally {
         setBusy(false);
       }

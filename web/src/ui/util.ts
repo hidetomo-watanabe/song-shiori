@@ -13,6 +13,9 @@ export function parseTime(text: string): number | null {
   return (m[1] ? Number(m[1]) * 60 : 0) + Number(m[2]);
 }
 
+// 例外からエラーの文を取り出す。Error でなければ fallback を使う
+export const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+
 export const fmtDate = (ms: number) =>
   new Date(ms).toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -75,5 +78,7 @@ export async function copyWithToast(text: string, done: string) {
   toast((await copy(text)) ? done : 'コピーできませんでした。長押しして選び、コピーしてください。');
 }
 
+// 作成直後の情報（保存直後のダイアログで控えてもらうキー）
+export type Created = { id: string; viewId: string; key: string; editKey: string; title: string; artist: string };
 // 画面間の受け渡し（選択したファイル、作成直後の秘密キー）
-export const handoff: { file: File | null; created: { id: string; viewId: string; key: string; editKey: string; title: string; artist: string } | null } = { file: null, created: null };
+export const handoff: { file: File | null; created: Created | null } = { file: null, created: null };
