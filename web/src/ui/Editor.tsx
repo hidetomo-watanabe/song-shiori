@@ -305,17 +305,24 @@ export function Editor({ mode }: { mode: Mode }) {
     setNow(t);
   }
 
+  // 止めている再生位置（シークバーで動かした位置など）がこの区間の中なら、そこから再生する
+  const resumeAt = (s: Section) => {
+    const t = player.currentTime;
+    return !player.playing && t > s.start + 0.05 && t < s.end - 0.05 ? t : null;
+  };
+
   function playSection(s: Section) {
     if (loopId) { setLoopId(s.id); player.loop = { start: s.start, end: s.end }; }
-    player.play(s.start);
+    player.play(resumeAt(s) ?? s.start);
     setSelected(s.id);
     syncNow();
   }
   function toggleLoop(s: Section) {
     if (loopId === s.id) { setLoopId(null); player.setLoop(null); return; }
     setLoopId(s.id);
+    const from = resumeAt(s);
     player.setLoop({ start: s.start, end: s.end });
-    if (!player.playing) player.play(s.start);
+    if (!player.playing) player.play(from ?? s.start);
     syncNow();
     track('loop_play');
   }
@@ -622,7 +629,7 @@ export function Editor({ mode }: { mode: Mode }) {
               <div class="sec-actions">
                 {hasAudio && (playing && current === s.id
                   ? <button class="small row-play on" onClick={togglePlay}>停止</button>
-                  : <button class="small row-play" onClick={() => playSection(s)}>ここから再生</button>)}
+                  : <button class="small row-play" onClick={() => playSection(s)}>{current === s.id && resumeAt(s) != null ? `${fmt(now)}から再生` : 'ここから再生'}</button>)}
                 {hasAudio && <button class={`small${loopId === s.id ? ' on' : ''}`} onClick={() => toggleLoop(s)}>{loopId === s.id ? 'ループ解除' : 'ループ'}</button>}
                 <button class={`small${splitForm?.id === s.id ? ' on' : ''}`} onClick={() => (splitForm?.id === s.id ? setSplitForm(null) : openSplit(s))}>分割</button>
                 {i < song.sections.length - 1 && <button class="small" onClick={() => edit((x) => M.mergeWithNext(x, s.id))}>次と結合</button>}
