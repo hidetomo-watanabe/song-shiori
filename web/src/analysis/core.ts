@@ -5,7 +5,7 @@
 //   4. 小節ごとの特徴量の自己類似行列から、区切り（新規性の山）と繰り返しを推定
 import type { AnalysisResult } from '../../../shared/song';
 
-export const ANALYSIS_VERSION = 'proto-0.3'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける
+export const ANALYSIS_VERSION = 'proto-0.4'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -322,6 +322,71 @@ function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number, mi
   return chosen;
 }
 
+// 繰り返しの並びを使って区切りを補う。
+// 小節どうしの類似度の表で、斜めに高い値が続く帯（ある部分が lag 小節後ろでもそのまま繰り返している）を探し、
+// 繰り返している部分の中にある区切りを、同じだけ後ろ・前にも写す（例：1番の Bメロの区切り → 2番の Bメロの区切り）。
+// 写した位置の区切りらしさが低すぎるもの（サビの中の小さな繰り返しなど）は採らない
+export type RepetitionOptions = { quantile?: number; minRun?: number; minLag?: number; novFloor?: number; minGap?: number; passes?: number };
+type Run = { i: number; j: number; len: number };
+function findRuns(S: number[][], o: RepetitionOptions = {}): Run[] {
+  const n = S.length;
+  // 既定値は検証音源（ゲット・アップ・ルーシー）の正解データで調整。ほかの曲で区間の数が大きく変わらないことも確認
+  const quantile = o.quantile ?? 0.7, minRun = o.minRun ?? 4, minLag = o.minLag ?? 6;
+  const vals: number[] = [];
+  for (let i = 0; i < n; i++) for (let j = i + minLag; j < n; j++) vals.push(S[i][j]);
+  if (!vals.length) return [];
+  vals.sort((a, b) => a - b);
+  const thr = vals[Math.floor(vals.length * quantile)];
+  // 繰り返しの帯：[i, i+len) が [i+lag, i+lag+len) で繰り返す。1小節だけの途切れは許す
+  const runs: Run[] = [];
+  for (let lag = minLag; lag < n - minRun; lag++) {
+    let start = -1, gap = 0;
+    for (let i = 0; i + lag <= n; i++) {
+      const hit = i + lag < n && S[i][i + lag] >= thr;
+      if (hit) { if (start < 0) start = i; gap = 0; continue; }
+      if (start >= 0 && gap === 0 && i + lag < n) { gap = 1; continue; }
+      if (start >= 0) {
+        const end = i - gap;
+        if (end - start >= minRun) runs.push({ i: start, j: start + lag, len: end - start });
+      }
+      start = -1; gap = 0;
+    }
+  }
+  return runs;
+}
+
+function refineByRepetition(S: number[][], nov: Float64Array, cuts: number[], runs: Run[], o: RepetitionOptions = {}): number[] {
+  const n = S.length;
+  const novFloor = o.novFloor ?? 0, minGap = o.minGap ?? 3;
+  const { mean, sd } = stats(nov);
+  const strong = (k: number) => Math.max(nov[k] ?? -Infinity, nov[k - 1] ?? -Infinity, nov[k + 1] ?? -Infinity) >= mean + novFloor * sd;
+  let result = cuts.slice();
+  for (let pass = 0; pass < (o.passes ?? 2); pass++) {
+    // 区切りを繰り返しで写した先と、そこを支持する数（何か所の区切りから写されたか）
+    const support = new Map<number, number>();
+    for (const b of result) {
+      for (const r of runs) {
+        const to = b > r.i && b < r.i + r.len ? b - r.i + r.j : b > r.j && b < r.j + r.len ? b - r.j + r.i : -1;
+        if (to > 0 && to < n) support.set(to, (support.get(to) ?? 0) + 1);
+      }
+    }
+    let grew = false;
+    for (const [c, count] of [...support].sort((x, y) => y[1] - x[1] || nov[y[0]] - nov[x[0]])) {
+      if (!strong(c) || result.includes(c)) continue;
+      const near = result.filter((x) => Math.abs(x - c) < minGap);
+      // 近くの区切りより多くの繰り返しから支持されていれば置き換える
+      // （4小節単位で選んだ区切りが、4小節＋6小節のような並びで2小節ずれている場合など）
+      if (near.length && !near.every((x) => count > (support.get(x) ?? 0))) continue;
+      result = result.filter((x) => !near.includes(x));
+      result.push(c);
+      grew = true;
+    }
+    result.sort((x, y) => x - y);
+    if (!grew) break;
+  }
+  return result;
+}
+
 function pickBoundaries(S: number[][], half: number, minGap: number, phrase: boolean): number[] {
   const n = S.length;
   const nov = novelty(S, half);
@@ -385,7 +450,7 @@ function findSilence(f: Features, frameTime: (t: number) => number, duration: nu
 // opts.phrase：区切りを何小節ごとの格子から選ぶか（既定 4。0 なら格子を使わず、新規性の山から選ぶ従来の方式）
 export function analyze(
   y: Float32Array, sr: number, progress: Progress = () => {},
-  opts: { bpm?: number; phrase?: number; phraseThreshold?: number; minGap?: number } = {},
+  opts: { bpm?: number; phrase?: number; phraseThreshold?: number; minGap?: number; repetition?: RepetitionOptions | false } = {},
 ): AnalysisResult {
   const duration = y.length / sr;
   const f = extract(y, sr, progress);
@@ -426,7 +491,11 @@ export function analyze(
   const n = feats.length;
   const S = feats.map((a) => feats.map((b) => dot(a, b)));
   const phrase = opts.phrase ?? 4;
-  const cuts = n < 8 ? [] : !beatsUncertain && phrase > 0 ? pickOnPhraseGrid(novelty(S, 4), phrase, opts.phraseThreshold ?? 0.4, opts.minGap ?? 4) : pickBoundaries(S, 4, 4, !beatsUncertain);
+  const nov = novelty(S, 4);
+  const base = n < 8 ? [] : !beatsUncertain && phrase > 0 ? pickOnPhraseGrid(nov, phrase, opts.phraseThreshold ?? 0.4, opts.minGap ?? 4) : pickBoundaries(S, 4, 4, !beatsUncertain);
+  const useRuns = n >= 8 && !beatsUncertain && opts.repetition !== false;
+  const runs = useRuns ? findRuns(S, opts.repetition || {}) : [];
+  const cuts = useRuns ? refineByRepetition(S, nov, base, runs, opts.repetition || {}) : base;
   const unitIdx = [0, ...cuts, n];
 
   // 繰り返しのまとめ：曲全体で「普通より似ている」水準を超えたら同じグループ

@@ -13,7 +13,9 @@ import { parseTruth, type Truth } from '../shared/truth.ts';
 
 const args = process.argv.slice(2);
 const opt = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? Number(args.splice(i, 2)[1]) : undefined; };
-const tuning = { phrase: opt('phrase'), phraseThreshold: opt('threshold'), minGap: opt('mingap') };
+const rep = { quantile: opt('rq'), minRun: opt('rrun'), minLag: opt('rlag'), novFloor: opt('rfloor'), minGap: opt('rgap') };
+const tuning = { phrase: opt('phrase'), phraseThreshold: opt('threshold'), minGap: opt('mingap'), repetition: args.includes('--norep') ? false as const : rep };
+if (args.includes('--norep')) args.splice(args.indexOf('--norep'), 1);
 const folder = args[0] ?? join(import.meta.dirname, '../../../whathides/曲のしおり/検証音源');
 const cacheDir = join(tmpdir(), 'song-shiori-eval');
 mkdirSync(cacheDir, { recursive: true });
