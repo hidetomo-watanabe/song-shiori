@@ -184,6 +184,7 @@ label.check.follow { margin: 0; font-size: 13px; }
 .dialog { background: var(--card); border-radius: 12px; padding: 20px; max-width: 560px; width: 100%; max-height: 90vh; overflow: auto; }
 
 .redo-bpm { border: 1px dashed var(--accent); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.redo-bpm.warn-box { border: 1px solid var(--warn); background: var(--warn-bg); }
 .redo-bpm p { margin: 0 0 6px; font-size: 13px; }
 .bpm-lookup { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
 .bpm-lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

@@ -66,6 +66,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const [proposal, setProposal] = useState<AnalysisResult | null>(null);
   const [notice, setNotice] = useState('');
   const [confirmReset, setConfirmReset] = useState(false);
+  // BPM を指定してやり直したとき、音から測ったテンポが指定と違った場合の記録
+  const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -254,6 +256,7 @@ export function Editor({ mode }: { mode: Mode }) {
       const j = runAnalysis(samples, (ratio, stage) => setProgress({ ratio, stage }), bpm);
       job.current = j;
       const { result, ms } = await j.promise;
+      setBpmCheck(bpm && result.bpm ? { hint: bpm, measured: result.bpm } : null);
       track('analysis_ok', { durationMs: Math.round(ms), audioSec: buf.duration });
       if (how === 'replace') {
         edit((s) => M.songFromAnalysis(result, s));
@@ -554,7 +557,18 @@ export function Editor({ mode }: { mode: Mode }) {
             ? '（小節の線は、解析で見つけた拍に沿って引いています。テンポの揺れに追従します）'
             : '（小節の線は、BPM と最初の小節頭から等間隔に引いています）')}
         </p>
-        {redoBpm && (hasAudio
+        {redoBpm && bpmCheck?.hint === redoBpm && Math.abs(bpmCheck.measured / redoBpm - 1) > 0.03 ? (
+          <div class="redo-bpm warn-box">
+            <p>BPM {redoBpm} を前提に解析し直しましたが、音から測ったテンポは <strong>{bpmCheck.measured}</strong> でした。BPM {redoBpm} のままだと、小節の線が実際の拍とずれ、小節数が合わない可能性があります。</p>
+            <button class="small primary" onClick={() => {
+              const m = bpmCheck.measured;
+              // 推定がすでに測った値と揃っていれば手入力をやめて推定を使い、揃っていなければ測った値を入れる
+              edit((s) => M.setTempo(s, { bpmManual: s.bpmEst != null && Math.abs(s.bpmEst / m - 1) <= 0.03 ? null : m }));
+              setBpmCheck(null);
+            }}>{bpmCheck.measured} を使う</button>
+            <button class="small" onClick={() => setBpmCheck({ ...bpmCheck, hint: -1 })}>{redoBpm} のままにする</button>
+          </div>
+        ) : redoBpm && bpmCheck?.hint !== -1 && (hasAudio
           ? <div class="redo-bpm">
               <p>区切りは自動生成時のテンポ（{song.bpmEst ?? '未確定'}）を元に推定しています。BPM {redoBpm} を前提に、拍・小節・区切りを推定し直せます。</p>
               <button class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', redoBpm)}>BPM {redoBpm} で自動生成をやり直す</button>
