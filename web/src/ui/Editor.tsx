@@ -531,7 +531,9 @@ export function Editor({ mode }: { mode: Mode }) {
               <input class="memo" value={s.memo} maxLength={2000} placeholder="メモ（入り・キメ・終わり方など）" aria-label="メモ"
                 onInput={(e) => edit((x) => M.patchSection(x, s.id, { memo: (e.currentTarget as HTMLInputElement).value }), { coalesce: `memo-${s.id}` })} />
               <div class="sec-actions">
-                {hasAudio && <button class="small" onClick={() => playSection(s)}>ここから再生</button>}
+                {hasAudio && (playing && current === s.id
+                  ? <button class="small row-play on" onClick={togglePlay}>停止</button>
+                  : <button class="small row-play" onClick={() => playSection(s)}>ここから再生</button>)}
                 {hasAudio && <button class={`small${loopId === s.id ? ' on' : ''}`} onClick={() => toggleLoop(s)}>{loopId === s.id ? 'ループ解除' : 'ループ'}</button>}
                 <button class="small" onClick={() => {
                   const inside = hasAudio && now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION;
@@ -569,6 +571,12 @@ export function Editor({ mode }: { mode: Mode }) {
           </div>
         )}
         <div class="save-row">
+          {hasAudio && (
+            <span class="mini-player">
+              <button class={`small${playing ? ' on' : ''}`} onClick={togglePlay} aria-label={playing ? '一時停止' : '再生'}>{playing ? '■ 停止' : '▶ 再生'}</button>
+              <span class="time">{fmt(now)}</span>
+            </span>
+          )}
           <span class={`save-state ${saveState}`}>
             {saveState === 'saving' ? '保存中…' : saveState === 'saved' ? '保存済み' : saveState === 'error' ? '保存できませんでした' : dirty ? (id ? '未保存の変更があります（この端末に退避済み）' : '未保存（この端末に下書きとして退避済み）') : '変更なし'}
           </span>

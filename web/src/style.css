@@ -151,7 +151,10 @@ label.check input { min-height: 0; }
 .save-opts > input { flex: 1 1 220px; }
 .save-opts label.check { margin: 0; }
 .save-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
-.save-state { font-size: 13px; color: var(--sub); }
+.save-state { font-size: 13px; color: var(--sub); flex: 1; }
+/* 「ここから再生」と「停止」で幅を変えず、隣のボタンを押し間違えないようにする */
+.row-play { min-width: 7.5em; justify-content: center; }
+.mini-player { display: inline-flex; align-items: center; gap: 6px; }
 .save-state.saved { color: var(--ok); }
 .save-state.error { color: var(--danger); }
 .conflict { display: flex; gap: 8px; flex-wrap: wrap; }
