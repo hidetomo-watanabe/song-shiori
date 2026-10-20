@@ -68,6 +68,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const [confirmReset, setConfirmReset] = useState(false);
   // BPM を指定してやり直したとき、音から測ったテンポが指定と違った場合の記録
   const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
+  const [slowDismissed, setSlowDismissed] = useState(false);
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -443,6 +444,9 @@ export function Editor({ mode }: { mode: Mode }) {
   const hasAudio = !!player.buffer;
   const totalBars = song.sections.reduce((p, s) => p + (s.barsManual ?? s.barsEst ?? 0), 0);
   // 手入力・ネット上の BPM が自動生成時の推定と違うとき（倍・半分の誤認など）は、そのBPMでやり直せるようにする
+  // 推定が遅め（90未満）なら、2倍のテンポかもしれないと知らせる（半分のテンポへの誤認がよくあるため）
+  const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain
+    ? Math.round(song.bpmEst * 20) / 10 : null;
   const redoBpm = song.analysis && song.bpmManual != null && (song.bpmEst == null || Math.abs(song.bpmManual / song.bpmEst - 1) > 0.03) ? song.bpmManual : null;
 
   return (
@@ -494,7 +498,11 @@ export function Editor({ mode }: { mode: Mode }) {
               if (f) void loadAudio(f, false);
             }} />
           </label>
-          {hasAudio && !progress && <button class="small" onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace')}>自動生成をやり直す</button>}
+          {hasAudio && !progress && (
+            // 今の BPM（推定・手入力）を前提にやり直す。前提なしで推定し直すと、半分のテンポへの誤認などに戻ってしまうため
+            <button class="small" title={M.bpmOf(song) ? `BPM ${M.bpmOf(song)} を前提に作り直します` : undefined}
+              onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', M.bpmOf(song) ?? undefined)}>自動生成をやり直す</button>
+          )}
         </div>
         {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）</p>}
         {!hasAudio && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
@@ -554,6 +562,15 @@ export function Editor({ mode }: { mode: Mode }) {
             </span>
           </label>
         </div>
+        {slowBpm && !slowDismissed && (
+          <div class="redo-bpm">
+            <p>推定テンポは {song.bpmEst} と遅めです。速い曲なら、実際は2倍の <strong>{slowBpm}</strong> かもしれません（テンポを半分に聞き取る誤りはよくあります）。</p>
+            {hasAudio
+              ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', slowBpm)}>{slowBpm} で作り直す</button>
+              : <span class="sub">音源を選ぶと {slowBpm} で作り直せます。</span>}
+            <button class="small" onClick={() => setSlowDismissed(true)}>{song.bpmEst} のままでよい</button>
+          </div>
+        )}
         {redoBpm && bpmCheck?.hint === redoBpm && Math.abs(bpmCheck.measured / redoBpm - 1) > 0.03 ? (
           <div class="redo-bpm warn-box">
             <p>BPM {redoBpm} で解析し直しましたが、音から測ると <strong>{bpmCheck.measured}</strong> でした。{redoBpm} のままだと小節数がずれる可能性があります。</p>
