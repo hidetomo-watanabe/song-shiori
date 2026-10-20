@@ -330,11 +330,14 @@ export function Editor({ mode }: { mode: Mode }) {
     track('loop_play');
   }
 
-  const snapT = (t: number) => {
+  // 境界の吸着。小節の頭に合わせるときは、その境界の手前の区間の始まり（anchor）から小節を数える
+  const snapT = (t: number, anchor?: number) => {
     const s = songRef.current;
     if (!s || snap === 'off') return t;
-    return snap === 'bar' ? M.snapToBar(s, t) : M.snapToBeat(s, t);
+    return snap === 'bar' ? M.snapToBar(s, t, anchor) : M.snapToBeat(s, t);
   };
+  const prevStart = (s: Song, i: number) => s.sections[i - 1]?.start;
+  const containingStart = (s: Song, t: number) => s.sections.find((x) => t >= x.start && t < x.end)?.start;
 
   // 「分割」：小節が分かれば「先頭から何小節で分けるか」を入力してもらう。分からなければ再生位置か真ん中で分ける
   function openSplit(s: Section) {
@@ -342,7 +345,7 @@ export function Editor({ mode }: { mode: Mode }) {
     const barLen = M.barSeconds(cur);
     const inside = !!player.buffer && now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION;
     if (!barLen) {
-      edit((x) => M.splitAt(x, inside ? snapT(now) : snapT((s.start + s.end) / 2)));
+      edit((x) => M.splitAt(x, inside ? snapT(now, s.start) : snapT((s.start + s.end) / 2, s.start)));
       return;
     }
     const total = s.barsManual ?? s.barsEst ?? 0;
@@ -518,7 +521,7 @@ export function Editor({ mode }: { mode: Mode }) {
           onSeek={(t) => { if (hasAudio) seekTo(t); }}
           onSelect={setSelected}
           onDragStart={() => { history.current = [...history.current.slice(-99), songRef.current!]; future.current = []; coalesce.current = null; }}
-          onDrag={(i, t) => edit((s) => M.moveBoundary(s, i, snapT(t)), { history: false })}
+          onDrag={(i, t) => edit((s) => M.moveBoundary(s, i, snapT(t, prevStart(s, i))), { history: false })}
         />
       </section>
 
@@ -586,7 +589,7 @@ export function Editor({ mode }: { mode: Mode }) {
       <section class="card sections">
         <div class="sections-head">
           <h2>構成</h2>
-          {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now)))}>再生位置で分割</button>}
+          {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now, containingStart(s, now))))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
           <label class="inline snap">境界を合わせる先
@@ -637,9 +640,9 @@ export function Editor({ mode }: { mode: Mode }) {
                 {i === 0 ? <span class="t">{fmt(s.start)}</span> : (
                   <span class="t-edit">
                     <button class="tiny" aria-label="開始を早める" onClick={() => edit((x) => M.moveBoundary(x, i, s.start - step))}>−</button>
-                    <TimeInput value={s.start} onChange={(t) => t != null && edit((x) => M.moveBoundary(x, i, snapT(t)))} />
+                    <TimeInput value={s.start} onChange={(t) => t != null && edit((x) => M.moveBoundary(x, i, snapT(t, prevStart(x, i))))} />
                     <button class="tiny" aria-label="開始を遅らせる" onClick={() => edit((x) => M.moveBoundary(x, i, s.start + step))}>＋</button>
-                    {hasAudio && <button class="tiny" title="開始位置を再生位置に合わせる" onClick={() => edit((x) => M.moveBoundary(x, i, snapT(now)))}>⇤</button>}
+                    {hasAudio && <button class="tiny" title="開始位置を再生位置に合わせる" onClick={() => edit((x) => M.moveBoundary(x, i, snapT(now, prevStart(x, i))))}>⇤</button>}
                   </span>
                 )}
                 <span class="t">〜 {fmt(s.end)}</span>

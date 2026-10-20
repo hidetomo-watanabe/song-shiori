@@ -148,12 +148,15 @@ export function newSection(start: number, end: number, init: Partial<Section> = 
 
 // 推定小節数を再計算し、自動の名前を付け直す
 export function normalize(song: Song): Song {
-  const lines = barLines(song);
+  // 小節数は区間ごとに、その区間の始まりから拍を数えて求める（拍の数 ÷ 拍子）。
+  // 曲の頭から通しで数えると、最初の小節頭のずれや途中の2拍だけの小節が、後ろの区間すべてに持ち越されるため
+  const beats = beatGrid(song);
+  const perBar = Math.max(1, song.beatsPerBar);
   const total = new Map<string, number>();
   for (const s of song.sections) if (s.group) total.set(s.group, (total.get(s.group) ?? 0) + 1);
   const seen = new Map<string, number>();
   const sections = song.sections.map((s) => {
-    const barsEst = lines && !s.silence ? Math.max(0, Math.round(indexAt(lines, s.end) - indexAt(lines, s.start))) : null;
+    const barsEst = beats && !s.silence ? Math.max(0, Math.round((indexAt(beats, s.end) - indexAt(beats, s.start)) / perBar)) : null;
     let name = s.name;
     if (s.nameAuto && !s.silence) {
       // 例：パートA（1回目）・パートA（2回目）。1回しか出てこなければ「パートA」
@@ -310,16 +313,24 @@ export function snapToBeat(song: Song, t: number): number {
   return beats ? timeAt(beats, Math.round(indexAt(beats, t))) : t;
 }
 
-// 最も近い小節の頭の位置を返す
-export function snapToBar(song: Song, t: number): number {
-  const lines = barLines(song);
-  return lines ? timeAt(lines, Math.round(indexAt(lines, t))) : t;
+// 最も近い小節の頭の位置を返す。anchor（その区間の始まりなど）を渡すと、そこから拍子の数ずつ拍を数えた位置に合わせる。
+// 渡さなければ、最初の小節頭から通しで数えた小節の線に合わせる
+export function snapToBar(song: Song, t: number, anchor?: number): number {
+  if (anchor == null) {
+    const lines = barLines(song);
+    return lines ? timeAt(lines, Math.round(indexAt(lines, t))) : t;
+  }
+  const beats = beatGrid(song);
+  if (!beats) return t;
+  const perBar = Math.max(1, song.beatsPerBar);
+  const k0 = Math.round(indexAt(beats, anchor));
+  return timeAt(beats, k0 + Math.round((indexAt(beats, t) - k0) / perBar) * perBar);
 }
 
-// 区間の先頭から n 小節の位置（小節の頭に合わせる）。小節が未確定なら null
+// 区間の先頭から n 小節の位置（区間の始まりから拍を数える）。小節が未確定なら null
 export function barPositionIn(song: Song, sec: Section, n: number): number | null {
-  const lines = barLines(song);
-  return lines ? timeAt(lines, Math.round(indexAt(lines, sec.start)) + n) : null;
+  const beats = beatGrid(song);
+  return beats ? timeAt(beats, Math.round(indexAt(beats, sec.start)) + n * Math.max(1, song.beatsPerBar)) : null;
 }
 
 // 自動解析の結果から曲メモを作る

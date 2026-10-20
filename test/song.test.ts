@@ -144,7 +144,7 @@ describe('編集ルール', () => {
   it('小節の頭へのスナップと、区間の先頭から n 小節の位置', () => {
     const s = setTempo(sample(), { firstDownbeat: 0.5 }); // 1小節2秒、小節の頭は 0.5, 2.5, 4.5 …
     expect(snapToBar(s, 17.2)).toBeCloseTo(16.5);
-    expect(barPositionIn(s, s.sections[1], 4)).toBeCloseTo(24.5); // 区間B（16秒〜）の4小節目の後
+    expect(barPositionIn(s, s.sections[1], 4)).toBeCloseTo(24); // 区間B（16秒〜）の始まりから4小節
     const t = barPositionIn(s, s.sections[1], 4)!;
     expect(splitAt(s, t).sections.slice(1, 3).map((x) => x.barsEst)).toEqual([4, 12]);
     expect(barPositionIn({ ...s, bpmEst: null }, s.sections[1], 4)).toBeNull();
@@ -165,6 +165,22 @@ describe('編集ルール', () => {
     const uniform = setTempo(s, { bpmManual: 100 });
     expect(usesDetectedBeats(uniform)).toBe(false);
     expect(uniform.sections[2].barsEst).not.toBe(8);
+  });
+
+  it('途中に2拍だけの小節があっても、区間ごとに小節を数えるので後ろの区間がずれない', () => {
+    // 120BPM（1拍0.5秒）。0〜16秒が8小節、16〜17秒が2拍だけの小節、17〜33秒が8小節
+    const beats = Array.from({ length: 70 }, (_, i) => i * 0.5);
+    let s = normalize({ ...emptySong(35), bpmEst: 120, beats, firstDownbeat: 0,
+      sections: [newSection(0, 16), newSection(16, 17), newSection(17, 33), newSection(33, 35)] });
+    expect(s.sections.map((x) => x.barsEst)).toEqual([8, 1, 8, 1]);
+    // 3つ目の区間の「先頭から4小節」は 17 + 8 = 25秒（通しで数えた小節の線 24・26 ではない）
+    expect(barPositionIn(s, s.sections[2], 4)).toBeCloseTo(25);
+    // その区間の始まりから数えて、近い小節の頭に吸着する
+    expect(snapToBar(s, 24.6, s.sections[2].start)).toBeCloseTo(25);
+    expect(snapToBar(s, 24.6)).toBeCloseTo(24); // 通しの線（anchor なし）
+    // 最初の小節頭がずれていても、区間の小節数は変わらない
+    s = setTempo(s, { firstDownbeat: 1 });
+    expect(s.sections.map((x) => x.barsEst)).toEqual([8, 1, 8, 1]);
   });
 
   it('拍へのスナップ', () => {
