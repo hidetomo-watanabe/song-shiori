@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { fmt } from './util';
 
 type Track = { title: string; artist: string; seconds: number; url: string };
@@ -10,16 +10,33 @@ type Props = {
 };
 
 // 曲を検索：ライブのしおりと同じく iTunes Search API をブラウザから直接呼び、候補から選んでもらう。
-// 押したときだけ曲名・アーティスト名を Apple に送る
+// 押したときだけ曲名・アーティスト名を Apple に送る。候補を選ばなくても、入力した曲名・アーティストのまま使える
 export function SongLookup({ title, artist, duration, onPick }: Props) {
   const [results, setResults] = useState<Track[] | null>(null);
   const [status, setStatus] = useState('');
+  const searched = useRef('');
+
+  // 検索したあとに曲名・アーティストを書き換えたら、古い候補と案内は消す
+  useEffect(() => {
+    if (searched.current && searched.current !== `${title}\n${artist}`) {
+      searched.current = '';
+      setResults(null);
+      setStatus('');
+    }
+  }, [title, artist]);
+
+  const close = () => {
+    searched.current = '';
+    setResults(null);
+    setStatus('');
+  };
 
   async function search() {
     const term = `${title} ${artist}`.trim();
     if (!term) return;
     setStatus('検索しています…');
     setResults(null);
+    searched.current = `${title}\n${artist}`;
     try {
       const q = new URLSearchParams({ term, country: 'JP', media: 'music', entity: 'song', limit: '5', lang: 'ja_jp' });
       const res = await fetch(`https://itunes.apple.com/search?${q}`, { referrerPolicy: 'no-referrer' });
@@ -34,7 +51,7 @@ export function SongLookup({ title, artist, duration, onPick }: Props) {
           url: /^https:\/\/(music|itunes)\.apple\.com\//.test(x.trackViewUrl ?? '') ? x.trackViewUrl : '',
         }));
       setResults(found);
-      setStatus(found.length ? '' : '見つかりませんでした。曲名やアーティスト名を変えて試してください。');
+      setStatus(found.length ? '' : '見つかりませんでした。入力した曲名・アーティストのままで続けられます。');
     } catch {
       setStatus('検索できませんでした。時間をおいて試してください。');
     }
@@ -54,12 +71,16 @@ export function SongLookup({ title, artist, duration, onPick }: Props) {
                 {duration && t.seconds && Math.abs(duration - t.seconds) > 5 ? <span class="tag">音源と長さが違います</span> : null}
                 {t.url && <a class="sub" href={t.url} target="_blank" rel="noopener noreferrer"> Apple Music で見る</a>}
               </div>
-              <button class="small" onClick={() => { onPick(t); setResults(null); setStatus(`曲名を「${t.title}」、アーティストを「${t.artist}」にしました。`); }}>これにする</button>
+              <button class="small" onClick={() => { onPick(t); searched.current = `${t.title}\n${t.artist}`; setResults(null); setStatus(`曲名を「${t.title}」、アーティストを「${t.artist}」にしました。`); }}>これにする</button>
             </li>
           ))}
-          <li class="sub">iTunes の検索結果より。曲名・アーティスト名だけを Apple に送ります。</li>
+          <li class="lookup-none">
+            <span class="sub">iTunes の検索結果より。曲名・アーティスト名だけを Apple に送ります。</span>
+            <button class="small" onClick={close}>どれでもない（入力のまま使う）</button>
+          </li>
         </ul>
       )}
+      {status && !results?.length && status !== '検索しています…' && <button class="link sub" onClick={close}>閉じる</button>}
     </div>
   );
 }

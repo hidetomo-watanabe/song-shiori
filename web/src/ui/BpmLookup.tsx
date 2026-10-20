@@ -58,6 +58,7 @@ export function BpmLookup({ title, artist, bpmEst, bpm, onApply }: Props) {
       {!title.trim() && <p class="sub">曲名（とアーティスト名）を入力すると、ネット上のBPM情報を調べます。</p>}
       {state.status === 'error' && <p class="error">{state.error}</p>}
       {state.status === 'done' && !state.candidates.length && <p class="sub">見つかりませんでした。曲名・アーティスト名の表記を変えると見つかる場合があります。</p>}
+      {state.candidates.length > 0 && !artist.trim() && <p class="warn">アーティスト名が未入力のため、同じ曲名の別の曲が含まれている可能性があります。アーティスト名を入れると絞り込めます。</p>}
       {state.candidates.length > 0 && (
         <ul class="bpm-candidates">
           {state.candidates.map((c) => (

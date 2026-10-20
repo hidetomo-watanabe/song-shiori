@@ -20,11 +20,15 @@ function open(): Promise<IDBDatabase> {
 async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
   try {
     const db = await open();
-    return await new Promise<T>((res, rej) => {
-      const req = fn(db.transaction(STORE, mode).objectStore(STORE));
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    });
+    try {
+      return await new Promise<T>((res, rej) => {
+        const req = fn(db.transaction(STORE, mode).objectStore(STORE));
+        req.onsuccess = () => res(req.result);
+        req.onerror = () => rej(req.error);
+      });
+    } finally {
+      db.close(); // 開いたままにすると接続がたまり、データの削除なども妨げる
+    }
   } catch {
     return undefined;
   }
