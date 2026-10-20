@@ -36,6 +36,13 @@ export function View({ viewId }: { viewId: string }) {
   const { song } = data;
   const diff: SongDiff | null = data.base ? diffSongs(data.base.song, song) : null;
   const bpm = bpmOf(song);
+  // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える
+  const firstName = new Map<string, { id: string; name: string }>();
+  for (const s of song.sections) if (s.group && !firstName.has(s.group)) firstName.set(s.group, { id: s.id, name: s.name });
+  const sameAs = (s: (typeof song.sections)[number]) => {
+    const f = s.group ? firstName.get(s.group) : null;
+    return f && f.id !== s.id && !s.name.startsWith(f.name) ? f.name : null;
+  };
 
   return (
     <main class="page view">
@@ -72,7 +79,7 @@ export function View({ viewId }: { viewId: string }) {
                   <td data-label="セクション">
                     <span class="chip" aria-hidden="true" />
                     {s.name}
-                    {s.group && <span class="group">（繰り返し{s.group}）</span>}
+                    {sameAs(s) && <span class="group">（{sameAs(s)}と同じ）</span>}
                     {changes.map((c) => <span key={c} class="tag change">{CHANGE_LABEL[c]}</span>)}
                   </td>
                   <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>
