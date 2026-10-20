@@ -286,7 +286,7 @@ const stats = (nov: Float64Array) => {
 // 新規性が最も多く乗るものにする（ここではずれを許さない。許すと隣の起点と同点になり取り違える）。
 // 起点を決めたあとの判定では、山が格子から1小節ずれていても拾えるよう、前後1小節の最大値を使う
 // threshold：格子の上の新規性が「平均 + threshold × 標準偏差」を超えたら区切る（実曲3曲で調整し 0.4）
-function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number): number[] {
+function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number, minGap = 4, maxLen = 16): number[] {
   const n = nov.length;
   const { mean, sd } = stats(nov);
   const score = (i: number) => Math.max(nov[i], i > 1 ? nov[i - 1] : -Infinity, i + 1 < n ? nov[i + 1] : -Infinity);
@@ -296,10 +296,14 @@ function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number): n
     for (let i = o || unit; i < n; i += unit) sum += Math.max(0, nov[i] - mean);
     if (sum > best) { best = sum; offset = o; }
   }
+  const grid: number[] = [];
+  for (let i = offset || unit; i < n - 1; i += unit) grid.push(i);
+  // 区切りらしさの強い順に選び、すでに選んだ区切りから minGap 小節未満の位置は捨てる
+  const far = (i: number, chosen: number[]) => chosen.every((c) => Math.abs(c - i) >= minGap);
   const chosen: number[] = [];
-  for (let i = offset || unit; i < n - 1; i += unit) if (score(i) > mean + threshold * sd) chosen.push(i);
+  for (const i of grid.filter((i) => score(i) > mean + threshold * sd).sort((a, b) => score(b) - score(a))) if (far(i, chosen)) chosen.push(i);
+  chosen.sort((a, b) => a - b);
   // 長すぎるパートは、その中で区切りらしさが最も強い格子の位置で分ける（多くのパートは16小節以内のため）
-  const maxLen = unit * 4;
   for (let changed = true; changed;) {
     changed = false;
     const edges = [0, ...chosen, n];
@@ -307,7 +311,7 @@ function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number): n
       const [a, b] = [edges[k], edges[k + 1]];
       if (b - a <= maxLen) continue;
       let at = -1, top = -Infinity;
-      for (let i = offset || unit; i < n - 1; i += unit) if (i >= a + unit && i <= b - unit && score(i) > top) { top = score(i); at = i; }
+      for (const i of grid) if (i >= a + minGap && i <= b - minGap && score(i) > top) { top = score(i); at = i; }
       if (at < 0) continue;
       chosen.push(at);
       chosen.sort((x, y) => x - y);
@@ -381,7 +385,7 @@ function findSilence(f: Features, frameTime: (t: number) => number, duration: nu
 // opts.phrase：区切りを何小節ごとの格子から選ぶか（既定 4。0 なら格子を使わず、新規性の山から選ぶ従来の方式）
 export function analyze(
   y: Float32Array, sr: number, progress: Progress = () => {},
-  opts: { bpm?: number; phrase?: number; phraseThreshold?: number } = {},
+  opts: { bpm?: number; phrase?: number; phraseThreshold?: number; minGap?: number } = {},
 ): AnalysisResult {
   const duration = y.length / sr;
   const f = extract(y, sr, progress);
@@ -422,7 +426,7 @@ export function analyze(
   const n = feats.length;
   const S = feats.map((a) => feats.map((b) => dot(a, b)));
   const phrase = opts.phrase ?? 4;
-  const cuts = n < 8 ? [] : !beatsUncertain && phrase > 0 ? pickOnPhraseGrid(novelty(S, 4), phrase, opts.phraseThreshold ?? 0.4) : pickBoundaries(S, 4, 4, !beatsUncertain);
+  const cuts = n < 8 ? [] : !beatsUncertain && phrase > 0 ? pickOnPhraseGrid(novelty(S, 4), phrase, opts.phraseThreshold ?? 0.4, opts.minGap ?? 4) : pickBoundaries(S, 4, 4, !beatsUncertain);
   const unitIdx = [0, ...cuts, n];
 
   // 繰り返しのまとめ：曲全体で「普通より似ている」水準を超えたら同じグループ

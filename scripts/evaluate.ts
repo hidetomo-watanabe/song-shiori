@@ -1,5 +1,6 @@
 // 検証音源フォルダの全曲を自動解析し、正解ファイル（曲名.txt。曲のしおりの「テキストで保存」の形式）と比べる（要件定義書 14章）。
-//   node scripts/evaluate.ts [検証音源フォルダ]
+//   node scripts/evaluate.ts [検証音源フォルダ] [--phrase 4] [--threshold 0.4]
+//   --phrase / --threshold は、区切りを選ぶ小節の単位としきい値を試すためのもの（既定は画面と同じ）
 // 音源の読み込みには Python の librosa を使う（変換結果は一時フォルダにキャッシュする）。
 // 正解ファイルの BPM がある場合は、ネット上の BPM の代わりに倍・半分の判定に使った結果も示す（画面と同じ動き）。
 import { execFileSync } from 'node:child_process';
@@ -10,7 +11,10 @@ import { analyze, ANALYSIS_SR } from '../web/src/analysis/core.ts';
 import { octaveByReference, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
 import { parseTruth, type Truth } from '../shared/truth.ts';
 
-const folder = process.argv[2] ?? join(import.meta.dirname, '../../../whathides/曲のしおり/検証音源');
+const args = process.argv.slice(2);
+const opt = (name: string) => { const i = args.indexOf(`--${name}`); return i >= 0 ? Number(args.splice(i, 2)[1]) : undefined; };
+const tuning = { phrase: opt('phrase'), phraseThreshold: opt('threshold'), minGap: opt('mingap') };
+const folder = args[0] ?? join(import.meta.dirname, '../../../whathides/曲のしおり/検証音源');
 const cacheDir = join(tmpdir(), 'song-shiori-eval');
 mkdirSync(cacheDir, { recursive: true });
 const TOLERANCE = 2; // 区切りの一致とみなす幅（秒）
@@ -86,11 +90,11 @@ for (const f of files) {
   const truthFile = join(folder, `${name}.txt`);
   const truth = existsSync(truthFile) ? parseTruth(readFileSync(truthFile, 'utf8')) : null;
   const y = decode(join(folder, f));
-  let song = songFromAnalysis(analyze(y, ANALYSIS_SR));
+  let song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, tuning));
   const raw = song.bpmEst;
   // 画面と同じく、参考の BPM（ここでは正解の BPM）から倍・半分を判定して作り直す
   const f2 = truth?.bpm && raw ? octaveByReference(raw, truth.bpm) : null;
-  if (f2 === 2 || f2 === 0.5) song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, { bpm: Math.round(raw! * f2 * 10) / 10 }));
+  if (f2 === 2 || f2 === 0.5) song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, { ...tuning, bpm: Math.round(raw! * f2 * 10) / 10 }));
   const parts = song.sections.filter((s) => !s.silence);
   console.log(`\n■ ${name}`);
   console.log(`  推定 BPM ${raw}${f2 === 2 || f2 === 0.5 ? ` → 参考の BPM で ${song.bpmEst} に修正` : ''} / 区間 ${parts.length} / 最長 ${Math.max(...parts.map((s) => s.barsEst ?? 0))}小節`);
