@@ -297,6 +297,7 @@ button.hint { border-style: dashed; border-color: var(--accent); color: var(--ac
 .bpm-meta { flex: 1 1 200px; font-size: 13px; }
 .bpm-meta .tag { margin-left: 6px; }
 .site-foot { padding: 0 16px 24px; }
+.site-foot .origin { margin: 0 0 6px; line-height: 1.8; }
 /* 編集画面では下部の保存バーに隠れないよう余白を取る */
 body:has(.savebar) .site-foot { padding-bottom: 180px; }
 
