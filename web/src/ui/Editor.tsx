@@ -22,10 +22,11 @@ export function Editor({ mode }: { mode: Mode }) {
   const id = mode.kind === 'saved' ? mode.id : null;
   const draftKey = id ? `pending:${id}` : 'draft';
 
-  // 構成データと「元に戻す」の履歴
+  // 構成データと「元に戻す」「やり直す」の履歴
   const [song, setSong] = useState<Song | null>(null);
   const songRef = useRef<Song | null>(null);
   const history = useRef<Song[]>([]);
+  const future = useRef<Song[]>([]); // 元に戻した変更。新しく編集すると消える
   const coalesce = useRef<{ key: string; at: number } | null>(null);
   const [dirty, setDirty] = useState(false);
 
@@ -71,6 +72,7 @@ export function Editor({ mode }: { mode: Mode }) {
   function init(s: Song) {
     songRef.current = s;
     history.current = [];
+    future.current = [];
     setSong(s);
   }
 
@@ -82,6 +84,7 @@ export function Editor({ mode }: { mode: Mode }) {
     const c = coalesce.current;
     const merge = opts.history === false || (opts.coalesce && c?.key === opts.coalesce && Date.now() - c.at < 1500);
     if (!merge) history.current = [...history.current.slice(-99), cur];
+    future.current = [];
     coalesce.current = opts.coalesce ? { key: opts.coalesce, at: Date.now() } : null;
     songRef.current = next;
     setSong(next);
@@ -92,9 +95,20 @@ export function Editor({ mode }: { mode: Mode }) {
   function undo() {
     const prev = history.current.pop();
     if (!prev) return;
+    future.current.push(songRef.current!);
     coalesce.current = null;
     songRef.current = prev;
     setSong(prev);
+    setDirty(true);
+  }
+
+  function redo() {
+    const next = future.current.pop();
+    if (!next) return;
+    history.current.push(songRef.current!);
+    coalesce.current = null;
+    songRef.current = next;
+    setSong(next);
     setDirty(true);
   }
 
@@ -170,13 +184,15 @@ export function Editor({ mode }: { mode: Mode }) {
     if (player.loop?.start !== s.start || player.loop?.end !== s.end) player.setLoop({ start: s.start, end: s.end });
   }, [song, loopId]);
 
-  // キーボード：スペースで再生・停止、Ctrl/⌘+Z で元に戻す（入力欄の中では使わない）
+  // キーボード：スペースで再生・停止、Ctrl/⌘+Z で元に戻す、Ctrl/⌘+Shift+Z・Ctrl+Y でやり直す（入力欄の中では使わない）
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
       if (e.key === ' ' && player.buffer) { e.preventDefault(); togglePlay(); }
-      if (e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undo(); }
+      const key = e.key.toLowerCase();
+      if (key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((key === 'z' && (e.metaKey || e.ctrlKey) && e.shiftKey) || (key === 'y' && e.ctrlKey)) { e.preventDefault(); redo(); }
     };
     addEventListener('keydown', on);
     return () => removeEventListener('keydown', on);
@@ -352,6 +368,7 @@ export function Editor({ mode }: { mode: Mode }) {
         <a href="#/" class="home">曲のしおり</a>
         <span class="state">{id ? `版 ${meta?.version ?? '-'}` : '下書き（この端末にだけ保存）'}</span>
         <button onClick={undo} disabled={!history.current.length} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
+        <button onClick={redo} disabled={!future.current.length} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
       </header>
 
       {created && (
@@ -416,7 +433,7 @@ export function Editor({ mode }: { mode: Mode }) {
           selected={selected}
           onSeek={(t) => { if (hasAudio) { player.seek(t); setNow(t); } }}
           onSelect={setSelected}
-          onDragStart={() => { history.current = [...history.current.slice(-99), songRef.current!]; coalesce.current = null; }}
+          onDragStart={() => { history.current = [...history.current.slice(-99), songRef.current!]; future.current = []; coalesce.current = null; }}
           onDrag={(i, t) => edit((s) => M.moveBoundary(s, i, snapT(t)), { history: false })}
         />
       </section>
