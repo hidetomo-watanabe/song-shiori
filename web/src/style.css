@@ -304,6 +304,22 @@ body:has(.savebar) .site-foot { padding-bottom: 180px; }
 .lookup-results li:last-child { border-bottom: 0; }
 .lookup-results li .tag { margin-left: 6px; }
 
+/* YouTube の動画 */
+.yt { margin-top: 12px; }
+.yt.muted .yt-frame { display: none; }
+.yt-frame { position: relative; width: 100%; max-width: 560px; aspect-ratio: 16 / 9; border-radius: var(--radius-sm); overflow: hidden; background: #000; }
+.yt-frame > div, .yt-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.yt .sub { margin-top: 8px; }
+.yt .sub a, .yt .sub .link { margin-left: 8px; }
+.yt-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.yt-form input { flex: 1 1 260px; }
+.yt-view .yt-frame { max-width: none; }
+.yt-start { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.structure.playable tbody tr { cursor: pointer; }
+.structure tr.now { background: color-mix(in srgb, var(--tone) 16%, var(--card)); }
+.structure tr.now td[data-label='セクション'] { text-decoration: underline; text-decoration-color: var(--tone); text-decoration-thickness: 3px; text-underline-offset: 4px; }
+button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 4px -4px -6px; color: var(--accent); }
+
 /* 閲覧ページ */
 .view-head { margin: 16px 0 4px; }
 .view-head h1 { font-size: 28px; margin-bottom: 2px; }

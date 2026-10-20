@@ -71,7 +71,7 @@ export function Top() {
 
         <p class="or">音源がない・解析がうまくいかないときは</p>
         <div class="alt-start">
-          <button onClick={() => manual()}><b>手動で作る</b><span>区間を自分で足して、構成表を作ります</span></button>
+          <button onClick={() => manual()}><b>手動で作る</b><span>区間を自分で足して作ります。YouTube の動画を聴きながらでも作れます</span></button>
           <button onClick={() => manual(true)}><b>テキストから作る</b><span>書き出しておいた構成表を読み込みます</span></button>
         </div>
       </section>

@@ -37,6 +37,8 @@ export type Song = {
   analysis?: AnalysisSnapshot | null;
   // 繰り返しの記号ごとの名前（例：B → サビ）。同じ繰り返しの、名前を付けていない区間に使う
   groupNames?: Record<string, string>;
+  // 再生に使う YouTube の動画 ID。音は取り出せないため、自動解析には使わない
+  youtube?: string | null;
 };
 
 // 区間の名前の候補（入力欄で選べる）
@@ -62,6 +64,24 @@ export const newId = () => {
 };
 
 export const bpmOf = (s: Song) => s.bpmManual ?? s.bpmEst;
+
+// YouTube の URL（watch・youtu.be・shorts・embed・music.youtube.com）か動画 ID から、動画 ID を取り出す。読めなければ null
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+export function youtubeId(text: string): string | null {
+  const t = text.trim();
+  if (YOUTUBE_ID.test(t)) return t;
+  let u: URL;
+  try { u = new URL(/^https?:\/\//.test(t) ? t : `https://${t}`); } catch { return null; }
+  const host = u.hostname.replace(/^(www|m|music)\./, '');
+  let id: string | null = null;
+  if (host === 'youtu.be') id = u.pathname.split('/')[1] ?? null;
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    const [, kind, rest] = u.pathname.split('/');
+    id = kind === 'watch' ? u.searchParams.get('v') : ['shorts', 'embed', 'live', 'v'].includes(kind) ? rest ?? null : null;
+  }
+  return id && YOUTUBE_ID.test(id) ? id : null;
+}
+export const youtubeUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
 // 拍・小節が使えるか。解析で確定できなくても、BPM を手動で入れれば使える
 export const hasGrid = (s: Song) => bpmOf(s) != null && (s.bpmManual != null || !s.beatsUncertain);
 // 解析で見つけた拍の位置を小節の線に使えるか。BPM を推定と大きく違う値に手で直した場合は使わない（拍の列が合わないため）
@@ -537,6 +557,7 @@ export function validateSong(x: unknown): string | null {
   }
   if (s.sections.length && Math.abs(t - s.duration) > 1e-6) return '最後の区間が曲の終わりと一致しません';
   if (s.groupNames != null && (typeof s.groupNames !== 'object' || Object.keys(s.groupNames).length > 100 || !Object.values(s.groupNames).every((v) => str(v, LIMITS.text)))) return '繰り返しの名前が正しくありません';
+  if (s.youtube != null && (typeof s.youtube !== 'string' || !YOUTUBE_ID.test(s.youtube))) return 'YouTube の動画が正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;
 }

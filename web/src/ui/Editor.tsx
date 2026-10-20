@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
+import { YouTubePlayer, type Playback } from '../audio/youtube';
 import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/run';
 import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
 import * as L from '../storage/local';
@@ -19,6 +20,10 @@ type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: '
 // 再生は画面をまたいで1つだけ。初回保存で編集画面に切り替わっても、選んだ音源を使い続ける
 const player = new Player();
 let playerFile = '';
+let yt: YouTubePlayer | null = null;
+// 再生に使うもの。音源ファイルを選んでいればそれを、なければ YouTube の動画を使う
+const media = (): Playback => (player.buffer || !yt ? player : yt);
+const canPlay = () => !!player.buffer || !!yt;
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export function Editor({ mode }: { mode: Mode }) {
@@ -53,9 +58,16 @@ export function Editor({ mode }: { mode: Mode }) {
     return '';
   });
   const [audioNote, setAudioNote] = useState('');
+  // YouTube の動画（song.youtube）。音源ファイルがないときの再生に使う
+  const ytHost = useRef<HTMLDivElement>(null);
+  const [ytReady, setYtReady] = useState(false);
+  const [ytError, setYtError] = useState('');
+  const [ytInput, setYtInput] = useState('');
   const [now, setNow] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [loopId, setLoopId] = useState<string | null>(null);
+  const loopIdRef = useRef<string | null>(null);
+  loopIdRef.current = loopId;
   const [selected, setSelected] = useState<string | null>(null);
   const [snap, setSnap] = useState<'bar' | 'beat' | 'off'>('bar'); // 境界を合わせる先
   const [splitForm, setSplitForm] = useState<{ id: string; bars: string; error: string } | null>(null);
@@ -150,7 +162,7 @@ export function Editor({ mode }: { mode: Mode }) {
       }
       await loadSaved(session);
     })();
-    return () => { job.current?.cancel(); player.pause(); player.loop = null; };
+    return () => { job.current?.cancel(); player.pause(); player.loop = null; yt?.destroy(); yt = null; };
   }, []);
 
   async function loadSaved(token: string | null) {
@@ -185,9 +197,48 @@ export function Editor({ mode }: { mode: Mode }) {
     return () => clearTimeout(t);
   }, [song, dirty]);
 
+  // YouTube の動画を表示する。動画が変わったら作り直し、外したら破棄する
+  const videoId = song?.youtube ?? null;
+  useEffect(() => {
+    if (!videoId || !ytHost.current) return;
+    let alive = true;
+    let made: YouTubePlayer | null = null;
+    setYtError('');
+    YouTubePlayer.create(ytHost.current, videoId).then((p) => {
+      if (!alive) { p.destroy(); return; }
+      made = p;
+      yt = p;
+      p.onError = setYtError;
+      setYtReady(true);
+      // 手動で作り始めたばかりなら動画の長さで区間を作る。区間があって長さが違えば知らせる
+      const d = p.duration;
+      const cur = songRef.current!;
+      if (d > 0 && !cur.sections.length) edit((s) => M.normalize({ ...s, duration: d, sections: [M.newSection(0, d)] }), { history: false });
+      else if (d > 0 && !player.buffer && Math.abs(cur.duration - d) > 1.5) {
+        setAudioNote(`構成表の長さ（${fmt(cur.duration)}）と動画の長さ（${fmt(d)}）が違います。別バージョンの動画かもしれません。`);
+      }
+    }).catch((e) => { if (alive) setYtError(e instanceof Error ? e.message : '動画を読み込めませんでした'); });
+    return () => {
+      alive = false;
+      setYtReady(false);
+      if (made) { made.destroy(); if (yt === made) yt = null; }
+      if (loopIdRef.current) setLoopId(null);
+    };
+  }, [videoId]);
+
+  function setVideo(e: Event) {
+    e.preventDefault();
+    const v = M.youtubeId(ytInput);
+    if (!v) { setYtError('YouTube の動画の URL を読み取れませんでした'); return; }
+    setYtInput('');
+    setAudioNote('');
+    edit((s) => ({ ...s, youtube: v }));
+    track('youtube_set');
+  }
+
   // 再生位置の表示
   useEffect(() => {
-    const t = setInterval(() => { setNow(player.currentTime); setPlaying(player.playing); }, 100);
+    const t = setInterval(() => { setNow(media().currentTime); setPlaying(media().playing); }, 100);
     return () => clearInterval(t);
   }, []);
 
@@ -195,14 +246,14 @@ export function Editor({ mode }: { mode: Mode }) {
   useEffect(() => {
     if (!loopId || !song) return;
     const s = song.sections.find((x) => x.id === loopId);
-    if (!s) { setLoopId(null); player.setLoop(null); return; }
-    if (player.loop?.start !== s.start || player.loop?.end !== s.end) player.setLoop({ start: s.start, end: s.end });
+    if (!s) { setLoopId(null); media().setLoop(null); return; }
+    if (media().loop?.start !== s.start || media().loop?.end !== s.end) media().setLoop({ start: s.start, end: s.end });
   }, [song, loopId]);
 
   // 再生中は、鳴っている区間を画面内に表示する（入力中は動かさない）
   // 表示用の now は 0.1 秒ごとの更新なので、再生を始めた直後は古い位置のことがある。実際の再生位置で判断する
-  const playPos = player.currentTime;
-  const playingId = player.playing && songRef.current ? songRef.current.sections.find((x) => playPos >= x.start && playPos < x.end)?.id : undefined;
+  const playPos = media().currentTime;
+  const playingId = media().playing && songRef.current ? songRef.current.sections.find((x) => playPos >= x.start && playPos < x.end)?.id : undefined;
   useEffect(() => {
     if (!follow || !playingId) return;
     const tag = document.activeElement?.tagName;
@@ -230,7 +281,7 @@ export function Editor({ mode }: { mode: Mode }) {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
-      if (e.key === ' ' && player.buffer) { e.preventDefault(); togglePlay(); }
+      if (e.key === ' ' && canPlay()) { e.preventDefault(); togglePlay(); }
       const key = e.key.toLowerCase();
       if (key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) { e.preventDefault(); undo(); }
       if ((key === 'z' && (e.metaKey || e.ctrlKey) && e.shiftKey) || (key === 'y' && e.ctrlKey)) { e.preventDefault(); redo(); }
@@ -256,6 +307,7 @@ export function Editor({ mode }: { mode: Mode }) {
       }
       setFileName(file.name);
       playerFile = file.name;
+      yt?.pause();
       const cur = songRef.current!;
       if (!cur.sections.length && !analyzeNow) {
         edit((s) => M.normalize({ ...s, duration: buf.duration, sections: [M.newSection(0, buf.duration)] }));
@@ -315,40 +367,41 @@ export function Editor({ mode }: { mode: Mode }) {
   // 再生操作（iPhone ではタップを起点にしないと音が出ない）
   // 再生・移動の操作をしたら、表示上の再生位置もすぐに合わせる
   function syncNow() {
-    setNow(player.currentTime);
-    setPlaying(player.playing);
+    setNow(media().currentTime);
+    setPlaying(media().playing);
   }
 
   function togglePlay() {
-    if (player.playing) player.pause();
-    else player.play();
+    if (media().playing) media().pause();
+    else media().play();
     syncNow();
   }
   // シークバー・タイムラインから再生位置を動かす。ループ中に範囲の外へ動かしたらループを解除する
   function seekTo(t: number) {
-    if (player.loop && (t < player.loop.start || t >= player.loop.end)) { setLoopId(null); player.setLoop(null); }
-    player.seek(t);
+    const l = media().loop;
+    if (l && (t < l.start || t >= l.end)) { setLoopId(null); media().setLoop(null); }
+    media().seek(t);
     setNow(t);
   }
 
   // 止めている再生位置（シークバーで動かした位置など）がこの区間の中なら、そこから再生する
   const resumeAt = (s: Section) => {
-    const t = player.currentTime;
-    return !player.playing && t > s.start + 0.05 && t < s.end - 0.05 ? t : null;
+    const t = media().currentTime;
+    return !media().playing && t > s.start + 0.05 && t < s.end - 0.05 ? t : null;
   };
 
   function playSection(s: Section) {
-    if (loopId) { setLoopId(s.id); player.loop = { start: s.start, end: s.end }; }
-    player.play(resumeAt(s) ?? s.start);
+    if (loopId) { setLoopId(s.id); media().loop = { start: s.start, end: s.end }; }
+    media().play(resumeAt(s) ?? s.start);
     setSelected(s.id);
     syncNow();
   }
   function toggleLoop(s: Section) {
-    if (loopId === s.id) { setLoopId(null); player.setLoop(null); return; }
+    if (loopId === s.id) { setLoopId(null); media().setLoop(null); return; }
     setLoopId(s.id);
     const from = resumeAt(s);
-    player.setLoop({ start: s.start, end: s.end });
-    if (!player.playing) player.play(from ?? s.start);
+    media().setLoop({ start: s.start, end: s.end });
+    if (!media().playing) media().play(from ?? s.start);
     syncNow();
     track('loop_play');
   }
@@ -366,7 +419,7 @@ export function Editor({ mode }: { mode: Mode }) {
   function openSplit(s: Section) {
     const cur = songRef.current!;
     const barLen = M.barSeconds(cur);
-    const inside = !!player.buffer && now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION;
+    const inside = canPlay() && now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION;
     if (!barLen) {
       edit((x) => M.splitAt(x, inside ? snapT(now, s.start) : snapT((s.start + s.end) / 2, s.start)));
       return;
@@ -466,9 +519,10 @@ export function Editor({ mode }: { mode: Mode }) {
   const bar = M.barSeconds(song);
   const beat = M.bpmOf(song) ? 60 / M.bpmOf(song)! : null;
   const step = snap === 'bar' && bar ? bar : snap !== 'off' && beat && M.hasGrid(song) ? beat : 0.1;
-  const currentSection = player.buffer ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
+  const currentSection = canPlay() ? song.sections.find((s) => now >= s.start && now < s.end) ?? null : null;
   const current = currentSection?.id;
-  const hasAudio = !!player.buffer;
+  const hasAudio = canPlay(); // 再生できる（音源ファイルか YouTube の動画）
+  const canAnalyze = !!player.buffer; // 自動生成に使える（音源ファイルのみ）
   // 区間名の候補（自動推定）。名前を付けていない区間にだけ示す
   const suggested = M.suggestNames(song);
   // 繰り返しにすでに同じ名前が付いている区間（「Aメロ（2回目）」など）には出さない
@@ -522,19 +576,19 @@ export function Editor({ mode }: { mode: Mode }) {
           <label>曲名<input value={song.title} maxLength={200} onInput={(e) => edit((s) => ({ ...s, title: (e.currentTarget as HTMLInputElement).value }), { coalesce: 'title' })} /></label>
           <label>アーティスト<input value={song.artist} maxLength={200} onInput={(e) => edit((s) => ({ ...s, artist: (e.currentTarget as HTMLInputElement).value }), { coalesce: 'artist' })} /></label>
         </div>
-        <SongLookup title={song.title} artist={song.artist} duration={player.buffer ? player.duration : null}
+        <SongLookup title={song.title} artist={song.artist} duration={hasAudio ? media().duration : null}
           onPick={(t) => edit((s) => ({ ...s, title: t.title, artist: t.artist }))} />
       </section>
 
       <section class="card player">
         <div class="player-row">
           <button class="primary play" onClick={togglePlay} disabled={!hasAudio}>{playing ? '一時停止' : '再生'}</button>
-          <span class="time">{fmt(now)} / {fmt(hasAudio ? player.duration : song.duration)}</span>
+          <span class="time">{fmt(now)} / {fmt(hasAudio ? media().duration : song.duration)}</span>
           {currentSection && <span class={`now-tag tone-${groupTone(currentSection.group)}`}><span class="chip" aria-hidden="true" />{playing ? '再生中' : '再生位置'}：{currentSection.name}</span>}
-          {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={() => { setLoopId(null); player.setLoop(null); }}>解除</button></span>}
+          {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={() => { setLoopId(null); media().setLoop(null); }}>解除</button></span>}
           <span class="spacer" />
           <label class={`button file small${hasAudio ? '' : ' primary'}`}>
-            {hasAudio ? '音源を変更' : '音源を選ぶ'}
+            {player.buffer ? '音源を変更' : '音源ファイルを選ぶ'}
             <input type="file" accept=".mp3,.wav,.m4a,.mp4,.aac,audio/*" onChange={(e) => {
               const input = e.currentTarget as HTMLInputElement;
               const f = input.files?.[0];
@@ -542,14 +596,32 @@ export function Editor({ mode }: { mode: Mode }) {
               if (f) void loadAudio(f, false);
             }} />
           </label>
-          {hasAudio && !progress && (
+          {canAnalyze && !progress && (
             // 今の BPM（推定・手入力）を前提にやり直す。前提なしで推定し直すと、半分のテンポへの誤認などに戻ってしまうため
             <button class="small" title={M.bpmOf(song) ? `BPM ${M.bpmOf(song)} を前提に作り直します` : undefined}
               onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', M.bpmOf(song) ?? undefined)}>自動生成をやり直す</button>
           )}
         </div>
-        {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）</p>}
-        {!hasAudio && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
+        {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
+        {!hasAudio && !videoId && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
+        {videoId ? (
+          <div class={`yt${player.buffer ? ' muted' : ''}`}>
+            <div class="yt-frame"><div ref={ytHost} /></div>
+            <p class="sub">
+              YouTube の動画で再生します（自動生成には使えません）。動画は構成表と一緒に保存され、閲覧ページでも聴けます。
+              <a href={M.youtubeUrl(videoId)} target="_blank" rel="noopener">YouTube で開く</a>
+              <button class="link" onClick={() => { setYtError(''); edit((s) => ({ ...s, youtube: null })); }}>動画を外す</button>
+            </p>
+            {!ytReady && !ytError && <p class="sub">動画を読み込んでいます…</p>}
+          </div>
+        ) : (
+          <form class="yt-form" onSubmit={setVideo}>
+            <input value={ytInput} placeholder="YouTube の動画の URL を貼り付け" aria-label="YouTube の動画の URL" inputMode="url"
+              onInput={(e) => { setYtInput((e.currentTarget as HTMLInputElement).value); setYtError(''); }} />
+            <button class="small" type="submit" disabled={!ytInput.trim()}>YouTube の動画で再生</button>
+          </form>
+        )}
+        {ytError && <p class="error">{ytError}</p>}
         {audioNote && <p class="warn">{audioNote}</p>}
         {progress && <Progress p={progress} onCancel={job.current ? () => job.current?.cancel() : undefined} />}
         {analysisError && <p class="error">{analysisError}。区間を手動で編集して作成を続けられます。</p>}
@@ -564,7 +636,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <button onClick={() => setProposal(null)}>キャンセル</button>
           </div>
         )}
-        {hasAudio && <SeekBar now={now} duration={player.duration} onSeek={seekTo} />}
+        {hasAudio && <SeekBar now={now} duration={media().duration} onSeek={seekTo} />}
         <Timeline
           song={song}
           now={now}
@@ -606,20 +678,20 @@ export function Editor({ mode }: { mode: Mode }) {
             </span>
           </label>
         </div>
-        {octaveFix && (song.sections.some((s) => s.edited) || !hasAudio) && (
+        {octaveFix && (song.sections.some((s) => s.edited) || !canAnalyze) && (
           <div class="redo-bpm">
             <p>ネット上の BPM（{netBpm}）から見ると、推定 {song.bpmEst} は{netFactor === 2 ? '半分' : '2倍'}のテンポのようです。</p>
-            {hasAudio
+            {canAnalyze
               ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, 'propose', octaveFix)}>{octaveFix} で作り直す</button>
-              : <span class="sub">音源を選ぶと {octaveFix} で作り直せます。</span>}
+              : <span class="sub">音源ファイルを選ぶと {octaveFix} で作り直せます。</span>}
           </div>
         )}
         {slowBpm && !slowDismissed && (
           <div class="redo-bpm">
             <p>推定テンポは {song.bpmEst} と遅めです。速い曲なら、実際は2倍の <strong>{slowBpm}</strong> かもしれません（テンポを半分に聞き取る誤りはよくあります）。</p>
-            {hasAudio
+            {canAnalyze
               ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', slowBpm)}>{slowBpm} で作り直す</button>
-              : <span class="sub">音源を選ぶと {slowBpm} で作り直せます。</span>}
+              : <span class="sub">音源ファイルを選ぶと {slowBpm} で作り直せます。</span>}
             <button class="small" onClick={() => setSlowDismissed(true)}>{song.bpmEst} のままでよい</button>
           </div>
         )}
@@ -634,12 +706,12 @@ export function Editor({ mode }: { mode: Mode }) {
             }}>{bpmCheck.measured} を使う</button>
             <button class="small" onClick={() => setBpmCheck({ ...bpmCheck, hint: -1 })}>{redoBpm} のままにする</button>
           </div>
-        ) : redoBpm && bpmCheck?.hint !== -1 && (hasAudio
+        ) : redoBpm && bpmCheck?.hint !== -1 && (canAnalyze
           ? <div class="redo-bpm">
               <p>区切りは推定テンポ {song.bpmEst ?? '未確定'} で作られています。BPM {redoBpm} で作り直すと、区切りと小節数が正確になります。</p>
               <button class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', redoBpm)}>BPM {redoBpm} で自動生成をやり直す</button>
             </div>
-          : <p class="sub">音源を選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
+          : <p class="sub">音源ファイルを選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
           onResult={(c) => setNetBpm(c[0]?.bpm ?? null)}
           onApply={(v) => edit((s) => M.setTempo(s, { bpmManual: v }))} />
@@ -771,7 +843,7 @@ export function Editor({ mode }: { mode: Mode }) {
           {!importing && <button class="small" onClick={() => setImporting(true)}>テキストから読み込む</button>}
         </div>
         {importing && (
-          <ImportText song={song} duration={player.buffer ? player.duration : undefined}
+          <ImportText song={song} duration={hasAudio ? media().duration : undefined}
             onClose={() => setImporting(false)}
             onImport={(s) => { edit(() => s); setImporting(false); setSelected(null); setNotice('テキストから構成を読み込みました（「元に戻す」で取り消せます）。'); }} />
         )}
@@ -804,7 +876,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <label class="check"><input type="checkbox" checked={!notify} onChange={(e) => setNotify(!(e.currentTarget as HTMLInputElement).checked)} />変更として知らせない</label>
           </div>
         )}
-        {hasAudio && <SeekBar compact now={now} duration={player.duration} onSeek={seekTo} />}
+        {hasAudio && <SeekBar compact now={now} duration={media().duration} onSeek={seekTo} />}
         <div class="save-row">
           {hasAudio && (
             <span class="mini-player">

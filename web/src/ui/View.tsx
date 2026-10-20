@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf } from '../../../shared/song';
+import { bpmOf, youtubeUrl } from '../../../shared/song';
+import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
 import { StartEdit } from './StartEdit';
@@ -31,6 +32,30 @@ export function View({ viewId }: { viewId: string }) {
       setSeen(viewId, d.version);
     }).catch((e) => setError(e instanceof Error ? e.message : '読み込めませんでした'));
   }, []);
+
+  // YouTube の動画。押したときだけ読み込む（それまで YouTube には接続しない）
+  const ytHost = useRef<HTMLDivElement>(null);
+  const [yt, setYt] = useState<YouTubePlayer | null>(null);
+  const [ytState, setYtState] = useState<'off' | 'loading' | 'ready'>('off');
+  const [ytError, setYtError] = useState('');
+  const [now, setNow] = useState(-1); // 再生中の位置。止まっているときは -1（どの区間も示さない）
+  useEffect(() => {
+    if (ytState !== 'loading' || !data?.song.youtube || !ytHost.current) return;
+    let alive = true;
+    YouTubePlayer.create(ytHost.current, data.song.youtube).then((p) => {
+      if (!alive) { p.destroy(); return; }
+      p.onError = setYtError;
+      setYt(p);
+      setYtState('ready');
+      track('youtube_view_play');
+    }).catch((e) => { if (alive) { setYtError(e instanceof Error ? e.message : '動画を読み込めませんでした'); setYtState('off'); } });
+    return () => { alive = false; };
+  }, [ytState]);
+  useEffect(() => {
+    if (!yt) return;
+    const t = setInterval(() => setNow(yt.playing ? yt.currentTime : -1), 200);
+    return () => { clearInterval(t); yt.destroy(); };
+  }, [yt]);
 
   if (error) return <main class="page narrow"><p class="error">{error}</p></main>;
   if (!data) return <main class="page narrow"><p>読み込んでいます…</p></main>;
@@ -74,15 +99,36 @@ export function View({ viewId }: { viewId: string }) {
         </section>
       )}
 
+      {song.youtube && (
+        <section class="card yt-view">
+          {ytState === 'off' ? (
+            <div class="yt-start">
+              <button class="primary" onClick={() => setYtState('loading')}>▶ YouTube の動画で聴く</button>
+              <span class="sub">押すと YouTube（プライバシー強化モード）に接続します。<a href={youtubeUrl(song.youtube)} target="_blank" rel="noopener">YouTube で開く</a></span>
+            </div>
+          ) : (
+            <>
+              <div class="yt-frame"><div ref={ytHost} /></div>
+              {ytState === 'ready' && <p class="sub">表の区間を押すと、そこから再生します。</p>}
+            </>
+          )}
+          {ytError && <p class="error">{ytError}</p>}
+        </section>
+      )}
+
       <section class="card">
-        <table class="structure">
+        <table class={`structure${yt ? ' playable' : ''}`}>
           <thead><tr><th>開始</th><th>終了</th><th>セクション</th><th class="num">小節数</th><th>メモ</th></tr></thead>
           <tbody>
             {song.sections.map((s) => {
               const changes = diff?.sections[s.id] ?? [];
               return (
-                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.silence ? ' silence' : ''}`}>
-                  <td data-label="開始">{fmt(s.start, 0)}</td>
+                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.silence ? ' silence' : ''}${now >= s.start && now < s.end ? ' now' : ''}`}
+                  onClick={yt ? () => yt.play(s.start) : undefined}>
+                  <td data-label="開始">
+                    {yt && <button class="tiny ghost row-go" aria-label={`${s.name}から再生`} onClick={(e) => { e.stopPropagation(); yt.play(s.start); }}>▶</button>}
+                    {fmt(s.start, 0)}
+                  </td>
                   <td data-label="終了">{fmt(s.end, 0)}</td>
                   <td data-label="セクション">
                     <span class="chip" aria-hidden="true" />

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -334,5 +334,37 @@ describe('版の差分', () => {
     const d = diffSongs(prev, next);
     expect(d.sections[prev.sections[1].id]).toContain('boundary');
     expect(d.song).toContain('テンポ');
+  });
+});
+
+describe('YouTube の動画', () => {
+  it('いろいろな URL から動画 ID を取り出す', () => {
+    const id = 'dQw4w9WgXcQ';
+    for (const url of [
+      id,
+      `https://www.youtube.com/watch?v=${id}`,
+      `https://youtube.com/watch?list=PL1&v=${id}&t=30s`,
+      `https://m.youtube.com/watch?v=${id}`,
+      `https://music.youtube.com/watch?v=${id}&si=abc`,
+      `https://youtu.be/${id}?si=abc`,
+      `youtu.be/${id}`,
+      `https://www.youtube.com/shorts/${id}`,
+      `https://www.youtube.com/embed/${id}`,
+      `https://www.youtube-nocookie.com/embed/${id}`,
+      `https://www.youtube.com/live/${id}`,
+    ]) expect(youtubeId(url)).toBe(id);
+  });
+
+  it('YouTube 以外や読めない URL は null', () => {
+    for (const url of ['', 'https://example.com/watch?v=dQw4w9WgXcQ', 'https://www.youtube.com/watch?v=short', 'https://www.youtube.com/@channel', 'あいう'])
+      expect(youtubeId(url)).toBeNull();
+  });
+
+  it('保存できる値と差分', () => {
+    const prev = sample();
+    expect(validateSong({ ...prev, youtube: 'dQw4w9WgXcQ' })).toBeNull();
+    expect(validateSong({ ...prev, youtube: '<script>' })).not.toBeNull();
+    expect(diffSongs(prev, { ...prev, youtube: 'dQw4w9WgXcQ' }).song).toContain('YouTube の動画');
+    expect(diffSongs(prev, { ...prev, youtube: null }).changed).toBe(false);
   });
 });

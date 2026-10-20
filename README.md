@@ -5,6 +5,7 @@
 
 - 画面：Vite + Preact + TypeScript（`web/`）。GitHub Pages で公開する想定
 - 自動解析：ブラウザ内の Web Worker（`web/src/analysis/`）。音源はサーバーへ送らない
+- YouTube の動画：埋め込みプレーヤー（IFrame Player API、`web/src/audio/youtube.ts`）で再生だけに使う。音は取り出せないため自動解析には使わない。閲覧ページでは押したときだけ YouTube に接続する
 - API：Cloudflare Workers + D1（`worker/`、`migrations/`）
 - 構成データと編集ルール・差分計算：`shared/`（画面と API で共用）
 

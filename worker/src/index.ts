@@ -10,7 +10,7 @@ const SESSION_DAYS = 30;
 const KEEP_VERSIONS = 10;
 const EVENT_DAYS = 90;
 const MAX_BODY = 512 * 1024;
-const EVENT_KINDS = new Set(['analysis_ok', 'analysis_fail', 'manual_start', 'loop_play', 'view_after_update', 'bpm_lookup_applied']);
+const EVENT_KINDS = new Set(['analysis_ok', 'analysis_fail', 'manual_start', 'loop_play', 'view_after_update', 'bpm_lookup_applied', 'youtube_set', 'youtube_view_play']);
 const BPM_CACHE_SECONDS = 7 * 86400;
 
 const HEX = (n: number) => new RegExp(`^[a-f0-9]{${n}}$`);
