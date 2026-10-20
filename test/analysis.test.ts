@@ -41,6 +41,18 @@ describe('自動解析（合成音源）', () => {
     parts.slice(1).forEach((s, i) => expect(s.start).toBeCloseTo(3 + 16 * (i + 1), 0));
   });
 
+  it('変化の少ない長い部分も、16小節を超えるパートにしない', () => {
+    // 同じ和音・同じリズムが48小節続く音源（120BPM、96秒）
+    const sr = 22050, y = new Float32Array(96 * sr);
+    for (let i = 0; i < y.length; i++) {
+      const t = i / sr, bt = t % 0.5, bi = Math.floor(t / 0.5) % 4;
+      y[i] = 0.08 * (Math.sin(2 * Math.PI * 261.6 * t) + Math.sin(2 * Math.PI * 329.6 * t))
+        + (bi % 2 === 0 && bt < 0.12 ? 0.6 * Math.sin(2 * Math.PI * 80 * bt) * Math.exp(-bt * 25) : 0);
+    }
+    const long = songFromAnalysis(analyze(y, 22050)).sections.filter((x) => !x.silence);
+    expect(Math.max(...long.map((x) => x.barsEst ?? 0))).toBeLessThanOrEqual(16);
+  });
+
   it('区切りは4小節の格子の上にある', () => {
     const lines = song.sections.filter((s) => !s.silence).map((s) => s.barsEst ?? 0);
     expect(lines.every((n) => n % 4 === 0)).toBe(true);

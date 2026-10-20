@@ -5,7 +5,7 @@
 //   4. 小節ごとの特徴量の自己類似行列から、区切り（新規性の山）と繰り返しを推定
 import type { AnalysisResult } from '../../../shared/song';
 
-export const ANALYSIS_VERSION = 'proto-0.2'; // 0.2：区切りを4小節の格子から選ぶ
+export const ANALYSIS_VERSION = 'proto-0.3'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -298,6 +298,23 @@ function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number): n
   }
   const chosen: number[] = [];
   for (let i = offset || unit; i < n - 1; i += unit) if (score(i) > mean + threshold * sd) chosen.push(i);
+  // 長すぎるパートは、その中で区切りらしさが最も強い格子の位置で分ける（多くのパートは16小節以内のため）
+  const maxLen = unit * 4;
+  for (let changed = true; changed;) {
+    changed = false;
+    const edges = [0, ...chosen, n];
+    for (let k = 0; k + 1 < edges.length; k++) {
+      const [a, b] = [edges[k], edges[k + 1]];
+      if (b - a <= maxLen) continue;
+      let at = -1, top = -Infinity;
+      for (let i = offset || unit; i < n - 1; i += unit) if (i >= a + unit && i <= b - unit && score(i) > top) { top = score(i); at = i; }
+      if (at < 0) continue;
+      chosen.push(at);
+      chosen.sort((x, y) => x - y);
+      changed = true;
+      break;
+    }
+  }
   return chosen;
 }
 
