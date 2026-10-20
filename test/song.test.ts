@@ -204,6 +204,19 @@ describe('編集ルール', () => {
     expect(validateSong(out)).toBeNull();
   });
 
+  it('曲頭の無音は別の区間にし、小節数を数えない。戻すときも同じ', () => {
+    const r = { version: 't', duration: 66, bpm: 120, beats: [], firstDownbeat: 2, beatsUncertain: false, leadingSilence: 2,
+      segments: [{ start: 0, end: 34, group: 'A' }, { start: 34, end: 66, group: 'B' }] };
+    const s = songFromAnalysis(r);
+    expect(s.sections.map((x) => [x.start, x.end, x.name, x.barsEst, !!x.silence])).toEqual([
+      [0, 2, '無音（曲の前）', null, true], [2, 34, 'パートA', 16, false], [34, 66, 'パートB', 16, false]]);
+    expect(validateSong(s)).toBeNull();
+    const edited = patchSection(s, s.sections[1].id, { name: 'イントロ' });
+    expect(resetToAnalysis(edited).sections.map((x) => x.name)).toEqual(['無音（曲の前）', 'パートA', 'パートB']);
+    // 無音の区間を削除すると、直後の区間に結合されて曲頭から始まる
+    expect(deleteSection(s, s.sections[0].id).sections[0]).toMatchObject({ start: 0, end: 34, name: 'パートA' });
+  });
+
   it('自動解析の結果がなければ戻さない', () => {
     const s = sample();
     expect(resetToAnalysis(s)).toBe(s);

@@ -205,6 +205,7 @@ body:has(.savebar) .site-foot { padding-bottom: 180px; }
 .structure td:first-child { border-left: 6px solid var(--tone); }
 .structure .num { text-align: right; font-variant-numeric: tabular-nums; }
 .structure tr.changed { background: color-mix(in srgb, var(--warn-bg) 70%, transparent); }
+.structure tr.silence td { color: var(--sub); font-size: 13px; }
 .structure .group { color: var(--sub); font-size: 13px; }
 
 @media (max-width: 640px) {

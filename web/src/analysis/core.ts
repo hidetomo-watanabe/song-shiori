@@ -311,11 +311,28 @@ function segmentSimilarity(S: number[][], a: [number, number], b: [number, numbe
   return ratio > 2 ? best * 0.85 : best;
 }
 
+// 曲頭の無音の長さ（秒）。最も大きい音から 40dB 以上小さい間を無音とみなす（短い無音は 0）
+function findLeadingSilence(f: Features, frameTime: (t: number) => number): number {
+  const level = new Float32Array(f.frames);
+  let max = -Infinity;
+  for (let t = 0; t < f.frames; t++) {
+    let m = -Infinity;
+    for (let b = 0; b < N_MEL; b++) m = Math.max(m, f.mel[t * N_MEL + b]);
+    level[t] = m;
+    max = Math.max(max, m);
+  }
+  let first = 0;
+  while (first < f.frames && level[first] < max - 40) first++;
+  const t = Math.max(0, frameTime(first) - 0.05);
+  return t >= 0.3 ? Math.round(t * 100) / 100 : 0;
+}
+
 export function analyze(y: Float32Array, sr: number, progress: Progress = () => {}, opts: { bpm?: number } = {}): AnalysisResult {
   const duration = y.length / sr;
   const f = extract(y, sr, progress);
   if (f.frames < f.fps * 10) throw new Error('音源が短すぎます（10秒以上必要です）');
   const frameTime = (t: number) => (t * HOP + N_FFT / 2) / sr;
+  let leadingSilence = findLeadingSilence(f, frameTime);
 
   progress(0.65, 'テンポと拍を推定しています');
   const period = estimatePeriod(f.onset, f.fps, opts.bpm);
@@ -331,6 +348,8 @@ export function analyze(y: Float32Array, sr: number, progress: Progress = () => 
   const beatsPerBar = 4;
   const phase = beatsUncertain ? 0 : downbeatPhase(beatFrames, f, beatsPerBar);
   const firstDownbeat = beatsUncertain || !beats.length ? null : beats[phase];
+  // 無音の終わりが最初の小節頭とほぼ同じなら、小節頭に揃える（最初の区間の小節数がずれないように）
+  if (leadingSilence && firstDownbeat != null && Math.abs(leadingSilence - firstDownbeat) < 0.25) leadingSilence = firstDownbeat;
 
   progress(0.85, '区切りと繰り返しを推定しています');
   // 区切り単位：小節（拍が不確かなら2秒ごと）
@@ -375,5 +394,5 @@ export function analyze(y: Float32Array, sr: number, progress: Progress = () => 
     group: labels[i],
   }));
   progress(1, '完了');
-  return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments };
+  return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments, leadingSilence };
 }

@@ -73,7 +73,7 @@ export function View({ viewId }: { viewId: string }) {
             {song.sections.map((s) => {
               const changes = diff?.sections[s.id] ?? [];
               return (
-                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}`}>
+                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.silence ? ' silence' : ''}`}>
                   <td data-label="開始">{fmt(s.start, 0)}</td>
                   <td data-label="終了">{fmt(s.end, 0)}</td>
                   <td data-label="セクション">
@@ -82,7 +82,7 @@ export function View({ viewId }: { viewId: string }) {
                     {sameAs(s) && <span class="group">（{sameAs(s)}と同じ）</span>}
                     {changes.map((c) => <span key={c} class="tag change">{CHANGE_LABEL[c]}</span>)}
                   </td>
-                  <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>
+                  <td data-label="小節数" class="num">{s.silence ? '—' : s.barsManual ?? s.barsEst ?? '未確定'}</td>
                   <td data-label="メモ">{s.memo}</td>
                 </tr>
               );

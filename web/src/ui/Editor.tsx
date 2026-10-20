@@ -574,7 +574,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   <option value="new">新しい繰り返し</option>
                   <option value="">繰り返しなし</option>
                 </select>
-                <span class={`origin ${s.edited ? 'manual' : ''}`}>{s.edited ? '手動修正' : '自動'}</span>
+                {s.silence ? <span class="tag">無音・小節数に数えません</span> : <span class={`origin ${s.edited ? 'manual' : ''}`}>{s.edited ? '手動修正' : '自動'}</span>}
               </div>
               <div class="sec-time">
                 {i === 0 ? <span class="t">{fmt(s.start)}</span> : (
@@ -587,7 +587,7 @@ export function Editor({ mode }: { mode: Mode }) {
                 )}
                 <span class="t">〜 {fmt(s.end)}</span>
                 <label class="bars">
-                  <input type="number" inputMode="numeric" min={0} max={999} value={s.barsManual ?? ''} placeholder={s.barsEst != null ? String(s.barsEst) : '未確定'}
+                  <input type="number" inputMode="numeric" min={0} max={999} value={s.barsManual ?? ''} placeholder={s.silence ? '—' : s.barsEst != null ? String(s.barsEst) : '未確定'}
                     aria-label="小節数"
                     onInput={(e) => {
                       const raw = (e.currentTarget as HTMLInputElement).value;
