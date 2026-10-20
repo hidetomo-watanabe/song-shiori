@@ -339,21 +339,17 @@ button.row-go { min-height: 26px; min-width: 26px; padding: 0 6px; margin: -4px 
 .view-head { margin: 16px 0 4px; }
 .view-head h1 { font-size: 28px; margin-bottom: 2px; }
 .artist { font-size: 16px; margin: 0; color: var(--sub); font-weight: 600; }
-.view-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.view-title > div { min-width: 0; }
-/* 共有のボタン。LINE で送るを主にする（ライブのしおりと同じ LINE の緑） */
-.share-buttons { flex: none; display: grid; gap: 4px; justify-items: end; margin-top: 4px; }
-.share-main { display: flex; gap: 8px; }
-.share-main button { justify-content: center; }
+/* 共有のボタン（ライブのしおりと同じ形）。「曲名とリンクをコピー」「LINEで送る」を同じ幅で2つ並べる */
+.share-buttons { display: grid; gap: 4px; justify-items: start; max-width: 480px; margin: 8px 0; }
+.share-buttons .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.share-buttons .two button { justify-content: center; }
 button.line { background: #06a849; border-color: #06a849; color: #fff; font-weight: 700; }
 button.line:hover:not(:disabled) { background: #05923f; border-color: #05923f; }
-.share-buttons.compact { justify-items: start; margin-top: 0; }
-@media (max-width: 640px) {
-  .view-title { flex-direction: column; align-items: stretch; }
-  .share-buttons:not(.compact) { justify-items: stretch; }
-  .share-buttons:not(.compact) .share-main { display: grid; grid-template-columns: 1fr 1fr; }
-  .share-buttons:not(.compact) .share-main button { min-height: 44px; }
-}
+/* PC では「LINEで送る」を出さず、コピーを横幅いっぱいにする（閲覧ページの共有ボタンは残す） */
+.pc .share-buttons .line { display: none; }
+.pc .share-buttons .two { grid-template-columns: 1fr; }
+/* 閲覧ページの「共有（LINE など）」：構成表のすぐ下に横幅いっぱいで置く */
+button.view-share { display: flex; width: 100%; justify-content: center; min-height: 48px; font-size: 15px; margin: 4px 0 14px; }
 
 /* 画面下の通知（コピー・共有の結果） */
 #toast { position: fixed; left: 50%; bottom: 24px; z-index: 30; max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 10px; background: var(--text); color: var(--card); font-size: 14px; line-height: 1.6; box-shadow: var(--shadow-lg); transform: translate(-50%, 20px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }

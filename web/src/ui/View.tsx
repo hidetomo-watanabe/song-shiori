@@ -7,8 +7,7 @@ import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
-import { ShareButtons } from './ShareButtons';
-import { fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
+import { fmt, fmtDate, fmtDay, groupTone, shareMessage, shareTitle, timeSignature, viewShare, viewUrl } from './util';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
 export function View({ viewId }: { viewId: string }) {
@@ -72,7 +71,7 @@ export function View({ viewId }: { viewId: string }) {
   useEffect(() => {
     if (!data) return;
     const before = document.title;
-    document.title = `${data.song.title || '曲名未入力'} - 曲のしおり`;
+    document.title = `${data.song.title || '曲名未入力'}｜曲のしおり`;
     return () => { document.title = before; };
   }, [data?.song.title]);
 
@@ -103,14 +102,8 @@ export function View({ viewId }: { viewId: string }) {
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます">＋ 新しく作る</a>
       </nav>
       <header class="view-head">
-        <div class="view-title">
-          <div>
-            <h1>{song.title || '曲名未入力'}</h1>
-            {song.artist && <p class="artist">{song.artist}</p>}
-          </div>
-          {/* 共有は閲覧ページのいちばんの操作なので、曲名の横に目立つ形で置く（ライブのしおりと同じく LINE を主に） */}
-          <ShareButtons text={shareText} />
-        </div>
+        <h1>{song.title || '曲名未入力'}</h1>
+        {song.artist && <p class="artist">{song.artist}</p>}
         <div class="view-meta">
           <span class="tag">{bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}</span>
           <span class="tag">{timeSignature(song.beatsPerBar)}</span>
@@ -191,6 +184,8 @@ export function View({ viewId }: { viewId: string }) {
         </table>
         <ExportText song={song} />
       </section>
+      {/* 共有：ライブのしおりの閲覧ページと同じく、構成表のすぐ下に「共有（LINE など）」を1つ置く */}
+      <button class="line view-share" onClick={() => void viewShare(shareText(), shareTitle(song.title))}>↗ 共有（LINE など）</button>
 
       {song.memo && (
         <section class="card">
