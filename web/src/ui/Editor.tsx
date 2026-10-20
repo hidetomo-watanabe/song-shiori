@@ -6,6 +6,7 @@ import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/ru
 import { api, ApiError, randomHex, track, type MemoInfo } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
+import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { Timeline } from './Timeline';
@@ -289,6 +290,13 @@ export function Editor({ mode }: { mode: Mode }) {
     else player.play();
     setPlaying(player.playing);
   }
+  // シークバー・タイムラインから再生位置を動かす。ループ中に範囲の外へ動かしたらループを解除する
+  function seekTo(t: number) {
+    if (player.loop && (t < player.loop.start || t >= player.loop.end)) { setLoopId(null); player.setLoop(null); }
+    player.seek(t);
+    setNow(t);
+  }
+
   function playSection(s: Section) {
     if (loopId) { setLoopId(s.id); player.loop = { start: s.start, end: s.end }; }
     player.play(s.start);
@@ -481,12 +489,13 @@ export function Editor({ mode }: { mode: Mode }) {
             <button onClick={() => setProposal(null)}>やめる</button>
           </div>
         )}
+        {hasAudio && <SeekBar now={now} duration={player.duration} onSeek={seekTo} />}
         <Timeline
           song={song}
           now={now}
           showPlayhead={hasAudio}
           selected={selected}
-          onSeek={(t) => { if (hasAudio) { player.seek(t); setNow(t); } }}
+          onSeek={(t) => { if (hasAudio) seekTo(t); }}
           onSelect={setSelected}
           onDragStart={() => { history.current = [...history.current.slice(-99), songRef.current!]; future.current = []; coalesce.current = null; }}
           onDrag={(i, t) => edit((s) => M.moveBoundary(s, i, snapT(t)), { history: false })}
@@ -649,6 +658,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <label class="check"><input type="checkbox" checked={!notify} onChange={(e) => setNotify(!(e.currentTarget as HTMLInputElement).checked)} />変更として知らせない</label>
           </div>
         )}
+        {hasAudio && <SeekBar compact now={now} duration={player.duration} onSeek={seekTo} />}
         <div class="save-row">
           {hasAudio && (
             <span class="mini-player">
