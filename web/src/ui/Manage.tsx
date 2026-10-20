@@ -17,7 +17,12 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
   const [error, setError] = useState('');
   const [newKey, setNewKey] = useState('');
   const [keys, setKeysState] = useState(() => L.getKeys(id));
-  const saveKeys = (patch: { admin?: string | null; edit?: string | null }) => { L.setKeys(id, patch); setKeysState(L.getKeys(id)); };
+  // 新しいキーは、編集権限を記憶しているブラウザにだけ保存する（記憶しない選択の共用端末などには残さない）
+  const saveKeys = (patch: { admin?: string | null; edit?: string | null }) => {
+    const keep = Object.fromEntries(Object.entries(patch).filter(([, v]) => v === null || L.remembersSession(id)));
+    L.setKeys(id, keep);
+    setKeysState(L.getKeys(id));
+  };
   const [newEditKey, setNewEditKey] = useState('');
   const [confirm, setConfirm] = useState<'' | 'rekey' | 'editkey' | 'stopedit' | 'unshare' | 'reshare' | 'delete'>('');
   const [copied, setCopied] = useState(false);

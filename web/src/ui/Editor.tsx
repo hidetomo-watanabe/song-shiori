@@ -783,7 +783,7 @@ export function Editor({ mode }: { mode: Mode }) {
       {id && meta && session && role === 'admin' && (
         <Manage id={id} meta={meta} session={session}
           onMeta={setMeta}
-          onSession={(s) => { L.setSession(id, s, !!localStorage.getItem(`ks-session-${id}`)); setSessionState(s); }}
+          onSession={(s) => { L.setSession(id, s, L.remembersSession(id)); setSessionState(s); }}
           onDeleted={async () => { await L.removeDraft(draftKey); L.forgetMine(id); L.forgetKeys(id); go('#/', true); }} />
       )}
 

@@ -57,6 +57,9 @@ const set = (k: string, v: string | null) => {
 export function getSession(id: string): string | null {
   try { return sessionStorage.getItem(`ks-session-${id}`) ?? get(`ks-session-${id}`); } catch { return get(`ks-session-${id}`); }
 }
+// このブラウザに編集権限を記憶しているか（記憶しない選択なら、キーも保存しない）
+export const remembersSession = (id: string) => !!get(`ks-session-${id}`);
+
 export function setSession(id: string, token: string | null, remember: boolean) {
   set(`ks-session-${id}`, remember ? token : null);
   try {
