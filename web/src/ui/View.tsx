@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
 import { bpmOf } from '../../../shared/song';
 import { api, track, type ViewData } from '../api';
+import { ExportText } from './ExportText';
 import { getSeen, setSeen } from '../storage/local';
 import { fmt, fmtDate, fmtDay, groupTone, timeSignature } from './util';
 
@@ -89,6 +90,7 @@ export function View({ viewId }: { viewId: string }) {
             })}
           </tbody>
         </table>
+        <ExportText song={song} />
       </section>
 
       {song.memo && (
