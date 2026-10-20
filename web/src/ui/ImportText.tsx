@@ -25,7 +25,7 @@ export function ImportText({ song, duration, onImport, onClose }: Props) {
             if (f) read(await f.text());
           }} />
         </label>
-        <button class="small" onClick={onClose}>やめる</button>
+        <button class="small" onClick={onClose}>キャンセル</button>
       </div>
       {result && (
         <div class="import-preview">

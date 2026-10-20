@@ -558,7 +558,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <p class="warn">手動で直した内容があります。作り直すと、区間の区切り・名前・小節数・メモなどの手動修正は消えます（曲名・アーティスト・全体メモは残ります。「元に戻す」で取り消せます）。</p>
             <button class="primary" onClick={() => adopt(true)}>この結果で作り直す</button>
             <button onClick={() => adopt(false)}>テンポの推定だけ更新（区間はそのまま）</button>
-            <button onClick={() => setProposal(null)}>やめる</button>
+            <button onClick={() => setProposal(null)}>キャンセル</button>
           </div>
         )}
         {hasAudio && <SeekBar now={now} duration={player.duration} onSeek={seekTo} />}
@@ -674,7 +674,7 @@ export function Editor({ mode }: { mode: Mode }) {
           <div class="confirm">
             <p>区間の区切り・名前・繰り返し・小節数・区間のメモと、テンポ・拍子・最初の小節頭の手動修正をすべて捨てて、自動解析の結果に戻します。曲名・アーティスト・全体メモは残ります。戻したあとでも「元に戻す」で取り消せます。</p>
             <button class="danger" onClick={() => { edit((s) => M.resetToAnalysis(s)); setConfirmReset(false); setSelected(null); setNotice('自動解析の結果に戻しました。'); }}>自動解析の結果に戻す</button>
-            <button onClick={() => setConfirmReset(false)}>やめる</button>
+            <button onClick={() => setConfirmReset(false)}>キャンセル</button>
           </div>
         )}
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
@@ -751,7 +751,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   </label>
                   <span class="sub">（この区間は {s.barsManual ?? s.barsEst} 小節。分けた位置は小節の頭に合わせます）</span>
                   <button class="small primary" type="submit">分割する</button>
-                  <button class="small" type="button" onClick={() => setSplitForm(null)}>やめる</button>
+                  <button class="small" type="button" onClick={() => setSplitForm(null)}>キャンセル</button>
                   {splitForm.error && <p class="error">{splitForm.error}</p>}
                 </form>
               )}

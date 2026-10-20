@@ -34,7 +34,7 @@ export function StartEdit({ viewId, title }: { viewId: string; title: string }) 
       <label class="check"><input type="checkbox" checked={remember} onChange={(e) => setRemember((e.currentTarget as HTMLInputElement).checked)} />このブラウザに編集権限を記憶する（共用端末では外してください）</label>
       <div class="actions">
         <button class="small primary" type="submit" disabled={busy || !key.trim()}>編集を始める</button>
-        <button class="small" type="button" onClick={() => setOpen(false)}>やめる</button>
+        <button class="small" type="button" onClick={() => setOpen(false)}>キャンセル</button>
       </div>
       {error && <p class="error">{error}</p>}
     </form>

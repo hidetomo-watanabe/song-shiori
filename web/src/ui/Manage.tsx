@@ -52,14 +52,14 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
             <>
               <span>再発行すると、今の閲覧URLは使えなくなります。メンバーに新しいURLを送り直してください。</span>
               <button class="danger" onClick={() => run(async () => onMeta(await api.reshare(id, session)))}>新しいURLを発行</button>
-              <button onClick={() => setConfirm('')}>やめる</button>
+              <button onClick={() => setConfirm('')}>キャンセル</button>
             </>
           ) : <button onClick={() => setConfirm('reshare')}>閲覧URLを再発行</button>}
           {url && (confirm === 'unshare' ? (
             <>
               <span>無効にすると、閲覧URLで見られなくなります（あとで新しいURLを発行できます）。</span>
               <button class="danger" onClick={() => run(async () => onMeta(await api.unshare(id, session)))}>共有を無効にする</button>
-              <button onClick={() => setConfirm('')}>やめる</button>
+              <button onClick={() => setConfirm('')}>キャンセル</button>
             </>
           ) : <button onClick={() => setConfirm('unshare')}>共有を無効にする</button>)}
         </div>
@@ -82,13 +82,13 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
               setNewEditKey(key);
               saveKeys({ edit: key });
             })}>{meta.editKey ? '再発行する' : '発行する'}</button>
-            <button onClick={() => setConfirm('')}>やめる</button>
+            <button onClick={() => setConfirm('')}>キャンセル</button>
           </div>
         ) : confirm === 'stopedit' ? (
           <div class="actions">
             <span>止めると、編集キーが使えなくなり、メンバーは編集できなくなります（閲覧はできます）。</span>
             <button class="danger" onClick={() => run(async () => { onMeta(await api.stopEdit(id, session)); saveKeys({ edit: null }); })}>メンバーの編集を止める</button>
-            <button onClick={() => setConfirm('')}>やめる</button>
+            <button onClick={() => setConfirm('')}>キャンセル</button>
           </div>
         ) : (
           <div class="actions">
@@ -118,7 +118,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
               setNewKey(key);
               saveKeys({ admin: key });
             })}>再発行する</button>
-            <button onClick={() => setConfirm('')}>やめる</button>
+            <button onClick={() => setConfirm('')}>キャンセル</button>
           </div>
         ) : (
           <div class="actions">
@@ -143,7 +143,7 @@ export function Manage({ id, meta, session, onMeta, onSession, onDeleted }: Prop
           <div class="actions">
             <span>削除すると、構成メモと過去の更新の記録がすべて消え、閲覧URLも使えなくなります。元に戻せません。</span>
             <button class="danger" onClick={() => run(async () => { await api.remove(id, session); onDeleted(); })}>削除する</button>
-            <button onClick={() => setConfirm('')}>やめる</button>
+            <button onClick={() => setConfirm('')}>キャンセル</button>
           </div>
         ) : <button class="danger" onClick={() => setConfirm('delete')}>この曲メモを削除</button>}
       </div>
