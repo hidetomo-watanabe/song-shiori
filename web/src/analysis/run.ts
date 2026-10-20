@@ -17,7 +17,8 @@ export async function toAnalysisSamples(buffer: AudioBuffer): Promise<Float32Arr
 
 export type AnalysisJob = { promise: Promise<{ result: AnalysisResult; ms: number }>; cancel: () => void };
 
-export function runAnalysis(samples: Float32Array, onProgress: (ratio: number, stage: string) => void): AnalysisJob {
+// bpm を渡すと、そのテンポを前提に拍・小節・区切りを推定する
+export function runAnalysis(samples: Float32Array, onProgress: (ratio: number, stage: string) => void, bpm?: number): AnalysisJob {
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   let reject: (e: Error) => void = () => {};
   const promise = new Promise<{ result: AnalysisResult; ms: number }>((res, rej) => {
@@ -30,6 +31,6 @@ export function runAnalysis(samples: Float32Array, onProgress: (ratio: number, s
     };
     worker.onerror = () => { worker.terminate(); rej(new Error('解析中にエラーが発生しました。端末のメモリが不足している可能性があります')); };
   });
-  worker.postMessage({ samples }, [samples.buffer]);
+  worker.postMessage({ samples, bpm }, [samples.buffer]);
   return { promise, cancel: () => { worker.terminate(); reject(new Error('解析を中止しました')); } };
 }

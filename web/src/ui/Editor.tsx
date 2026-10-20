@@ -230,13 +230,13 @@ export function Editor({ mode }: { mode: Mode }) {
     }
   }
 
-  async function analyzeBuffer(buf: AudioBuffer, how: 'replace' | 'propose') {
+  async function analyzeBuffer(buf: AudioBuffer, how: 'replace' | 'propose', bpm?: number) {
     setAnalysisError('');
     setProposal(null);
     setProgress({ ratio: 0, stage: '解析の準備をしています' });
     try {
       const samples = await toAnalysisSamples(buf);
-      const j = runAnalysis(samples, (ratio, stage) => setProgress({ ratio, stage }));
+      const j = runAnalysis(samples, (ratio, stage) => setProgress({ ratio, stage }), bpm);
       job.current = j;
       const { result, ms } = await j.promise;
       track('analysis_ok', { durationMs: Math.round(ms), audioSec: buf.duration });
@@ -368,6 +368,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const current = song.sections.find((s) => now >= s.start && now < s.end)?.id;
   const hasAudio = !!player.buffer;
   const totalBars = song.sections.reduce((p, s) => p + (s.barsManual ?? s.barsEst ?? 0), 0);
+  // 手入力・ネット上の BPM が自動生成時の推定と違うとき（倍・半分の誤認など）は、そのBPMでやり直せるようにする
+  const redoBpm = song.analysis && song.bpmManual != null && (song.bpmEst == null || Math.abs(song.bpmManual / song.bpmEst - 1) > 0.03) ? song.bpmManual : null;
 
   return (
     <main class="page editor">
@@ -471,6 +473,12 @@ export function Editor({ mode }: { mode: Mode }) {
           <label class="check"><input type="checkbox" checked={snap} onChange={(e) => setSnap((e.currentTarget as HTMLInputElement).checked)} />境界を拍に合わせる</label>
         </div>
         <p class="sub">{bar ? `1小節 ${bar.toFixed(2)}秒・合計 ${totalBars}小節` : '小節数は未確定です'}</p>
+        {redoBpm && (hasAudio
+          ? <div class="redo-bpm">
+              <p>区切りは自動生成時のテンポ（{song.bpmEst ?? '未確定'}）を元に推定しています。BPM {redoBpm} を前提に、拍・小節・区切りを推定し直せます。</p>
+              <button class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, song.sections.some((s) => s.edited) ? 'propose' : 'replace', redoBpm)}>BPM {redoBpm} で自動生成をやり直す</button>
+            </div>
+          : <p class="sub">音源を選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
           onApply={(v) => edit((s) => M.setTempo(s, { bpmManual: v }))} />
       </section>

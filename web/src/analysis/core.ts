@@ -127,9 +127,12 @@ function detrend(x: Float32Array, w: number): Float32Array {
   return out;
 }
 
-// 自己相関からテンポ（1拍のフレーム数）を推定。120BPM付近を優先する
-function estimatePeriod(onset: Float32Array, fps: number): number {
-  const minLag = Math.floor((60 * fps) / 200), maxLag = Math.ceil((60 * fps) / 60);
+// 自己相関からテンポ（1拍のフレーム数）を推定。120BPM付近を優先する。
+// BPM の指定（ネット上の情報や手入力）があれば、その ±4% の範囲で探す
+function estimatePeriod(onset: Float32Array, fps: number, bpmHint?: number): number {
+  const center = bpmHint ? (60 * fps) / bpmHint : 0;
+  const minLag = Math.max(2, bpmHint ? Math.floor(center * 0.96) : Math.floor((60 * fps) / 200));
+  const maxLag = Math.min(onset.length - 2, bpmHint ? Math.ceil(center * 1.04) : Math.ceil((60 * fps) / 60));
   const ac = new Float64Array(maxLag + 2);
   for (let lag = minLag - 1; lag <= maxLag + 1; lag++) {
     let s = 0;
@@ -139,7 +142,7 @@ function estimatePeriod(onset: Float32Array, fps: number): number {
   let best = minLag, bestScore = -Infinity;
   for (let lag = minLag; lag <= maxLag; lag++) {
     const bpm = (60 * fps) / lag;
-    const prior = Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.9) ** 2);
+    const prior = bpmHint ? 1 : Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.9) ** 2);
     const score = ac[lag] * prior;
     if (score > bestScore) { bestScore = score; best = lag; }
   }
@@ -308,14 +311,14 @@ function segmentSimilarity(S: number[][], a: [number, number], b: [number, numbe
   return ratio > 2 ? best * 0.85 : best;
 }
 
-export function analyze(y: Float32Array, sr: number, progress: Progress = () => {}): AnalysisResult {
+export function analyze(y: Float32Array, sr: number, progress: Progress = () => {}, opts: { bpm?: number } = {}): AnalysisResult {
   const duration = y.length / sr;
   const f = extract(y, sr, progress);
   if (f.frames < f.fps * 10) throw new Error('音源が短すぎます（10秒以上必要です）');
   const frameTime = (t: number) => (t * HOP + N_FFT / 2) / sr;
 
   progress(0.65, 'テンポと拍を推定しています');
-  const period = estimatePeriod(f.onset, f.fps);
+  const period = estimatePeriod(f.onset, f.fps, opts.bpm);
   const beatFrames = trackBeats(f.onset, period);
   const beats = beatFrames.map(frameTime);
   const intervals = beats.slice(1).map((b, i) => b - beats[i]).sort((a, b) => a - b);
