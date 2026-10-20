@@ -39,6 +39,9 @@ export type Song = {
   groupNames?: Record<string, string>;
   // 再生に使う YouTube の動画 ID。音は取り出せないため、自動解析には使わない
   youtube?: string | null;
+  // 構成表の時刻と YouTube の動画の時刻のずれ（秒）。動画の時刻 = 構成表の時刻 + ずれ。
+  // 音源と動画で曲頭の無音や MV の前置きの長さが違うときに合わせる。構成表の時刻は変えない
+  youtubeOffset?: number;
 };
 
 // 区間の名前の候補（入力欄で選べる）
@@ -82,6 +85,9 @@ export function youtubeId(text: string): string | null {
   return id && YOUTUBE_ID.test(id) ? id : null;
 }
 export const youtubeUrl = (id: string) => `https://www.youtube.com/watch?v=${id}`;
+export const MAX_YOUTUBE_OFFSET = 600;
+// ずれは 0.01 秒単位にそろえ、範囲に収める
+export const clampOffset = (x: number) => Math.round(Math.max(-MAX_YOUTUBE_OFFSET, Math.min(MAX_YOUTUBE_OFFSET, x)) * 100) / 100;
 // 拍・小節が使えるか。解析で確定できなくても、BPM を手動で入れれば使える
 export const hasGrid = (s: Song) => bpmOf(s) != null && (s.bpmManual != null || !s.beatsUncertain);
 // 解析で見つけた拍の位置を小節の線に使えるか。BPM を推定と大きく違う値に手で直した場合は使わない（拍の列が合わないため）
@@ -558,6 +564,7 @@ export function validateSong(x: unknown): string | null {
   if (s.sections.length && Math.abs(t - s.duration) > 1e-6) return '最後の区間が曲の終わりと一致しません';
   if (s.groupNames != null && (typeof s.groupNames !== 'object' || Object.keys(s.groupNames).length > 100 || !Object.values(s.groupNames).every((v) => str(v, LIMITS.text)))) return '繰り返しの名前が正しくありません';
   if (s.youtube != null && (typeof s.youtube !== 'string' || !YOUTUBE_ID.test(s.youtube))) return 'YouTube の動画が正しくありません';
+  if (s.youtubeOffset != null && (!num(s.youtubeOffset) || Math.abs(s.youtubeOffset) > MAX_YOUTUBE_OFFSET)) return 'YouTube の動画のずれが正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;
 }

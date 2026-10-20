@@ -45,6 +45,7 @@ export function View({ viewId }: { viewId: string }) {
     YouTubePlayer.create(ytHost.current, data.song.youtube).then((p) => {
       if (!alive) { p.destroy(); return; }
       p.onError = setYtError;
+      p.offset = data.song.youtubeOffset ?? 0;
       setYt(p);
       setYtState('ready');
       track('youtube_view_play');

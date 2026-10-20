@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -366,5 +366,11 @@ describe('YouTube の動画', () => {
     expect(validateSong({ ...prev, youtube: '<script>' })).not.toBeNull();
     expect(diffSongs(prev, { ...prev, youtube: 'dQw4w9WgXcQ' }).song).toContain('YouTube の動画');
     expect(diffSongs(prev, { ...prev, youtube: null }).changed).toBe(false);
+    expect(validateSong({ ...prev, youtube: 'dQw4w9WgXcQ', youtubeOffset: -12.34 })).toBeNull();
+    expect(validateSong({ ...prev, youtubeOffset: 9999 })).not.toBeNull();
+    expect(validateSong({ ...prev, youtubeOffset: Number.NaN })).not.toBeNull();
+    expect(diffSongs({ ...prev, youtube: 'dQw4w9WgXcQ' }, { ...prev, youtube: 'dQw4w9WgXcQ', youtubeOffset: 3 }).song).toContain('YouTube の動画');
+    expect(clampOffset(1.23456)).toBe(1.23);
+    expect(clampOffset(-1000)).toBe(-600);
   });
 });

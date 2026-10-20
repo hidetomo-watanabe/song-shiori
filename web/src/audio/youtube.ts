@@ -48,6 +48,8 @@ export class YouTubePlayer implements Playback {
   private want = false; // 再生中か（読み込み中も含む。表示がちらつかないよう、プレーヤーの状態ではなく操作で決める）
   private timer = 0;
   loop: Range | null = null;
+  // 構成表の時刻と動画の時刻のずれ（秒）。動画の時刻 = 構成表の時刻 + offset。外から見える時刻はすべて構成表の時刻
+  offset = 0;
   onEnded: () => void = () => {};
   onError: (message: string) => void = () => {};
 
@@ -80,7 +82,7 @@ export class YouTubePlayer implements Playback {
             if (e.data === PLAYING) self.want = true;
             else if (e.data === PAUSED) self.want = false;
             else if (e.data === ENDED) {
-              if (self.loop) { self.p.seekTo(self.loop.start, true); self.p.playVideo(); return; }
+              if (self.loop) { self.seekRaw(self.loop.start); self.p.playVideo(); return; }
               self.want = false;
               self.onEnded();
             }
@@ -91,17 +93,27 @@ export class YouTubePlayer implements Playback {
     // 区間ループ：終わりに来たら頭へ戻す。YouTube は継ぎ目なしのループができないため、戻るときに少し間があく
     self.timer = window.setInterval(() => {
       const l = self.loop;
-      if (self.want && l && self.currentTime >= l.end - 0.03) self.p.seekTo(l.start, true);
+      if (self.want && l && self.currentTime >= l.end - 0.03) self.seekRaw(l.start);
     }, 30);
     return self;
   }
 
   get duration(): number {
-    return this.p?.getDuration?.() ?? 0;
+    return Math.max(0, (this.p?.getDuration?.() ?? 0) - this.offset);
   }
 
-  get currentTime(): number {
+  // 動画の上の時刻（ずれを足す前）
+  get videoTime(): number {
     return this.p?.getCurrentTime?.() ?? 0;
+  }
+
+  // 構成表の時刻。動画の前置き（構成表の 0 秒より前）を再生している間は 0
+  get currentTime(): number {
+    return Math.max(0, this.videoTime - this.offset);
+  }
+
+  private seekRaw(t: number) {
+    this.p.seekTo(Math.max(0, t + this.offset), true);
   }
 
   get playing(): boolean {
@@ -112,7 +124,7 @@ export class YouTubePlayer implements Playback {
   play(from?: number) {
     let at = from ?? this.currentTime;
     if (this.loop && (at < this.loop.start || at >= this.loop.end)) at = this.loop.start;
-    if (from != null || at !== this.currentTime) this.p.seekTo(at, true);
+    if (from != null || at !== this.currentTime) this.seekRaw(at);
     this.p.playVideo();
     this.want = true;
   }
@@ -123,18 +135,18 @@ export class YouTubePlayer implements Playback {
   }
 
   seek(t: number) {
-    this.p.seekTo(Math.max(0, Math.min(t, this.duration)), true);
+    this.seekRaw(Math.max(0, Math.min(t, this.duration)));
   }
 
   setLoop(range: Range | null) {
     this.loop = range;
     const t = this.currentTime;
-    if (this.want && range && (t < range.start || t >= range.end)) this.p.seekTo(range.start, true);
+    if (this.want && range && (t < range.start || t >= range.end)) this.seekRaw(range.start);
   }
 
   stop() {
     this.p.pauseVideo();
-    this.p.seekTo(0, true);
+    this.seekRaw(0);
     this.want = false;
   }
 

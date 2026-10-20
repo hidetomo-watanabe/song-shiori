@@ -13,6 +13,7 @@ import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { Timeline } from './Timeline';
+import { YouTubeAlign } from './YouTubeAlign';
 import { copy, fmt, go, groupTone, handoff, parseTime, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
 type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: 'saved'; id: string };
@@ -208,15 +209,12 @@ export function Editor({ mode }: { mode: Mode }) {
       if (!alive) { p.destroy(); return; }
       made = p;
       yt = p;
+      p.offset = songRef.current?.youtubeOffset ?? 0;
       p.onError = setYtError;
       setYtReady(true);
-      // 手動で作り始めたばかりなら動画の長さで区間を作る。区間があって長さが違えば知らせる
+      // 手動で作り始めたばかりなら動画の長さで区間を作る（長さの違いは「音源とのずれを合わせる」で示す）
       const d = p.duration;
-      const cur = songRef.current!;
-      if (d > 0 && !cur.sections.length) edit((s) => M.normalize({ ...s, duration: d, sections: [M.newSection(0, d)] }), { history: false });
-      else if (d > 0 && !player.buffer && Math.abs(cur.duration - d) > 1.5) {
-        setAudioNote(`構成表の長さ（${fmt(cur.duration)}）と動画の長さ（${fmt(d)}）が違います。別バージョンの動画かもしれません。`);
-      }
+      if (d > 0 && !songRef.current!.sections.length) edit((s) => M.normalize({ ...s, duration: d, sections: [M.newSection(0, d)] }), { history: false });
     }).catch((e) => { if (alive) setYtError(e instanceof Error ? e.message : '動画を読み込めませんでした'); });
     return () => {
       alive = false;
@@ -226,13 +224,16 @@ export function Editor({ mode }: { mode: Mode }) {
     };
   }, [videoId]);
 
+  // ずれを変えたら、再生中の動画にもすぐ反映する
+  useEffect(() => { if (yt) yt.offset = song?.youtubeOffset ?? 0; }, [song?.youtubeOffset, ytReady]);
+
   function setVideo(e: Event) {
     e.preventDefault();
     const v = M.youtubeId(ytInput);
     if (!v) { setYtError('YouTube の動画の URL を読み取れませんでした'); return; }
     setYtInput('');
     setAudioNote('');
-    edit((s) => ({ ...s, youtube: v }));
+    edit((s) => ({ ...s, youtube: v, youtubeOffset: undefined }));
     track('youtube_set');
   }
 
@@ -610,9 +611,13 @@ export function Editor({ mode }: { mode: Mode }) {
             <p class="sub">
               YouTube の動画で再生します（自動生成には使えません）。動画は構成表と一緒に保存され、閲覧ページでも聴けます。
               <a href={M.youtubeUrl(videoId)} target="_blank" rel="noopener">YouTube で開く</a>
-              <button class="link" onClick={() => { setYtError(''); edit((s) => ({ ...s, youtube: null })); }}>動画を外す</button>
+              <button class="link" onClick={() => { setYtError(''); edit((s) => ({ ...s, youtube: null, youtubeOffset: undefined })); }}>動画を外す</button>
             </p>
             {!ytReady && !ytError && <p class="sub">動画を読み込んでいます…</p>}
+            {ytReady && yt && !player.buffer && (
+              <YouTubeAlign song={song} videoDuration={yt.duration + yt.offset} videoTime={() => yt?.videoTime ?? 0}
+                onChange={(x) => edit((s) => ({ ...s, youtubeOffset: x || undefined }), { coalesce: 'youtube-offset' })} />
+            )}
           </div>
         ) : (
           <form class="yt-form" onSubmit={setVideo}>
