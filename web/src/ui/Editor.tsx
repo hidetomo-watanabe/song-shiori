@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
+import { Metronome } from '../audio/metronome';
 import { YouTubePlayer, type Playback } from '../audio/youtube';
 import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/run';
 import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
@@ -31,6 +32,7 @@ let yt: YouTubePlayer | null = null;
 // 再生に使うもの。音源ファイルを選んでいればそれを、なければ YouTube の動画を使う
 const media = (): Playback => (player.buffer || !yt ? player : yt);
 const canPlay = () => !!player.buffer || !!yt;
+const metronome = new Metronome();
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export function Editor({ mode }: { mode: Mode }) {
@@ -90,6 +92,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const [slowDismissed, setSlowDismissed] = useState(false);
   const [netBpm, setNetBpm] = useState<number | null>(null); // ネット上の BPM（いちばん上の候補）
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
+  const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -132,7 +135,7 @@ export function Editor({ mode }: { mode: Mode }) {
       }
       await loadSaved(session);
     })();
-    return () => { job.current?.cancel(); player.pause(); player.loop = null; yt?.destroy(); yt = null; };
+    return () => { job.current?.cancel(); player.pause(); player.loop = null; yt?.destroy(); yt = null; metronome.stop(); };
   }, []);
 
   async function loadSaved(token: string | null) {
@@ -242,6 +245,14 @@ export function Editor({ mode }: { mode: Mode }) {
     void analyzeBuffer(player.buffer, 'replace', to).then(() =>
       setNotice(`ネット上の BPM（${netBpm}）を参考に、テンポを ${to} に直して作り直しました（推定 ${from} は${f === 2 ? '半分' : '2倍'}のテンポでした）。`));
   }, [netBpm, song?.bpmEst, progress]);
+
+  // メトロノームは今の BPM・拍子で鳴らす。BPM が空になったら止め、入れ直したら続きを鳴らす
+  const tempoBpm = song ? M.bpmOf(song) : null;
+  metronome.bpm = tempoBpm ?? 0;
+  metronome.beatsPerBar = song?.beatsPerBar ?? 4;
+  useEffect(() => {
+    if (ticking && tempoBpm) metronome.start(); else metronome.stop();
+  }, [ticking, !!tempoBpm]);
 
   // キーボード：スペースで再生・停止、Ctrl/⌘+Z で元に戻す、Ctrl/⌘+Shift+Z・Ctrl+Y でやり直す（入力欄の中では使わない）
   useEffect(() => {
@@ -638,6 +649,12 @@ export function Editor({ mode }: { mode: Mode }) {
                   const v = Number((e.currentTarget as HTMLInputElement).value);
                   edit((s) => M.setTempo(s, { bpmManual: v >= 20 && v <= 400 ? v : null }), { coalesce: 'bpm' });
                 }} />
+              <button class={`small${ticking && tempoBpm ? ' on' : ''}`} disabled={!tempoBpm} title="この BPM でクリック音を鳴らします。曲を再生しながら鳴らすと、テンポが合っているか聴き比べられます"
+                onClick={() => {
+                  // iPhone ではタップの中で鳴らし始めないと音が出ないため、ここで始める
+                  if (ticking) metronome.stop(); else metronome.start();
+                  setTicking(!ticking);
+                }}>{ticking && tempoBpm ? '■ メトロノーム' : '♪ メトロノーム'}</button>
               {song.bpmManual != null && (
                 <button class="small" onClick={() => { edit((s) => M.setTempo(s, { bpmManual: null })); setBpmCheck(null); }}>
                   {song.bpmEst ? `推定（${song.bpmEst}）に戻す` : '手入力をやめる'}
