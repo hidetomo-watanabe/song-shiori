@@ -402,6 +402,7 @@ export function Editor({ mode }: { mode: Mode }) {
         await L.saveDraft('draft', { song: s, updatedAt: Date.now(), create: createInfo.current });
         const c = await api.create(createInfo.current.requestId, createInfo.current.key, createInfo.current.editKey, s);
         L.setSession(c.id, c.session, true);
+        L.setKeys(c.id, { admin: createInfo.current.key, edit: createInfo.current.editKey });
         L.rememberMine({ id: c.id, title: s.title, updatedAt: c.updatedAt });
         await L.removeDraft('draft');
         handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key, editKey: createInfo.current.editKey, title: s.title };
@@ -443,8 +444,10 @@ export function Editor({ mode }: { mode: Mode }) {
   async function submitKey(key: string, remember: boolean) {
     if (!id) return;
     try {
-      const { session: s, role: r } = await api.session(id, key.trim().toLowerCase());
+      const k = key.trim().toLowerCase();
+      const { session: s, role: r } = await api.session(id, k);
       L.setSession(id, s, remember);
+      if (remember) L.setKeys(id, r === 'admin' ? { admin: k } : { edit: k });
       setSessionState(s);
       setRole(r);
       if (songRef.current && dirty) { setNeedKey(false); setSaveState('idle'); setSaveError(''); return; }
@@ -493,7 +496,12 @@ export function Editor({ mode }: { mode: Mode }) {
       {created && (
         <CreatedDialog
           info={created}
-          onRemember={(r) => { if (session && id) L.setSession(id, session, r); }}
+          onRemember={(r) => {
+            if (!session || !id) return;
+            L.setSession(id, session, r);
+            // 記憶しない場合は、発行したキーもこのブラウザに残さない
+            if (r) L.setKeys(id, { admin: created.key, edit: created.editKey }); else L.forgetKeys(id);
+          }}
           onClose={() => { handoff.created = null; setCreated(null); }}
         />
       )}
@@ -776,7 +784,7 @@ export function Editor({ mode }: { mode: Mode }) {
         <Manage id={id} meta={meta} session={session}
           onMeta={setMeta}
           onSession={(s) => { L.setSession(id, s, !!localStorage.getItem(`ks-session-${id}`)); setSessionState(s); }}
-          onDeleted={async () => { await L.removeDraft(draftKey); L.forgetMine(id); go('#/', true); }} />
+          onDeleted={async () => { await L.removeDraft(draftKey); L.forgetMine(id); L.forgetKeys(id); go('#/', true); }} />
       )}
 
       {needKey && song && <KeyForm inline onSubmit={submitKey} />}

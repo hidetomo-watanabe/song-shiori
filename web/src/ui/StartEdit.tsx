@@ -17,8 +17,10 @@ export function StartEdit({ viewId, title }: { viewId: string; title: string }) 
       setBusy(true);
       setError('');
       try {
-        const r = await api.viewSession(viewId, key.trim().toLowerCase());
+        const k = key.trim().toLowerCase();
+        const r = await api.viewSession(viewId, k);
         L.setSession(r.id, r.session, remember);
+        if (remember) L.setKeys(r.id, r.role === 'admin' ? { admin: k } : { edit: k });
         L.rememberMine({ id: r.id, title, updatedAt: Date.now() });
         go(`#/e/${r.id}`);
       } catch (err) {

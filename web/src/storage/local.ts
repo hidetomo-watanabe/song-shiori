@@ -79,6 +79,20 @@ export function forgetMine(id: string) {
   set('ks-mine', JSON.stringify(listMine().filter((x) => x.id !== id)));
 }
 
+// 発行したキー（管理キー・編集キー）。サーバーにはハッシュしかないので、発行したブラウザにだけ残して管理画面で見られるようにする
+export type StoredKeys = { admin?: string; edit?: string };
+export function getKeys(id: string): StoredKeys {
+  try { return JSON.parse(get(`ks-keys-${id}`) ?? '{}'); } catch { return {}; }
+}
+// patch の値が null ならそのキーを消す。両方なくなれば記録ごと消す
+export function setKeys(id: string, patch: { admin?: string | null; edit?: string | null }) {
+  const next: Record<string, string | undefined> = { ...getKeys(id) };
+  for (const [k, v] of Object.entries(patch)) next[k] = v ?? undefined;
+  const keep = Object.fromEntries(Object.entries(next).filter(([, v]) => v));
+  set(`ks-keys-${id}`, Object.keys(keep).length ? JSON.stringify(keep) : null);
+}
+export const forgetKeys = (id: string) => set(`ks-keys-${id}`, null);
+
 // 匿名識別子（利用者数の推定用。個人は特定しない）
 export function anonId(): string {
   let v = get('ks-anon');
