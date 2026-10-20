@@ -26,10 +26,10 @@ export function Top() {
     go('#/new');
   }
 
-  async function manual() {
+  async function manual(fromText = false) {
     if (!confirmReplace()) return;
     await removeDraft('draft');
-    go('#/new?manual');
+    go(fromText ? '#/new?import' : '#/new?manual');
   }
 
   return (
@@ -63,7 +63,7 @@ export function Top() {
           <input type="file" accept=".mp3,.wav,.m4a,.mp4,.aac,audio/*" disabled={!agreed} onChange={pick} />
         </label>
         {error && <p class="error">{error}</p>}
-        <p class="sub">音源がない場合や解析がうまくいかない場合は、<button class="link" onClick={manual}>構成表を手動で作る</button>こともできます。</p>
+        <p class="sub">音源がない場合や解析がうまくいかない場合は、<button class="link" onClick={() => manual()}>構成表を手動で作る</button>ことも、書き出しておいた<button class="link" onClick={() => manual(true)}>テキストから構成を作る</button>こともできます。</p>
       </section>
 
       {mine.length > 0 && (

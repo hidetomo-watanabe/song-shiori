@@ -10,7 +10,10 @@
 import type { Song } from './song';
 
 export type TruthSection = { start: number; end: number; name: string; bars: number | null; memo: string };
-export type Truth = { bpm: number | null; beatsPerBar: number | null; duration: number | null; sections: TruthSection[] };
+export type Truth = {
+  title: string; artist: string; memo: string;
+  bpm: number | null; beatsPerBar: number | null; duration: number | null; sections: TruthSection[];
+};
 
 const time = (t: number) => {
   const m = Math.floor(t / 60);
@@ -43,6 +46,8 @@ const parseTime = (s: string) => {
 
 export function parseTruth(text: string): Truth {
   let bpm: number | null = null, beatsPerBar: number | null = null, duration: number | null = null;
+  let title = '', artist = '';
+  const songMemo: string[] = [];
   const rows: { start: number; name: string; bars: number | null; memo: string }[] = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -57,6 +62,13 @@ export function parseTruth(text: string): Truth {
       if (sig) beatsPerBar = Number(sig[1]);
       const d = line.match(/長さ\s*[:：]?\s*(\d+:\d+(?:\.\d+)?)/);
       if (d) duration = parseTime(d[1]);
+      if (b || sig || d) continue;
+      // 区間より前の最初の行は「曲名 / アーティスト」、区間より後ろの行は全体メモ
+      if (!rows.length && !title) {
+        const t = line.replace(/^#\s*/, '');
+        const at = t.lastIndexOf(' / ');
+        [title, artist] = at >= 0 ? [t.slice(0, at), t.slice(at + 3)] : [t, ''];
+      } else if (rows.length && !line.startsWith('#')) songMemo.push(line);
       continue;
     }
     const [body, memo = ''] = line.replace(/#.*/, '').split('｜');
@@ -66,5 +78,5 @@ export function parseTruth(text: string): Truth {
   }
   rows.sort((a, b) => a.start - b.start);
   const sections = rows.map((r, i) => ({ ...r, end: rows[i + 1]?.start ?? duration ?? r.start }));
-  return { bpm, beatsPerBar, duration, sections };
+  return { title: title === '曲名未入力' ? '' : title, artist, memo: songMemo.join('\n'), bpm, beatsPerBar, duration, sections };
 }

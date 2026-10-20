@@ -7,13 +7,14 @@ import { api, ApiError, randomHex, track, type MemoInfo } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
 import { ExportText } from './ExportText';
+import { ImportText } from './ImportText';
 import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { Manage } from './Manage';
 import { Timeline } from './Timeline';
 import { copy, fmt, go, groupTone, handoff, parseTime, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
-type Mode = { kind: 'draft'; manual: boolean } | { kind: 'saved'; id: string };
+type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: 'saved'; id: string };
 
 // 再生は画面をまたいで1つだけ。初回保存で編集画面に切り替わっても、選んだ音源を使い続ける
 const player = new Player();
@@ -67,6 +68,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const [proposal, setProposal] = useState<AnalysisResult | null>(null);
   const [notice, setNotice] = useState('');
   const [confirmReset, setConfirmReset] = useState(false);
+  const [importing, setImporting] = useState(mode.kind === 'draft' && !!mode.importText);
   // BPM を指定してやり直したとき、音から測ったテンポが指定と違った場合の記録
   const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
   const [slowDismissed, setSlowDismissed] = useState(false);
@@ -744,7 +746,15 @@ export function Editor({ mode }: { mode: Mode }) {
           ))}
         </ol>
         <p class="sub">削除した区間は直前の区間（先頭の場合は直後）に結合されます。音源は変更されません。</p>
-        <ExportText song={song} />
+        <div class="text-tools">
+          <ExportText song={song} />
+          {!importing && <button class="small" onClick={() => setImporting(true)}>テキストから読み込む</button>}
+        </div>
+        {importing && (
+          <ImportText song={song} duration={player.buffer ? player.duration : undefined}
+            onClose={() => setImporting(false)}
+            onImport={(s) => { edit(() => s); setImporting(false); setSelected(null); setNotice('テキストから構成を読み込みました（「元に戻す」で取り消せます）。'); }} />
+        )}
       </section>
 
       <section class="card">

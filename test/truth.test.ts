@@ -38,3 +38,45 @@ describe('構成表のテキスト', () => {
       [0, 0.5, '無音', null, ''], [0.5, 16, 'イントロ', 8, ''], [16, 48, 'Aメロ', 16, 'ドラムは抑えめ'], [48, 64, 'サビ', 8, '']]);
   });
 });
+
+import { songFromText } from '../shared/importText';
+import { validateSong } from '../shared/song';
+
+describe('テキストから構成を作る', () => {
+  const text = `ゲット・アップ・ルーシー / THEE MICHELLE GUN ELEPHANT
+BPM 120・4/4・長さ 1:10.0
+
+0:00.0 （無音）
+0:02.0 イントロ 4小節
+0:10.0 Aメロ 8小節 ｜ドラムは抑えめ
+0:26.0 サビ 8小節
+0:42.0 Aメロ（2回目） 8小節
+0:58.0 サビ（2回目） 5小節
+1:08.0 （無音）
+
+キーは E`;
+
+  it('曲名・BPM・区間・メモ・全体メモを読み込み、同じ名前の区間を同じ繰り返しにする', () => {
+    const { song, warnings } = songFromText(text);
+    expect(warnings).toEqual([]);
+    expect(song).toMatchObject({ title: 'ゲット・アップ・ルーシー', artist: 'THEE MICHELLE GUN ELEPHANT', memo: 'キーは E', bpmManual: 120, beatsPerBar: 4, duration: 70 });
+    expect(song.sections.map((s) => [s.start, s.end, s.name, s.group, s.silence ?? false, s.memo])).toEqual([
+      [0, 2, '無音（曲の前）', null, true, ''], [2, 10, 'イントロ', null, false, ''], [10, 26, 'Aメロ', 'A', false, 'ドラムは抑えめ'],
+      [26, 42, 'サビ', 'B', false, ''], [42, 58, 'Aメロ（2回目）', 'A', false, ''], [58, 68, 'サビ（2回目）', 'B', false, ''],
+      [68, 70, '無音（曲の後）', null, true, '']]);
+    // 拍から数えた小節数（5）と同じなら推定のまま、違えば手入力として残す
+    expect(song.sections.map((s) => [s.barsEst, s.barsManual])).toEqual([[null, null], [4, null], [8, null], [8, null], [8, null], [5, null], [null, null]]);
+    expect(validateSong(song)).toBeNull();
+  });
+
+  it('音源の長さに合わせ、違えば知らせる', () => {
+    const { song, warnings } = songFromText(text, undefined, 66);
+    expect(song.duration).toBe(66);
+    expect(song.sections[song.sections.length - 1]).toMatchObject({ start: 58, end: 66, name: 'サビ（2回目）' });
+    expect(warnings[0]).toMatch(/長さ/);
+  });
+
+  it('区間がなければ読み込まない', () => {
+    expect(songFromText('こんにちは').warnings[0]).toMatch(/区間が読み取れません/);
+  });
+});
