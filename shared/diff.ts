@@ -68,6 +68,7 @@ export function diffSongs(prevSong: Song, nextSong: Song): SongDiff {
   if (prev.beatsPerBar !== next.beatsPerBar) song.push('拍子');
   if (prev.firstDownbeat !== next.firstDownbeat) song.push('最初の小節頭');
   if (prev.memo !== next.memo) song.push('全体メモ');
+  if ((prev.chordChartUrl ?? null) !== (next.chordChartUrl ?? null)) song.push('コード譜');
   if ((prev.youtube ?? null) !== (next.youtube ?? null) || (prev.youtubeOffset ?? 0) !== (next.youtubeOffset ?? 0)) song.push('YouTube の動画');
 
   const changed = song.length > 0 || removed.length > 0 || Object.keys(sections).length > 0;

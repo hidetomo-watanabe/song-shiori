@@ -49,6 +49,8 @@ export type Song = {
   audio?: { offset: number; duration: number } | null;
   // 推定したコードの変わり目（曲の頭からの秒）。N は和音なし。区間ごとのコード進行はここから小節に合わせて作る
   chords?: ChordChange[] | null;
+  // コード譜のページ（U-FRET など）。編集する人が選び、閲覧ページにリンクとして出す。内容は取り込まない
+  chordChartUrl?: string | null;
 };
 
 export type ChordChange = { t: number; chord: string };
@@ -67,7 +69,7 @@ export type AnalysisSnapshot = {
 };
 
 export const MIN_SECTION = 0.5; // 区間の最短長（秒）
-export const LIMITS = { sections: 300, beats: 4000, chords: 4000, chordText: 500, text: 200, memo: 2000, duration: 3600 };
+export const LIMITS = { sections: 300, beats: 4000, chords: 4000, chordText: 500, url: 500, text: 200, memo: 2000, duration: 3600 };
 
 export const newId = () => {
   const b = new Uint8Array(6);
@@ -685,6 +687,21 @@ export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sect
 }
 
 // 保存前の検証。問題があれば理由を返す（API でも同じ検証を行う）
+// コード譜の URL として使える形に直す（https のみ）。使えなければ null
+export function chordChartUrl(text: string): string | null {
+  const t = text.trim();
+  if (!t || t.length > LIMITS.url) return null;
+  try {
+    const u = new URL(t);
+    return u.protocol === 'https:' ? u.toString() : null;
+  } catch { return null; }
+}
+// コード譜のリンクに出すサイト名
+export const chordChartSite = (url: string) => {
+  const host = new URL(url).hostname.replace(/^www\./, '');
+  return host === 'ufret.jp' ? 'U-FRET' : host;
+};
+
 // 時刻 t に鳴っている推定のコード（N は和音なし）。推定がなければ null
 export function chordAt(track: ChordChange[], t: number): string | null {
   let lo = 0, hi = track.length - 1, at = -1;
@@ -779,6 +796,7 @@ export function validateSong(x: unknown): string | null {
   if (s.youtube != null && (typeof s.youtube !== 'string' || !YOUTUBE_ID.test(s.youtube))) return 'YouTube の動画が正しくありません';
   if (s.youtubeOffset != null && (!num(s.youtubeOffset) || Math.abs(s.youtubeOffset) > MAX_YOUTUBE_OFFSET)) return 'YouTube の動画のずれが正しくありません';
   if (s.audio != null && (typeof s.audio !== 'object' || !num(s.audio.offset) || !num(s.audio.duration) || s.audio.offset < 0 || s.audio.duration < 0 || s.audio.duration > LIMITS.duration)) return '音源ファイルの情報が正しくありません';
+  if (s.chordChartUrl != null && (typeof s.chordChartUrl !== 'string' || chordChartUrl(s.chordChartUrl) !== s.chordChartUrl)) return 'コード譜の URL が正しくありません';
   if (s.chords != null && (!Array.isArray(s.chords) || s.chords.length > LIMITS.chords || !s.chords.every((c) => c && num(c.t) && str(c.chord, 16)))) return 'コードが正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;

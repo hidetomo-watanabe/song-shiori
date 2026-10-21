@@ -57,6 +57,7 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
     // YouTube の動画はテキストに書かれていればそれを使い、なければ今の動画のまま
     youtube: t.youtube ?? base.youtube,
     youtubeOffset: t.youtube ? t.youtubeOffset || undefined : base.youtubeOffset,
+    chordChartUrl: t.chordChartUrl ?? base.chordChartUrl,
     groupNames: Object.fromEntries([...groupOf].map(([name, g]) => [g, name])),
     sections,
   };

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, chordsDifferFromFirst, confirmedChords, sectionAt, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, sectionAt, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
@@ -112,6 +112,10 @@ export function View({ viewId }: { viewId: string }) {
           <span class="tag">{timeSignature(song.beatsPerBar)}</span>
           {song.firstDownbeat != null && <span class="tag">最初の小節頭 {fmt(song.firstDownbeat, 2)}</span>}
         </div>
+        {/* 編集する人が選んだコード譜のページ（U-FRET など）。全部のコードはそちらで見てもらう */}
+        {song.chordChartUrl && chordChartUrl(song.chordChartUrl) && (
+          <p><a class="button small" href={chordChartUrl(song.chordChartUrl)!} target="_blank" rel="noopener noreferrer">コード譜（{chordChartSite(song.chordChartUrl)}）</a></p>
+        )}
         <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
         {/* 前回の版からの変更は1行で示し、区間ごとの変更は表の印で示す */}
         {diff?.changed && (

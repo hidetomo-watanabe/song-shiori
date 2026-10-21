@@ -53,7 +53,7 @@ describe('構成表のテキスト', () => {
 });
 
 import { songFromText } from '../shared/importText';
-import { validateSong } from '../shared/song';
+import { chordChartSite, chordChartUrl, validateSong } from '../shared/song';
 
 describe('テキストから構成を作る', () => {
   const text = `ゲット・アップ・ルーシー / THEE MICHELLE GUN ELEPHANT
@@ -118,5 +118,19 @@ describe('コード進行のテキスト', () => {
     expect(songToText(song)).toContain('0:00.0 イントロ 4小節\n  コード | Am | G | F | E7 |\n0:08.0 サビ');
     // 推定のコードは書き出さない
     expect(songToText({ ...song, chords: [{ t: 0, chord: 'C' }] })).not.toMatch(/0:08\.0 サビ.*\n\s+コード/);
+  });
+});
+
+describe('コード譜のページ', () => {
+  it('https の URL だけを使い、テキストに書き出して読み込める', () => {
+    expect(chordChartUrl(' https://www.ufret.jp/song.php?data=1057 ')).toBe('https://www.ufret.jp/song.php?data=1057');
+    expect(chordChartUrl('http://www.ufret.jp/song.php?data=1057')).toBeNull();
+    expect(chordChartUrl('javascript:alert(1)')).toBeNull();
+    expect(chordChartSite('https://www.ufret.jp/song.php?data=1057')).toBe('U-FRET');
+    const { song } = songFromText('曲 / 歌手\nBPM 120・4/4\nコード譜 https://www.ufret.jp/song.php?data=1057\n\n0:00.0 イントロ 4小節\n0:08.0 サビ 4小節\n');
+    expect(song.chordChartUrl).toBe('https://www.ufret.jp/song.php?data=1057');
+    expect(validateSong(song)).toBeNull();
+    expect(songToText(song)).toContain('コード譜 https://www.ufret.jp/song.php?data=1057');
+    expect(validateSong({ ...song, chordChartUrl: 'javascript:alert(1)' })).not.toBeNull();
   });
 });

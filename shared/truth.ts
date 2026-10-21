@@ -9,13 +9,14 @@
 // 1行に1区間。区間の行の次に「コード」で始まる行があれば、その区間のコード進行。区間の始まりの時刻・区間名・小節数（任意）・「｜」の後ろにメモ（任意）。区間の終わりは次の行の始まり。
 // YouTube の動画を使っていれば、見出しに「YouTube https://youtu.be/… ずれ +5.02秒」の行を加える。
 // 時刻で始まらない行は見出し（曲名、BPM・拍子、長さ、YouTube）として扱う。検証音源フォルダの README の書き方（# で始まる行）も読める
-import { clampOffset, confirmedChords, trimSilence, youtubeId, type Song } from './song.ts';
+import { chordChartUrl, clampOffset, confirmedChords, trimSilence, youtubeId, type Song } from './song.ts';
 
 export type TruthSection = { start: number; end: number; name: string; bars: number | null; memo: string; chords: string | null };
 export type Truth = {
   title: string; artist: string; memo: string;
   bpm: number | null; beatsPerBar: number | null; duration: number | null; sections: TruthSection[];
   youtube: string | null; youtubeOffset: number; // YouTube の動画 ID と、構成表の時刻とのずれ（秒）
+  chordChartUrl: string | null; // コード譜のページ
 };
 
 const time = (t: number) => {
@@ -36,6 +37,7 @@ export function songToText(original: Song): string {
     const o = song.youtubeOffset ?? 0;
     lines.push(`YouTube https://youtu.be/${song.youtube}${o ? ` ずれ ${o > 0 ? '+' : ''}${o.toFixed(2)}秒` : ''}`);
   }
+  if (song.chordChartUrl) lines.push(`コード譜 ${song.chordChartUrl}`);
   lines.push('');
   for (const s of song.sections) {
     const bars = s.silence ? null : s.barsManual ?? s.barsEst;
@@ -58,7 +60,7 @@ const parseTime = (s: string) => {
 export function parseTruth(text: string): Truth {
   let bpm: number | null = null, beatsPerBar: number | null = null, duration: number | null = null;
   let title = '', artist = '';
-  let youtube: string | null = null, youtubeOffset = 0;
+  let youtube: string | null = null, youtubeOffset = 0, chart: string | null = null;
   const songMemo: string[] = [];
   const rows: { start: number; name: string; bars: number | null; memo: string; chords: string | null }[] = [];
   for (const raw of text.split(/\r?\n/)) {
@@ -67,6 +69,9 @@ export function parseTruth(text: string): Truth {
     const head = line.split(/\s+/)[0];
     const start = parseTime(head);
     if (start == null) {
+      // コード譜の行（「コード」の行より先に読む）
+      const cc = line.match(/^コード譜\s*[:：]?\s*(\S+)/);
+      if (cc) { chart = chordChartUrl(cc[1]); continue; }
       // 区間の行の次の「コード | Am | G |」は、その区間のコード進行
       const ch = line.match(/^コード\s*[:：]?\s*(.*)$/);
       if (ch && rows.length) { rows[rows.length - 1].chords = ch[1].trim() || null; continue; }
@@ -100,5 +105,5 @@ export function parseTruth(text: string): Truth {
   }
   rows.sort((a, b) => a.start - b.start);
   const sections = rows.map((r, i) => ({ ...r, end: rows[i + 1]?.start ?? duration ?? r.start }));
-  return { title: title === '曲名未入力' ? '' : title, artist, memo: songMemo.join('\n'), bpm, beatsPerBar, duration, sections, youtube, youtubeOffset };
+  return { title: title === '曲名未入力' ? '' : title, artist, memo: songMemo.join('\n'), bpm, beatsPerBar, duration, sections, youtube, youtubeOffset, chordChartUrl: chart };
 }

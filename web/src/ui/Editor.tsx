@@ -124,6 +124,8 @@ export function Editor({ mode }: { mode: Mode }) {
   }, [netCandidates, song?.bpmEst]);
   const [netDismissed, setNetDismissed] = useState<number | null>(null); // 「推定のままにする」を選んだときの推定
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
+  const [chartText, setChartText] = useState<string | null>(null); // コード譜の URL の入力中の文字（正しい URL になるまで構成データに入れない）
+  const chartError = chartText != null && !!chartText.trim() && !M.chordChartUrl(chartText);
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
   const [clickVolume, setClickVolume] = useState(() => L.getMetronomeVolume() ?? DEFAULT_VOLUME); // このブラウザに覚えておく
   metronome.volume = clickVolume;
@@ -836,11 +838,6 @@ export function Editor({ mode }: { mode: Mode }) {
           {hintCount > 0 && <button class="small" title="繰り返し・並び・音量から推定した候補です。聴いて確かめてください"
             onClick={() => { edit((s) => M.applySuggestedNames(s)); setNotice('名前の候補を付けました。推定なので、聴いて確かめてください（「元に戻す」で取り消せます）。'); }}>名前の候補をまとめて付ける</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
-          {/* コード譜は U-FRET で見て、必要なところを書き写してもらう（内容は取り込まない。U-FRET の規約で閲覧以外の利用はできないため） */}
-          {song.title.trim() && (
-            <a class="button small" target="_blank" rel="noopener" title="U-FRET で曲名・アーティスト名を検索します（新しいタブ）"
-              href={`https://www.ufret.jp/search.php?${new URLSearchParams({ key: `${song.title} ${song.artist}`.trim() })}`}>U-FRET でコード譜を探す</a>
-          )}
           <span class="spacer" />
           <label class="inline snap">境界を合わせる先
             <select value={snap} onChange={(e) => setSnap((e.currentTarget as HTMLSelectElement).value as 'bar' | 'beat' | 'off')}>
@@ -850,6 +847,28 @@ export function Editor({ mode }: { mode: Mode }) {
             </select>
           </label>
           {hasAudio && <label class="check follow"><input type="checkbox" checked={follow} onChange={(e) => setFollow((e.currentTarget as HTMLInputElement).checked)} />再生中の区間を追って表示</label>}
+        </div>
+        {/* コード譜は U-FRET などで探して、正しい曲のページの URL を貼ってもらい、閲覧ページにリンクとして出す。
+            内容は取り込まない（U-FRET の規約で閲覧以外の利用はできないため） */}
+        <div class="chart-row">
+          <label class="inline">コード譜
+            <input type="url" inputMode="url" value={chartText ?? song.chordChartUrl ?? ''} maxLength={M.LIMITS.url}
+              placeholder="U-FRET などのコード譜のページの URL" aria-invalid={chartError || undefined}
+              onInput={(e) => {
+                const v = (e.currentTarget as HTMLInputElement).value;
+                setChartText(v);
+                const u = M.chordChartUrl(v);
+                if (u || !v.trim()) edit((s) => ({ ...s, chordChartUrl: u }), { coalesce: 'chart-url' });
+              }}
+              onBlur={() => { if (!chartError) setChartText(null); }} />
+          </label>
+          {song.title.trim() && (
+            <a class="button small" target="_blank" rel="noopener" title="U-FRET で曲名・アーティスト名を検索します（新しいタブ）。見つけたページの URL を左の欄に貼ってください"
+              href={`https://www.ufret.jp/search.php?${new URLSearchParams({ key: `${song.title} ${song.artist}`.trim() })}`}>U-FRET で探す</a>
+          )}
+          {song.chordChartUrl && <a class="button small" target="_blank" rel="noopener noreferrer" href={song.chordChartUrl}>開く</a>}
+          {chartError ? <span class="error">https:// で始まる URL を貼ってください</span>
+            : <span class="sub">閲覧ページにリンクとして出ます。見つからないときは U-FRET で曲名の表記（の／ノなど）を変えて探してください。</span>}
         </div>
         {confirmReset && (
           <div class="confirm">
