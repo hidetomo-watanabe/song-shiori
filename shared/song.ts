@@ -659,6 +659,11 @@ export function regenerateFromAnalysis(song: Song, r: AnalysisResult): Song {
   return resetToAnalysis({ ...song, beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - off)), chords: chordsOf(r, off), analysisVersion: r.version, analysis: snapshotOf(r) });
 }
 
+// 解析の結果からコードだけを反映する。区間・名前・テンポなどはそのまま（区間ごとに手で入れたコードも残る）
+export function adoptChords(song: Song, r: AnalysisResult): Song {
+  return { ...song, chords: chordsOf(r, song.audio?.offset ?? 0) };
+}
+
 // 再解析の結果を採用する。手動修正済みの区間がある場合は区間を置き換えず、テンポの推定値だけ更新する
 export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sectionsReplaced: boolean } {
   const anyEdited = song.sections.some((s) => s.edited);

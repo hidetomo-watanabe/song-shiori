@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -473,6 +473,20 @@ describe('コード進行', () => {
   it('推定のコードを小節ごとに1行にする（前半と後半で違えば2つ）', () => {
     const s = withChords();
     expect(estimatedChords(s, s.sections[0])).toBe('| Am | Am G | F | - | - | - | - | - |');
+  });
+
+  it('解析の結果からコードだけを反映し、区間・手入力のコードはそのまま', () => {
+    let s: Song = { ...sample(), audio: { offset: 1.5, duration: 97.5 } };
+    s = patchSection(s, s.sections[0].id, { name: 'イントロ', chords: '| C |' });
+    const next = adoptChords(s, {
+      version: 'x', duration: 97.5, bpm: 90, beats: [], firstDownbeat: null, beatsUncertain: true, segments: [{ start: 0, end: 97.5, group: 'A' }],
+      chords: [{ t: 1.5, chord: 'Am' }, { t: 5.5, chord: 'G' }],
+    });
+    // 音源ファイルの時刻から、曲の頭（1.5秒目）を 0:00 とする時刻に直す
+    expect(next.chords).toEqual([{ t: 0, chord: 'Am' }, { t: 4, chord: 'G' }]);
+    expect(next.sections).toBe(s.sections);
+    expect(next.bpmEst).toBe(120);
+    expect(sectionChords(next, next.sections[0])).toEqual({ text: '| C |', source: 'manual' });
   });
 
   it('手で入れたコードを優先し、繰り返しの2回目以降は1回目を引き継ぐ', () => {

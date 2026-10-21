@@ -335,7 +335,8 @@ export function Editor({ mode }: { mode: Mode }) {
   }
 
   // 解析できたら true を返す
-  async function analyzeBuffer(buf: AudioBuffer, how: 'replace' | 'propose', bpm?: number): Promise<boolean> {
+  // how：replace は構成を置き換える、propose は結果を見て選んでもらう、chords はコードだけ反映する
+  async function analyzeBuffer(buf: AudioBuffer, how: 'replace' | 'propose' | 'chords', bpm?: number): Promise<boolean> {
     setAnalysisError('');
     setProposal(null);
     setProgress({ ratio: 0, stage: '解析の準備をしています' });
@@ -344,8 +345,13 @@ export function Editor({ mode }: { mode: Mode }) {
       const j = runAnalysis(samples, (ratio, stage) => setProgress({ ratio, stage }), bpm);
       job.current = j;
       const { result, ms } = await j.promise;
-      setBpmCheck(bpm && result.bpm ? { hint: bpm, measured: result.bpm } : null);
       track('analysis_ok', { durationMs: Math.round(ms), audioSec: buf.duration });
+      if (how === 'chords') {
+        edit((s) => M.adoptChords(s, result));
+        setNotice('コードの推定を反映しました（区間・名前・テンポはそのままです。区間に手で入れたコードも残ります）。');
+        return true;
+      }
+      setBpmCheck(bpm && result.bpm ? { hint: bpm, measured: result.bpm } : null);
       if (how === 'replace') {
         edit((s) => M.songFromAnalysis(result, s));
         setSelected(null);
@@ -374,6 +380,12 @@ export function Editor({ mode }: { mode: Mode }) {
       edit((s) => M.adoptAnalysis(s, proposal).song);
       setNotice('区間はそのままにして、テンポの推定値だけを更新しました。');
     }
+    setProposal(null);
+  }
+  function adoptChordsOnly() {
+    if (!proposal) return;
+    edit((s) => M.adoptChords(s, proposal));
+    setNotice('区間・名前・テンポはそのままにして、コードの推定だけを反映しました。');
     setProposal(null);
   }
 
@@ -641,6 +653,10 @@ export function Editor({ mode }: { mode: Mode }) {
             <button class="small" title={M.bpmOf(song) ? `BPM ${M.bpmOf(song)} を前提に作り直します` : undefined}
               onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), M.bpmOf(song) ?? undefined)}>自動生成をやり直す</button>
           )}
+          {canAnalyze && !progress && song.sections.length > 0 && (
+            <button class="small" title="音源からコードを推定し、コードだけを反映します。区間・名前・テンポは変えません"
+              onClick={() => void analyzeBuffer(player.buffer!, 'chords', M.bpmOf(song) ?? undefined)}>コードだけ推定する</button>
+          )}
         </div>
         {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
         {!hasAudio && !videoId && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
@@ -677,6 +693,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <p class="warn">手動で直した内容があります。作り直すと、区間の区切り・名前・小節数・メモなどの手動修正は消えます（曲名・アーティスト・全体メモは残ります。「元に戻す」で取り消せます）。</p>
             <button class="primary" onClick={() => adopt(true)}>この結果で作り直す</button>
             <button onClick={() => adopt(false)}>テンポの推定だけ更新（区間はそのまま）</button>
+            {proposal.chords?.length ? <button onClick={adoptChordsOnly}>コードだけ反映</button> : null}
             <button onClick={() => setProposal(null)}>キャンセル</button>
           </div>
         )}
