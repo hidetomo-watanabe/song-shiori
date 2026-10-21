@@ -68,6 +68,13 @@ export function setSession(id: string, token: string | null, remember: boolean) 
   } catch { /* 保存不可 */ }
 }
 
+// メトロノームの音量（0〜1）。保存していなければ null
+export const getMetronomeVolume = () => {
+  const v = get('ks-metronome-volume');
+  return v != null && Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : null;
+};
+export const setMetronomeVolume = (v: number) => set('ks-metronome-volume', String(v));
+
 export const getSeen = (viewId: string) => Number(get(`ks-seen-${viewId}`)) || null;
 export const setSeen = (viewId: string, version: number) => set(`ks-seen-${viewId}`, String(version));
 

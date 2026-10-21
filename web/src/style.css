@@ -169,6 +169,7 @@ label.check input { min-height: 0; flex: none; }
 .tempo-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .tempo-head h2 { margin: 0; }
 .with-button { display: inline-flex; align-items: center; gap: 6px; }
+.metronome-volume { width: 110px; min-height: 0; padding: 0; height: 28px; accent-color: var(--accent); background: transparent; border: 0; box-shadow: none; }
 details.more { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 10px; }
 details.more summary { cursor: pointer; font-size: 14px; color: var(--sub); }
 details.more summary:hover { color: var(--text); }

@@ -6,6 +6,8 @@ import type { Range } from './youtube';
 const AHEAD = 0.1; // どれだけ先の拍まで予約するか（秒）。タイマーの遅れで音がもたつかないよう、Web Audio の時刻で予約する
 const GAP = 0.1; // これより近い拍は鳴らさない（同じ拍を二重に鳴らさないため。BPM 400 でも拍の間隔は 0.15 秒）
 
+export const DEFAULT_VOLUME = 0.6;
+
 export type Beat = { t: number; head: boolean }; // 曲の頭からの時刻と、小節の頭か
 // 再生中の曲の位置（曲の頭からの秒）・再生が終わる時刻・区間ループの範囲。止まっていれば null
 export type Clock = () => { t: number; end: number; loop: Range | null } | null;
@@ -19,6 +21,7 @@ export class Metronome {
   bpm = 120;
   beatsPerBar = 4;
   beats: Beat[] | null = null;
+  volume = DEFAULT_VOLUME; // 0〜1。次に鳴らす拍から反映する
 
   // context は再生と同じ AudioContext。clock は再生中の曲の位置
   constructor(private context: () => AudioContext, private clock: Clock) {}
@@ -88,7 +91,7 @@ export class Metronome {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.frequency.value = accent ? 1600 : 1000;
-    gain.gain.setValueAtTime(accent ? 0.5 : 0.3, at);
+    gain.gain.setValueAtTime(Math.max(0.001, this.volume * (accent ? 0.8 : 0.5)), at);
     gain.gain.exponentialRampToValueAtTime(0.001, at + 0.05);
     osc.connect(gain).connect(ctx.destination);
     osc.start(at);

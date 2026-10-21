@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
-import { Metronome } from '../audio/metronome';
+import { DEFAULT_VOLUME, Metronome } from '../audio/metronome';
 import { YouTubePlayer, type Playback } from '../audio/youtube';
 import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/run';
 import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
@@ -97,6 +97,8 @@ export function Editor({ mode }: { mode: Mode }) {
   const [netBpm, setNetBpm] = useState<number | null>(null); // ネット上の BPM（いちばん上の候補）
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
+  const [clickVolume, setClickVolume] = useState(() => L.getMetronomeVolume() ?? DEFAULT_VOLUME); // このブラウザに覚えておく
+  metronome.volume = clickVolume;
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -660,6 +662,14 @@ export function Editor({ mode }: { mode: Mode }) {
                   if (ticking) metronome.stop(); else metronome.start();
                   setTicking(!ticking);
                 }}>{ticking && tempoBpm ? '■ メトロノーム' : '♪ メトロノーム'}</button>
+              {ticking && tempoBpm && (
+                <input class="metronome-volume" type="range" min={0} max={1} step={0.05} value={clickVolume} aria-label="メトロノームの音量" title="メトロノームの音量"
+                  onInput={(e) => {
+                    const v = Number((e.currentTarget as HTMLInputElement).value);
+                    setClickVolume(v);
+                    L.setMetronomeVolume(v);
+                  }} />
+              )}
               {song.bpmManual != null && (
                 <button class="small" onClick={() => { edit((s) => M.setTempo(s, { bpmManual: null })); setBpmCheck(null); }}>
                   {song.bpmEst ? `推定（${song.bpmEst}）に戻す` : '手入力をやめる'}
