@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keyLabel, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
@@ -9,12 +9,14 @@ import { StartEdit } from './StartEdit';
 import { getSeen, setSeen } from '../storage/local';
 import { errorText, fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
 import { ShareButtons } from './ShareButtons';
+import { Practice } from './Practice';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
 export function View({ viewId }: { viewId: string }) {
   const [data, setData] = useState<ViewData | null>(null);
   const [seenBefore, setSeenBefore] = useState<number | null>(null);
   const [originalKeyChords, setOriginalKeyChords] = useState(false); // コード進行を原曲のキーで見る（既定は演奏するキー）
+  const [practice, setPractice] = useState(false); // 練習用の表示
   const [error, setError] = useState('');
 
   // 閲覧ページは限定共有のため、検索エンジンに登録させない
@@ -135,6 +137,8 @@ export function View({ viewId }: { viewId: string }) {
             </a>
           </p>
         )}
+        <p class="practice-open"><button class="primary" onClick={() => setPractice(true)}>練習用に表示</button>
+          <span class="sub">大きな文字で、画面を消さずに表示します</span></p>
         {/* カバーでいちばん起きやすい勘違いは「原曲どおりだと思っていた」なので、冒頭で知らせる */}
         {arranged > 0 && <p class="arranged">原曲と違うところが {arranged} か所あります（表の「カット」「原曲と違う」の印）。</p>}
         <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
@@ -232,6 +236,10 @@ export function View({ viewId }: { viewId: string }) {
         <StartEdit viewId={viewId} title={song.title} />
         <p class="sub">この構成メモは {fmtDay(data.expiresAt)} まで保管されます。</p>
       </div>
+      {practice && (
+        <Practice song={song} bpm={bpm} showChords={showChords} onClose={() => setPractice(false)}
+          keyText={song.originalKey || shift ? (playKey && shift ? `演奏 ${keyLabel(playKey)}（${shift > 0 ? '+' : ''}${shift}）` : song.originalKey ? `キー ${keyLabel(song.originalKey)}` : `原曲から ${shift > 0 ? '+' : ''}${shift}`) : null} />
+      )}
     </main>
   );
 }
