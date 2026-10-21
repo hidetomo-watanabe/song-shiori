@@ -12,6 +12,7 @@ const EVENT_DAYS = 90;
 const MAX_BODY = 512 * 1024;
 const EVENT_KINDS = new Set(['analysis_ok', 'analysis_fail', 'manual_start', 'loop_play', 'view_after_update', 'bpm_lookup_applied', 'youtube_set', 'youtube_view_play']);
 const BPM_CACHE_SECONDS = 7 * 86400;
+const BPM_LOOKUP_VERSION = 2; // 2：曲名がそのまま一致する候補を先にする
 
 const HEX = (n: number) => new RegExp(`^[a-f0-9]{${n}}$`);
 const isKey = (s: unknown): s is string => typeof s === 'string' && HEX(48).test(s);
@@ -217,8 +218,8 @@ async function bpmInfo(req: Request, env: Env) {
   const title = (url.searchParams.get('title') ?? '').trim().slice(0, 200);
   const artist = (url.searchParams.get('artist') ?? '').trim().slice(0, 200);
   if (!title) throw new HttpError(400, '曲名を入力してください');
-  // 使える情報源が変わったら（キーの設定など）別の結果として扱う
-  const cacheKey = new Request(`https://cache.song-shiori/bpm?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}&s=${env.GETSONGBPM_KEY ? 'gd' : 'd'}`);
+  // 使える情報源（キーの設定など）や、候補の選び方・並べ方（BPM_LOOKUP_VERSION）が変わったら別の結果として扱う
+  const cacheKey = new Request(`https://cache.song-shiori/bpm?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}&s=${env.GETSONGBPM_KEY ? 'gd' : 'd'}&v=${BPM_LOOKUP_VERSION}`);
   const cache = (caches as unknown as { default: Cache }).default;
   const hit = await cache.match(cacheKey);
   if (hit) return json(await hit.json());
