@@ -663,12 +663,17 @@ export function Editor({ mode }: { mode: Mode }) {
                   setTicking(!ticking);
                 }}>{ticking && tempoBpm ? '■ メトロノーム' : '♪ メトロノーム'}</button>
               {ticking && tempoBpm && (
-                <input class="metronome-volume" type="range" min={0} max={1} step={0.05} value={clickVolume} aria-label="メトロノームの音量" title="メトロノームの音量"
-                  onInput={(e) => {
-                    const v = Number((e.currentTarget as HTMLInputElement).value);
-                    setClickVolume(v);
-                    L.setMetronomeVolume(v);
-                  }} />
+                // BPM の label の中にあるため label は入れ子にせず、文字で「音量」と示す
+                <span class="metronome-volume">
+                  <span aria-hidden="true">🔈 音量</span>
+                  <input type="range" min={0} max={1} step={0.05} value={clickVolume} aria-label="メトロノームの音量" title="メトロノームの音量"
+                    onInput={(e) => {
+                      const v = Number((e.currentTarget as HTMLInputElement).value);
+                      setClickVolume(v);
+                      L.setMetronomeVolume(v);
+                    }} />
+                  <span class="sub" aria-hidden="true">{Math.round(clickVolume * 100)}%</span>
+                </span>
               )}
               {song.bpmManual != null && (
                 <button class="small" onClick={() => { edit((s) => M.setTempo(s, { bpmManual: null })); setBpmCheck(null); }}>
