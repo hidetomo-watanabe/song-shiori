@@ -111,17 +111,18 @@ export function View({ viewId }: { viewId: string }) {
           {song.firstDownbeat != null && <span class="tag">最初の小節頭 {fmt(song.firstDownbeat, 2)}</span>}
         </div>
         <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
+        {/* 前回の版からの変更は1行で示し、区間ごとの変更は表の印で示す */}
+        {diff?.changed && (
+          <p class="sub update-line" role="status">
+            {seenBefore ? '前回見たあとの変更' : '前回からの変更'}：{[
+              ...data.notes.map((n) => n.note),
+              ...(diff.song.length ? [`曲全体の${diff.song.join('・')}`] : []),
+              ...diff.removed.map((x) => `${x.name}（${fmt(x.start, 0)}〜）を削除`),
+              ...(Object.values(diff.sections).some((c) => c.length) ? ['区間の変更（表に印）'] : []),
+            ].join('、')}
+          </p>
+        )}
       </header>
-
-      {diff?.changed && (
-        <section class="card update" role="status">
-          <h2>{seenBefore ? '前回見たあとに更新があります' : '前回の更新からの変更'}</h2>
-          {data.notes.map((n) => <p key={n.version} class="note">・{n.note}</p>)}
-          {diff.song.length > 0 && <p>曲全体：{diff.song.join('・')}を変更</p>}
-          {diff.removed.map((s) => <p key={s.id}>削除：{s.name}（{fmt(s.start, 0)}〜{fmt(s.end, 0)}）</p>)}
-          <p class="sub">変更のあった区間に印を付けています。</p>
-        </section>
-      )}
 
       {song.youtube && (
         <section class="card yt-view">

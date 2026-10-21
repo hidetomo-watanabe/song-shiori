@@ -360,8 +360,7 @@ button.line:hover:not(:disabled) { background: #05923f; border-color: #05923f; }
 body:has(.savebar) #toast { bottom: 140px; }
 .view-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
 .view-meta .tag { font-size: 13px; padding: 3px 12px; color: var(--text); }
-.update { border-color: var(--warn); background: color-mix(in srgb, var(--warn-bg) 55%, var(--card)); }
-.update .note { font-weight: 600; }
+.update-line { margin-top: 2px; }
 .structure { width: 100%; border-collapse: collapse; }
 .structure th, .structure td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .structure th { font-size: 12px; color: var(--sub); font-weight: 600; padding-top: 0; }
