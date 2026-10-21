@@ -727,13 +727,28 @@ export function estimatedChords(song: Song, sec: Section): string | null {
   return `| ${cells.join(' | ')} |`;
 }
 
-// 区間に表示するコード進行。手で入れたもの、繰り返しの1回目に手で入れたもの、推定の順に使う
+// 区間に表示するコード進行。手で入れたもの、繰り返しの1回目に手で入れたもの、推定の順に使う。
+// コード進行は「今どこにいるかの目印」と「繰り返しの違いに気づく」ためのもの（演奏用のコード譜ではない）。
+// 推定は書き起こしの下書きとして編集画面だけで使い、閲覧ページ・テキストには手で入れた（確かめた）ものだけを出す
 export function sectionChords(song: Song, sec: Section): { text: string; source: 'manual' | 'repeat' | 'estimate' } | null {
   if (sec.chords != null) return { text: sec.chords, source: 'manual' };
   const first = sec.group ? song.sections.find((x) => x.group === sec.group) : undefined;
   if (first && first !== sec && first.chords) return { text: first.chords, source: 'repeat' };
   const est = estimatedChords(song, sec);
   return est ? { text: est, source: 'estimate' } : null;
+}
+
+// 手で入れた（確かめた）コード進行だけ。閲覧ページとテキストの書き出しに使う
+export function confirmedChords(song: Song, sec: Section): { text: string; source: 'manual' | 'repeat' } | null {
+  const c = sectionChords(song, sec);
+  return c && c.source !== 'estimate' && c.text.trim() ? { text: c.text, source: c.source } : null;
+}
+
+// 繰り返しの2回目以降で、1回目に手で入れたコード進行と違うものを入れたか（「2回目のサビだけ最後が違う」などに気づけるようにする）
+export function chordsDifferFromFirst(song: Song, sec: Section): boolean {
+  const first = sec.group ? song.sections.find((x) => x.group === sec.group) : undefined;
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim();
+  return !!first && first !== sec && first.chords != null && sec.chords != null && norm(first.chords) !== norm(sec.chords);
 }
 
 export function validateSong(x: unknown): string | null {

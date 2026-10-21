@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, sectionAt, sectionChords, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, chordsDifferFromFirst, confirmedChords, sectionAt, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
@@ -86,8 +86,8 @@ export function View({ viewId }: { viewId: string }) {
   const song = trimSilence(data.song);
   const current = started ? sectionAt(song, now) ?? null : null;
   const diff: SongDiff | null = data.base ? diffSongs(data.base.song, song) : null;
-  // コード進行（手入力か推定）がある区間が1つでもあれば、表にコードの列を出す
-  const hasChords = song.sections.some((s) => sectionChords(song, s));
+  // 手で入れたコード進行がある区間が1つでもあれば、表にコードの列を出す（推定は閲覧ページに出さない）
+  const hasChords = song.sections.some((s) => confirmedChords(song, s));
   const bpm = bpmOf(song);
   // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える
   const firstName = new Map<string, { id: string; name: string }>();
@@ -181,8 +181,8 @@ export function View({ viewId }: { viewId: string }) {
                   </td>
                   <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>
                   {hasChords && (() => {
-                    const c = sectionChords(song, s);
-                    return <td data-label="コード" class="chords">{c?.text}{c?.source === 'estimate' && <span class="tag">推定</span>}</td>;
+                    const c = confirmedChords(song, s);
+                    return <td data-label="コード" class="chords">{c?.text}{chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}</td>;
                   })()}
                   <td data-label="メモ">{s.memo}</td>
                 </tr>

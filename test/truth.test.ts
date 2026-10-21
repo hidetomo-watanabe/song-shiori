@@ -116,5 +116,7 @@ describe('コード進行のテキスト', () => {
     const { song } = songFromText(text);
     expect(song.sections.map((s) => s.chords ?? null)).toEqual(['| Am | G | F | E7 |', null]);
     expect(songToText(song)).toContain('0:00.0 イントロ 4小節\n  コード | Am | G | F | E7 |\n0:08.0 サビ');
+    // 推定のコードは書き出さない
+    expect(songToText({ ...song, chords: [{ t: 0, chord: 'C' }] })).not.toMatch(/0:08\.0 サビ.*\n\s+コード/);
   });
 });

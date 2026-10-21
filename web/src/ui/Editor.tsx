@@ -51,7 +51,9 @@ function SectionChords({ song, s, onChange }: { song: Song; s: Section; onChange
         rows={Math.max(1, Math.ceil((c?.text.length ?? 0) / 64))}
         placeholder={song.chords ? '（推定なし）例：| Am | G | F | E7 |' : '例：| Am | G | F | E7 |'}
         onInput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value.replace(/\s*\n\s*/g, ' '), true)} />
-      {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定'}</span>}
+      {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定（閲覧ページには出ません）'}</span>}
+      {c?.source === 'estimate' && <button class="tiny" title="聴いて確かめた推定を、この区間のコード進行として使います（閲覧ページに出ます）" onClick={() => onChange(c.text)}>このまま使う</button>}
+      {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
       {s.chords != null && <button class="tiny" onClick={() => onChange(null)}>手入力をやめる</button>}
     </div>
   );

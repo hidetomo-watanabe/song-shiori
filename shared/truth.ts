@@ -9,7 +9,7 @@
 // 1行に1区間。区間の行の次に「コード」で始まる行があれば、その区間のコード進行。区間の始まりの時刻・区間名・小節数（任意）・「｜」の後ろにメモ（任意）。区間の終わりは次の行の始まり。
 // YouTube の動画を使っていれば、見出しに「YouTube https://youtu.be/… ずれ +5.02秒」の行を加える。
 // 時刻で始まらない行は見出し（曲名、BPM・拍子、長さ、YouTube）として扱う。検証音源フォルダの README の書き方（# で始まる行）も読める
-import { clampOffset, sectionChords, trimSilence, youtubeId, type Song } from './song.ts';
+import { clampOffset, confirmedChords, trimSilence, youtubeId, type Song } from './song.ts';
 
 export type TruthSection = { start: number; end: number; name: string; bars: number | null; memo: string; chords: string | null };
 export type Truth = {
@@ -42,7 +42,8 @@ export function songToText(original: Song): string {
     const memo = s.memo.replace(/\s+/g, ' ').trim();
     lines.push([time(s.start), s.silence ? SILENCE_LABEL : s.name.replace(/\s+/g, ''), bars != null ? `${bars}小節` : '', memo ? `｜${memo}` : '']
       .filter(Boolean).join(' '));
-    const chords = s.silence ? null : sectionChords(song, s)?.text.replace(/\s+/g, ' ').trim();
+    // 推定は書き出さず、手で入れた（確かめた）コード進行だけを書く
+    const chords = s.silence ? null : confirmedChords(song, s)?.text.replace(/\s+/g, ' ').trim();
     if (chords) lines.push(`  コード ${chords}`);
   }
   if (song.memo.trim()) lines.push('', song.memo.trim());

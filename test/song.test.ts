@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -487,6 +487,17 @@ describe('コード進行', () => {
     expect(next.sections).toBe(s.sections);
     expect(next.bpmEst).toBe(120);
     expect(sectionChords(next, next.sections[0])).toEqual({ text: '| C |', source: 'manual' });
+  });
+
+  it('閲覧ページ・書き出しには手で入れたものだけを出し、1回目と違う繰り返しに気づけるようにする', () => {
+    let s = withChords();
+    expect(confirmedChords(s, s.sections[0])).toBeNull(); // 推定だけ
+    s = patchSection(s, s.sections[1].id, { chords: '| C | G | Am | F |' });
+    expect(confirmedChords(s, s.sections[3])).toEqual({ text: '| C | G | Am | F |', source: 'repeat' });
+    expect(chordsDifferFromFirst(s, s.sections[3])).toBe(false);
+    s = patchSection(s, s.sections[3].id, { chords: '| C | G | Am | E7 |' });
+    expect(chordsDifferFromFirst(s, s.sections[3])).toBe(true);
+    expect(chordsDifferFromFirst(s, s.sections[1])).toBe(false);
   });
 
   it('手で入れたコードを優先し、繰り返しの2回目以降は1回目を引き継ぐ', () => {
