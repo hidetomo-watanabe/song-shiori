@@ -110,7 +110,6 @@ export function View({ viewId }: { viewId: string }) {
         <div class="view-meta">
           <span class="tag">{bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}</span>
           <span class="tag">{timeSignature(song.beatsPerBar)}</span>
-          {song.firstDownbeat != null && <span class="tag">最初の小節頭 {fmt(song.firstDownbeat, 2)}</span>}
         </div>
         {/* 編集する人が選んだコード譜のページ（U-FRET など）。全部のコードはそちらで見てもらう */}
         {song.chordChartUrl && chordChartUrl(song.chordChartUrl) && (

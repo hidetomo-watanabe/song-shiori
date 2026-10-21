@@ -510,3 +510,10 @@ describe('コード進行', () => {
     invariant(s);
   });
 });
+
+describe('閲覧ページの変更表示', () => {
+  it('最初の小節頭だけの変更は曲全体の変更として知らせない', () => {
+    const prev = sample();
+    expect(diffSongs(prev, setTempo(prev, { firstDownbeat: 0.02 })).song).toEqual([]);
+  });
+});

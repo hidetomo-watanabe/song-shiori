@@ -66,7 +66,7 @@ export function diffSongs(prevSong: Song, nextSong: Song): SongDiff {
   if (prev.title !== next.title || prev.artist !== next.artist) song.push('曲名・アーティスト');
   if (bpm(prev) !== bpm(next)) song.push('テンポ');
   if (prev.beatsPerBar !== next.beatsPerBar) song.push('拍子');
-  if (prev.firstDownbeat !== next.firstDownbeat) song.push('最初の小節頭');
+  // 最初の小節頭は小節の線を合わせるための編集用の設定なので知らせない（小節数が変われば区間の「小節数変更」で分かる）
   if (prev.memo !== next.memo) song.push('全体メモ');
   if ((prev.chordChartUrl ?? null) !== (next.chordChartUrl ?? null)) song.push('コード譜');
   if ((prev.youtube ?? null) !== (next.youtube ?? null) || (prev.youtubeOffset ?? 0) !== (next.youtubeOffset ?? 0)) song.push('YouTube の動画');
