@@ -45,12 +45,23 @@ function SectionChords({ song, s, onChange }: { song: Song; s: Section; onChange
   const c = M.sectionChords(song, s);
   // 長いコード進行や狭い画面では折り返すので、中身に合わせて高さを変える
   const box = useRef<HTMLTextAreaElement>(null);
-  useLayoutEffect(() => {
+  const fit = () => {
     const el = box.current;
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight + 2}px`;
-  });
+  };
+  useLayoutEffect(fit);
+  // 開いた直後や画面の幅が変わったときは、行の配置が決まってから幅が変わるので、幅が変わるたびに合わせ直す
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    // 監視を始めた直後の1回目でも合わせる（開いた直後の幅の変化は、監視を始める前に起きていることがある）
+    let width = -1;
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== width) { width = el.clientWidth; fit(); } });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div class="sec-chords">
       <span class="sub">コード</span>
@@ -58,10 +69,15 @@ function SectionChords({ song, s, onChange }: { song: Song; s: Section; onChange
       <textarea ref={box} class="chords" value={c?.text ?? ''} maxLength={M.LIMITS.chordText} aria-label="コード進行" rows={1}
         placeholder={song.chords ? '（推定なし）例：| Am | G | F | E7 |' : '例：| Am | G | F | E7 |'}
         onInput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value.replace(/\s*\n\s*/g, ' '), true)} />
-      {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定（閲覧ページには出ません）'}</span>}
-      {c?.source === 'estimate' && <button class="tiny" title="聴いて確かめた推定を、この区間のコード進行として使います（閲覧ページに出ます）" onClick={() => onChange(c.text)}>このまま使う</button>}
-      {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
-      {s.chords != null && <button class="tiny" onClick={() => onChange(null)}>手入力をやめる</button>}
+      {/* 印とボタンは欄の下の行に置く（欄の横に置くと、欄の高さで折り返しが変わり、幅と高さが交互に変わり続けるため） */}
+      {(c && c.source !== 'manual') || M.chordsDifferFromFirst(song, s) || s.chords != null ? (
+        <div class="chords-meta">
+          {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定（閲覧ページには出ません）'}</span>}
+          {c?.source === 'estimate' && <button class="tiny" title="聴いて確かめた推定を、この区間のコード進行として使います（閲覧ページに出ます）" onClick={() => onChange(c.text)}>このまま使う</button>}
+          {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
+          {s.chords != null && <button class="tiny" onClick={() => onChange(null)}>手入力をやめる</button>}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -449,10 +465,11 @@ export function Editor({ mode }: { mode: Mode }) {
     return !media().playing && t > s.start + 0.05 && t < s.end - 0.05 ? t : null;
   };
 
-  function playSection(s: Section) {
+  // select：再生した区間を選ぶ（開く）か。たたんだ行の再生ボタンからは開かない
+  function playSection(s: Section, select = true) {
     if (loopId) { setLoopId(s.id); media().loop = { start: s.start, end: s.end }; }
     media().play(resumeAt(s) ?? s.start);
-    setSelected(s.id);
+    if (select) setSelected(s.id);
     syncNow();
   }
   function toggleLoop(s: Section) {
@@ -894,7 +911,29 @@ export function Editor({ mode }: { mode: Mode }) {
         )}
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
         <ol class="section-list">
-          {song.sections.map((s, i) => (
+          {song.sections.map((s, i) => selected !== s.id ? (
+            // 選んでいない区間は1行にたたみ、構成全体を見渡せるようにする。押すと開いて編集できる
+            <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
+              class={`section folded tone-${groupTone(s.group)}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
+              <div class="sec-summary">
+                <span class="sec-no">{i + 1}</span>
+                <span class="chip" aria-hidden="true" />
+                <button class="sec-open" aria-expanded="false" aria-label={`区間${i + 1}「${s.name}」を開いて編集`}>{s.name || '（名前なし）'}</button>
+                {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
+                {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
+                <span class="sec-range">{fmt(s.start, 0)}〜{fmt(s.end, 0)}</span>
+                <span class="sec-bars">{s.barsManual ?? s.barsEst ?? '-'}<span class="sub">小節</span></span>
+                {hasAudio && (playing && current === s.id
+                  ? <button class="small row-play on" onClick={(e) => { e.stopPropagation(); togglePlay(); }}>停止</button>
+                  : <button class="small row-play" onClick={(e) => { e.stopPropagation(); playSection(s, false); }}>再生</button>)}
+              </div>
+              {(() => {
+                // コード進行（手入力・推定）とメモを1行で添える
+                const c = M.sectionChords(song, s), memo = s.memo.trim();
+                return c || memo ? <div class="sec-peek">{c && <span class={`chords${c.source === 'estimate' ? ' est' : ''}`} title={c.source === 'estimate' ? '推定（閲覧ページには出ません）' : undefined}>{c.text}</span>}{memo && <span>{memo}</span>}</div> : null;
+              })()}
+            </li>
+          ) : (
             <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
               class={`section tone-${groupTone(s.group)}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
               {current === s.id && <div class="now-label">{playing ? '▶ 再生中' : '■ 再生位置'}・{fmt(now)}</div>}
@@ -925,6 +964,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   <option value="">繰り返しなし</option>
                 </select>
                 <span class={`origin ${s.edited ? 'manual' : ''}`}>{s.edited ? '手動修正' : '自動'}</span>
+                <button class="small ghost sec-close" aria-expanded="true" onClick={(e) => { e.stopPropagation(); setSelected(null); }}>たたむ</button>
               </div>
               <div class="sec-time">
                 {i === 0 ? <span class="t">{fmt(s.start)}</span> : (

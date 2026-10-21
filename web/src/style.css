@@ -216,7 +216,6 @@ label.inline input { width: 72px; }
 .seg:first-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .seg:nth-last-child(1 of .seg) { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-right: 0; }
 .seg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.seg .seg-group { flex: none; font-size: 10px; padding: 0 4px; border-radius: 4px; background: rgb(0 0 0 / 22%); }
 /* 音源があるときは、再生位置の区間だけ濃く、下線を付ける */
 .timeline.tracking .seg { opacity: 0.55; }
 .seg.now { opacity: 1; box-shadow: inset 0 -5px 0 var(--text); }
@@ -244,6 +243,21 @@ label.inline input { width: 72px; }
 .mini-section { font-size: 13px; font-weight: 600; max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 label.check.follow { margin: 0; font-size: 13px; }
 .sec-main, .sec-time, .sec-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* たたんだ区間：名前・時刻・小節数を1行で */
+.section.folded { padding: 6px 12px; gap: 2px; cursor: pointer; margin: 4px 0; }
+.section.folded > * { min-width: 0; }
+.section.folded:hover { background: var(--raised); }
+.sec-summary { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.sec-open { display: block; flex: 1 1 auto; min-width: 0; background: none; border: 0; padding: 4px 0; text-align: left; font-weight: 700; font-size: 15px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 0; }
+.sec-open:hover:not(:disabled) { background: none; text-decoration: underline; }
+.sec-range { color: var(--sub); font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+.sec-bars { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 4em; text-align: right; }
+.sec-bars .sub { font-weight: 400; margin-left: 2px; }
+.sec-peek { display: flex; gap: 12px; color: var(--sub); font-size: 13px; padding-left: 44px; overflow: hidden; white-space: nowrap; }
+.sec-peek > span { overflow: hidden; text-overflow: ellipsis; }
+.sec-peek .chords { font-size: 13px; flex: 0 1 auto; }
+.sec-peek .chords.est { opacity: 0.55; font-style: italic; }
+.sec-close { margin-left: auto; }
 .sec-time .sec-actions { margin-left: auto; gap: 4px; }
 .sec-no { flex: none; min-width: 1.8em; text-align: center; font-size: 13px; font-weight: 700; color: var(--sub); font-variant-numeric: tabular-nums; }
 .sec-no + .chip { margin-right: 0; }
@@ -259,9 +273,11 @@ button.hint { border-style: dashed; border-color: var(--accent); color: var(--ac
 .chart-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .chart-row input { flex: 1 1 260px; min-width: 0; }
 .chart-row label { flex: 1 1 320px; }
-.sec-chords { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sec-chords > .sub, .sec-chords > .tag { white-space: nowrap; }
-.sec-chords .chords { flex: 1 1 260px; min-width: 0; resize: none; line-height: 1.6; }
+.sec-chords { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: start; }
+.sec-chords > .sub { white-space: nowrap; padding-top: 8px; }
+.sec-chords .chords { width: 100%; min-width: 0; resize: none; line-height: 1.6; overflow: hidden; }
+.chords-meta { grid-column: 2; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chords-meta .tag { white-space: nowrap; }
 .chords { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
 .structure td.chords .tag { margin-left: 6px; }
 .memo { width: 100%; background: var(--raised); border-color: transparent; }
@@ -376,7 +392,7 @@ body:has(.savebar) #toast { bottom: 140px; }
 .structure th, .structure td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .structure th { font-size: 12px; color: var(--sub); font-weight: 600; padding-top: 0; }
 .structure td:first-child { border-left: 6px solid var(--tone); }
-.structure td[data-label='開始'], .structure td[data-label='終了'] { color: var(--sub); font-variant-numeric: tabular-nums; width: 4.5em; white-space: nowrap; }
+.structure td[data-label='時刻'] { color: var(--sub); font-variant-numeric: tabular-nums; width: 7.5em; white-space: nowrap; }
 .structure td[data-label='セクション'] { font-weight: 700; font-size: 16px; }
 .structure td[data-label='小節数'] { font-weight: 700; font-size: 16px; width: 4.5em; }
 .structure td[data-label='メモ'] { font-size: 14px; }
@@ -401,7 +417,10 @@ body:has(.savebar) #toast { bottom: 140px; }
   .structure td { border: 0; padding: 2px 10px; width: auto !important; }
   .structure td:first-child { border-left: 0; }
   .structure td::before { content: attr(data-label); color: var(--sub); font-size: 12px; font-weight: 400; margin-right: 8px; }
-  .structure td[data-label='セクション'], .structure td[data-label='メモ'] { grid-column: 1 / -1; }
+  .structure td[data-label='セクション'], .structure td[data-label='メモ'], .structure td[data-label='コード'] { grid-column: 1 / -1; }
+  .sec-range { font-size: 12px; }
+  .sec-bars { min-width: 0; }
+  .sec-peek { padding-left: 0; }
   .structure td[data-label='セクション']::before { content: none; }
   .structure td[data-label='セクション'] { order: -1; }
   .structure td[data-label='メモ']:empty, .structure td[data-label='コード']:empty { display: none; }

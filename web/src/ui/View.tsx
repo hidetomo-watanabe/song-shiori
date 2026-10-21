@@ -163,18 +163,18 @@ export function View({ viewId }: { viewId: string }) {
 
       <section class="card">
         <table class={`structure${yt ? ' playable' : ''}`}>
-          <thead><tr><th>開始</th><th>終了</th><th>セクション</th><th class="num">小節数</th>{hasChords && <th>コード</th>}<th>メモ</th></tr></thead>
+          <thead><tr><th>時刻</th><th>セクション</th><th class="num">小節数</th>{hasChords && <th>コード</th>}<th>メモ</th></tr></thead>
           <tbody>
             {song.sections.map((s) => {
               const changes = diff?.sections[s.id] ?? [];
               return (
                 <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${current?.id === s.id ? ' now' : ''}`}
                   onClick={yt ? () => yt.play(s.start) : undefined}>
-                  <td data-label="開始">
+                  {/* 終わりは次の区間の始まりと同じなので、1つの列にまとめる */}
+                  <td data-label="時刻">
                     {yt && <button class="tiny ghost row-go" aria-label={`${s.name}から再生`} onClick={(e) => { e.stopPropagation(); yt.play(s.start); }}>▶</button>}
-                    {fmt(s.start, 0)}
+                    {fmt(s.start, 0)}〜{fmt(s.end, 0)}
                   </td>
-                  <td data-label="終了">{fmt(s.end, 0)}</td>
                   <td data-label="セクション">
                     <span class="chip" aria-hidden="true" />
                     {s.name}

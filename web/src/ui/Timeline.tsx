@@ -35,7 +35,6 @@ export function Timeline({ song, now, showPlayhead, selected, onSeek, onSelect, 
           title={`${s.name}（${fmt(s.start)}〜${fmt(s.end)}）`}
           onPointerDown={(e) => { onSelect(s.id); onSeek(toTime(e.clientX)); }}
         >
-          {s.group && <span class="seg-group">{s.group}</span>}
           <span>{s.name}</span>
         </div>
       ))}
