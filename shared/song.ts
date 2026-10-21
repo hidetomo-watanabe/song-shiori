@@ -477,6 +477,29 @@ export function octaveByReference(est: number, ref: number, tolerance = 0.1): 2 
   return null;
 }
 
+export const MIN_TAPS = 4;
+// 人は音を聞いてから押すため、押した時刻は拍より少し遅れる。最初の拍の位置はこの分だけ前に寄せる（秒）
+export const TAP_LATENCY = 0.05;
+
+// 拍に合わせて押した時刻の列（秒）から、BPM と最初に押した拍の位置を求める。
+// 押した回数と時刻の最小二乗直線を使い、1回ごとのばらつきをならす。押し損ねて1拍とんだ間隔は2拍分として数える
+export function tapTempo(taps: number[]): { bpm: number; first: number } | null {
+  if (taps.length < MIN_TAPS) return null;
+  const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+  if (gaps.some((g) => !(g > 0))) return null;
+  const median = gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+  const idx = [0];
+  for (const g of gaps) idx.push(idx[idx.length - 1] + Math.max(1, Math.round(g / median)));
+  const n = taps.length;
+  const mx = idx.reduce((p, v) => p + v, 0) / n, my = taps.reduce((p, v) => p + v, 0) / n;
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < n; i++) { sxy += (idx[i] - mx) * (taps[i] - my); sxx += (idx[i] - mx) ** 2; }
+  const beat = sxy / sxx;
+  const bpm = Math.round(600 / beat) / 10;
+  if (!(bpm >= 20 && bpm <= 400)) return null;
+  return { bpm, first: round3(Math.max(0, my - beat * mx - TAP_LATENCY)) };
+}
+
 // 最も近い拍の位置を返す
 export function snapToBeat(song: Song, t: number): number {
   const beats = beatGrid(song);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -426,5 +426,28 @@ describe('YouTube の動画', () => {
     expect(diffSongs({ ...prev, youtube: 'dQw4w9WgXcQ' }, { ...prev, youtube: 'dQw4w9WgXcQ', youtubeOffset: 3 }).song).toContain('YouTube の動画');
     expect(clampOffset(1.23456)).toBe(1.23);
     expect(clampOffset(-1000)).toBe(-600);
+  });
+});
+
+describe('タップで BPM を求める', () => {
+  const beat = 60 / 99.9;
+  const exact = (n: number, from = 10) => Array.from({ length: n }, (_, i) => from + i * beat);
+
+  it('押した時刻のばらつきをならして BPM と最初の拍を求める', () => {
+    const jitter = [0.02, -0.03, 0.01, 0.025, -0.015, 0, -0.02, 0.03];
+    const r = tapTempo(exact(8).map((t, i) => t + jitter[i]))!;
+    expect(Math.abs(r.bpm - 99.9)).toBeLessThan(1);
+    expect(Math.abs(r.first - (10 - TAP_LATENCY))).toBeLessThan(0.03);
+  });
+
+  it('1拍押し損ねても2拍分として数える', () => {
+    const taps = exact(8);
+    taps.splice(4, 1);
+    expect(tapTempo(taps)!.bpm).toBeCloseTo(99.9, 1);
+  });
+
+  it('押した回数が少ない・時刻が戻ったときは求めない', () => {
+    expect(tapTempo(exact(3))).toBeNull();
+    expect(tapTempo([1, 2, 1.5, 3])).toBeNull();
   });
 });

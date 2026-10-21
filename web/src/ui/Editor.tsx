@@ -15,6 +15,7 @@ import { KeyForm } from './KeyForm';
 import { Progress } from './Progress';
 import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
+import { TapTempo } from './TapTempo';
 import { Manage } from './Manage';
 import { ShareButtons } from './ShareButtons';
 import { TimeInput } from './TimeInput';
@@ -95,6 +96,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
   const [slowDismissed, setSlowDismissed] = useState(false);
   const [netBpm, setNetBpm] = useState<number | null>(null); // ネット上の BPM（いちばん上の候補）
+  const [netDismissed, setNetDismissed] = useState<number | null>(null); // 「推定のままにする」を選んだネット上の BPM
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
   const [clickVolume, setClickVolume] = useState(() => L.getMetronomeVolume() ?? DEFAULT_VOLUME); // このブラウザに覚えておく
@@ -308,7 +310,8 @@ export function Editor({ mode }: { mode: Mode }) {
     }
   }
 
-  async function analyzeBuffer(buf: AudioBuffer, how: 'replace' | 'propose', bpm?: number) {
+  // 解析できたら true を返す
+  async function analyzeBuffer(buf: AudioBuffer, how: 'replace' | 'propose', bpm?: number): Promise<boolean> {
     setAnalysisError('');
     setProposal(null);
     setProgress({ ratio: 0, stage: '解析の準備をしています' });
@@ -323,11 +326,13 @@ export function Editor({ mode }: { mode: Mode }) {
         edit((s) => M.songFromAnalysis(result, s));
         setSelected(null);
       } else setProposal(result);
+      return true;
     } catch (e) {
       const msg = errorText(e, '解析に失敗しました');
       setAnalysisError(msg);
       if (msg !== '解析を中止しました') track('analysis_fail', { error: msg.slice(0, 60), audioSec: buf.duration });
       if (!songRef.current?.sections.length) edit((s) => M.wholeSong(s, buf.duration, true));
+      return false;
     } finally {
       job.current = null;
       setProgress(null);
@@ -346,6 +351,24 @@ export function Editor({ mode }: { mode: Mode }) {
       setNotice('区間はそのままにして、テンポの推定値だけを更新しました。');
     }
     setProposal(null);
+  }
+
+  // タップで求めた BPM を使う。first は再生しながら押したときの最初の拍（小節の頭）。
+  // 推定と大きく違えば、その BPM の前後で拍を探し直して作り直す（拍の位置がテンポの揺れに追従し、小節数も正確になる）
+  function applyTap(bpm: number, first: number | null) {
+    const cur = songRef.current!;
+    const near = cur.bpmEst != null && Math.abs(bpm / cur.bpmEst - 1) <= 0.03;
+    edit((s) => M.setTempo(s, { ...(near ? { bpmManual: null } : { bpmManual: bpm }), ...(first != null ? { firstDownbeat: first } : {}) }));
+    const head = first != null ? `・小節の頭を ${fmt(first)}` : '';
+    if (near || !cur.analysis || !player.buffer) {
+      setNotice(near ? `タップの BPM ${bpm} は推定 ${cur.bpmEst} とほぼ同じなので、推定の拍を使います${head ? `（小節の頭を ${fmt(first!)} にしました）` : ''}。`
+        : `タップから BPM を ${bpm}${head} にしました。`);
+      return;
+    }
+    const how = redoHow(cur);
+    setNotice(`タップから BPM を ${bpm}${head} にしました。この BPM で拍を探し直しています。`);
+    void analyzeBuffer(player.buffer, how, bpm).then((ok) =>
+      setNotice(!ok ? '' : `タップから BPM を ${bpm}${head} にして、${how === 'replace' ? '拍を探し直して作り直しました。' : '拍を探し直しました。下の自動生成の結果から選んでください。'}`));
   }
 
   // 再生操作（iPhone ではタップを起点にしないと音が出ない）
@@ -522,7 +545,9 @@ export function Editor({ mode }: { mode: Mode }) {
   // ネット上の BPM を参考に、推定の倍・半分の取り違えを判定する
   const netFactor = song.analysis && song.bpmManual == null && song.bpmEst != null && netBpm != null ? M.octaveByReference(song.bpmEst, netBpm) : null;
   const octaveFix = netFactor === 2 || netFactor === 0.5 ? Math.round(song.bpmEst! * netFactor * 10) / 10 : null;
-  const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain && netFactor !== 1 && !octaveFix
+  // ネット上の BPM と推定が、倍・半分でもなく大きく違うとき（拍の取り違え。別の録音・別の曲の値のこともある）
+  const netFix = netFactor === null && netBpm != null && song.analysis && song.bpmManual == null && song.bpmEst != null && netDismissed !== netBpm ? netBpm : null;
+  const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain && netFactor !== 1 && !octaveFix && !netFix
     ? Math.round(song.bpmEst * 20) / 10 : null;
   const redoBpm = song.analysis && song.bpmManual != null && (song.bpmEst == null || Math.abs(song.bpmManual / song.bpmEst - 1) > 0.03) ? song.bpmManual : null;
 
@@ -662,6 +687,7 @@ export function Editor({ mode }: { mode: Mode }) {
                   if (ticking) metronome.stop(); else metronome.start();
                   setTicking(!ticking);
                 }}>{ticking && tempoBpm ? '■ メトロノーム' : '♪ メトロノーム'}</button>
+              <TapTempo position={() => (media().playing ? media().currentTime : null)} onDone={applyTap} />
               {ticking && tempoBpm && (
                 // BPM の label の中にあるため label は入れ子にせず、文字で「音量」と示す
                 <span class="metronome-volume">
@@ -698,6 +724,16 @@ export function Editor({ mode }: { mode: Mode }) {
             {canAnalyze
               ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, 'propose', octaveFix)}>{octaveFix} で作り直す</button>
               : <span class="sub">音源ファイルを選ぶと {octaveFix} で作り直せます。</span>}
+          </div>
+        )}
+        {netFix && (
+          <div class="redo-bpm">
+            <p>ネット上の BPM（{netFix}）と、推定 {song.bpmEst} が大きく違います。拍を取り違えているかもしれません。</p>
+            {canAnalyze
+              ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), netFix)}>{netFix} で作り直す</button>
+              : <span class="sub">音源ファイルを選ぶと {netFix} で作り直せます。</span>}
+            <button class="small" onClick={() => setNetDismissed(netFix)}>{song.bpmEst} のままにする</button>
+            <p class="sub">ネット上の値が当てにならないときは、再生しながら「👆 タップ」を拍に合わせて押しても直せます。</p>
           </div>
         )}
         {slowBpm && !slowDismissed && (
