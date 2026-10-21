@@ -113,7 +113,11 @@ export function View({ viewId }: { viewId: string }) {
         </div>
         {/* 編集する人が選んだコード譜のページ（U-FRET など）。全部のコードはそちらで見てもらう */}
         {song.chordChartUrl && chordChartUrl(song.chordChartUrl) && (
-          <p><a class="button small" href={chordChartUrl(song.chordChartUrl)!} target="_blank" rel="noopener noreferrer">コード譜（{chordChartSite(song.chordChartUrl)}）</a></p>
+          <p class="chart-link">
+            <a href={chordChartUrl(song.chordChartUrl)!} target="_blank" rel="noopener noreferrer">
+              {chordChartSite(song.chordChartUrl)} でコード譜を見る<span aria-hidden="true"> ↗</span><span class="sr-only">（新しいタブで開きます）</span>
+            </a>
+          </p>
         )}
         <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
         {/* 前回の版からの変更は1行で示し、区間ごとの変更は表の印で示す */}

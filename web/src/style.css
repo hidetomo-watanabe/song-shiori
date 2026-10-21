@@ -367,6 +367,9 @@ button.line:hover:not(:disabled) { background: #05923f; border-color: #05923f; }
 /* 編集画面では下の保存バーに重ならないよう上げる */
 body:has(.savebar) #toast { bottom: 140px; }
 .view-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
+.chart-link { margin: 10px 0 0; font-size: 15px; font-weight: 600; }
+.chart-link a { text-decoration: underline; text-decoration-thickness: 1px; display: inline-block; padding: 4px 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .view-meta .tag { font-size: 13px; padding: 3px 12px; color: var(--text); }
 .update-line { margin-top: 2px; }
 .structure { width: 100%; border-collapse: collapse; }
