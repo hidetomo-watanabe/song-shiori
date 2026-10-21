@@ -199,10 +199,7 @@ export function View({ viewId }: { viewId: string }) {
             })}
           </tbody>
         </table>
-        <ExportText song={song} />
       </section>
-      {/* 共有：構成表のすぐ下に置く。PC はコピーだけ、スマホはコピーと LINE で送る */}
-      <ShareButtons text={shareText} />
 
       {song.memo && (
         <section class="card">
@@ -210,6 +207,9 @@ export function View({ viewId }: { viewId: string }) {
           <p class="pre">{song.memo}</p>
         </section>
       )}
+      {/* 曲の内容（構成表・全体メモ）のあとに、共有と書き出しの操作をまとめる。PC はコピーだけ、スマホはコピーと LINE で送る */}
+      <ShareButtons text={shareText} />
+      <ExportText song={song} />
       <div class="view-foot">
         <StartEdit viewId={viewId} title={song.title} />
         <p class="sub">この構成メモは {fmtDay(data.expiresAt)} まで保管されます。</p>
