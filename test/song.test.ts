@@ -451,3 +451,17 @@ describe('タップで BPM を求める', () => {
     expect(tapTempo([1, 2, 1.5, 3])).toBeNull();
   });
 });
+
+describe('区間名の候補：イントロの素材', () => {
+  it('最初のパートはサビでなければイントロにし、同じ素材は間奏・アウトロにする', () => {
+    // イントロの素材 X が、曲の途中（間奏）と最後（アウトロ）にも出てくる
+    const plan: [string, number, number][] = [
+      ['X', 8, -22], ['A', 16, -20], ['C', 16, -15], ['X', 8, -22], ['A', 16, -20], ['C', 16, -15], ['X', 8, -22]];
+    let t = 0;
+    const sections = plan.map(([g, bars, e]) => { const s = newSection(t, t + bars * 2, { group: g, energy: e }); t += bars * 2; return s; });
+    const song = normalize({ ...emptySong(t), bpmEst: 120, firstDownbeat: 0, sections });
+    const names = suggestNames(song);
+    expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ', 'サビ', 'アウトロ']);
+    expect(applySuggestedNames(song).sections.map((s) => s.name)).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ（2回目）', 'サビ（2回目）', 'アウトロ']);
+  });
+});

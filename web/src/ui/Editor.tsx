@@ -817,6 +817,9 @@ export function Editor({ mode }: { mode: Mode }) {
             <button onClick={() => setConfirmReset(false)}>キャンセル</button>
           </div>
         )}
+        {song.sections.some((s) => s.nameAuto && s.group && song.groupNames?.[s.group] === suggested[s.id]) && (
+          <p class="sub">イントロ・Aメロ・サビなどの名前は、繰り返し・並び・音量から推定して付けています。聴いて確かめて、違っていたら直してください。</p>
+        )}
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
         <ol class="section-list">
           {song.sections.map((s, i) => (

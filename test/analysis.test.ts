@@ -69,3 +69,11 @@ describe('BPM を指定した解析', () => {
     expect(analyze(synth(), 22050, undefined, { bpm: 100 }).bpm).toBeCloseTo(120, 0);
   });
 });
+
+describe('自動生成の名前', () => {
+  it('名前の候補を最初から付け、手で直した区間とはみなさない', () => {
+    const song = songFromAnalysis(analyze(synth(), 22050));
+    expect(song.sections.map((s) => s.name)).toEqual(['サビ（1回目）', '間奏', 'サビ（2回目）', '間奏', 'サビ（3回目）']);
+    expect(song.sections.every((s) => s.nameAuto && !s.edited)).toBe(true);
+  });
+});

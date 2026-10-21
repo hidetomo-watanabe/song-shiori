@@ -422,15 +422,21 @@ export function suggestNames(song: Song): Record<string, string> {
     return 0.7 * e + 0.3 * g.idx.length + 0.6 * (len / 8) - (g.idx[0] <= 1 ? 0.8 : 0);
   };
   const [chorus, cg] = repeated.slice().sort((a, b) => chorusScore(b) - chorusScore(a))[0];
-  const firstRepeat = Math.min(...repeated.map(([, g]) => g.idx[0]));
   const lastChorus = cg.idx[cg.idx.length - 1];
   const name = (i: number, n: string) => { out[secs[i].id] = n; };
-  // イントロ：最初に繰り返しが始まる前。アウトロ：最後のサビの後の、繰り返さないパート
+  // 曲の最初のパートは、サビでなければイントロとみなす（Aメロから始まる曲より、イントロから始まる曲のほうがずっと多い）。
+  // イントロの素材は間奏・アウトロでもう一度出てくることが多いので、繰り返していても Aメロ・Bメロの候補にしない
+  const introGroup = secs[0].group && secs[0].group !== chorus ? secs[0].group : null;
+  const intro = introGroup ? groups.get(introGroup)! : null;
+  if (intro) for (const i of intro.idx) name(i, i === 0 ? 'イントロ' : i > lastChorus ? 'アウトロ' : '間奏');
+  const melodies = repeated.filter(([g]) => g !== introGroup);
+  // イントロ：最初に（イントロ以外の）繰り返しが始まる前。アウトロ：最後のサビの後の、繰り返さないパート
+  const firstRepeat = melodies.length ? Math.min(...melodies.map(([, g]) => g.idx[0])) : 0;
   for (let i = 0; i < firstRepeat; i++) name(i, 'イントロ');
   for (let i = lastChorus + 1; i < secs.length; i++) if ((groups.get(secs[i].group ?? '')?.idx.length ?? 1) < 2) name(i, 'アウトロ');
   for (const i of cg.idx) name(i, 'サビ');
   // Aメロ：イントロの後、最初に出てくる繰り返しのパート。Bメロ：Aメロとサビの間によく出てくる繰り返しのパート
-  const others = repeated.filter(([g]) => g !== chorus).sort((a, b) => a[1].idx[0] - b[1].idx[0]);
+  const others = melodies.filter(([g]) => g !== chorus).sort((a, b) => a[1].idx[0] - b[1].idx[0]);
   const verse = others.find(([, g]) => g.idx[0] < cg.idx[0]) ?? null;
   if (verse) for (const i of verse[1].idx) name(i, 'Aメロ');
   if (verse) {
@@ -440,7 +446,7 @@ export function suggestNames(song: Song): Record<string, string> {
       if (ci == null) continue;
       for (let i = vi + 1; i < ci; i++) {
         const g = secs[i].group;
-        if (g && g !== chorus && g !== verse[0] && (groups.get(g)?.idx.length ?? 0) >= 2) between.set(g, (between.get(g) ?? 0) + 1);
+        if (g && g !== chorus && g !== verse[0] && g !== introGroup && (groups.get(g)?.idx.length ?? 0) >= 2) between.set(g, (between.get(g) ?? 0) + 1);
       }
     }
     const pre = [...between.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -451,6 +457,28 @@ export function suggestNames(song: Song): Record<string, string> {
   return out;
 }
 
+// 自動生成した構成に、名前の候補（Aメロ・サビなど）を最初から付けておく。
+// 繰り返しの名前（groupNames）として付けるので、区間は「自動で付いた名前」のままで、手で直した区間とはみなさない。
+// 同じ繰り返しでも場所で名前が違うもの（イントロの素材が間奏・アウトロで出てくるなど）は、区間ごとに付ける
+function withSuggestedNames(song: Song): Song {
+  const names = suggestNames(song);
+  const groupNames = { ...song.groupNames };
+  const mixed = new Set<string>();
+  for (const s of song.sections) {
+    const n = names[s.id];
+    if (!n || !s.group || !s.nameAuto) continue;
+    const first = song.sections.find((x) => x.group === s.group)!;
+    if (names[first.id] !== n) mixed.add(s.group);
+  }
+  const sections = song.sections.map((s) => {
+    const n = names[s.id];
+    if (!n || !s.group || !s.nameAuto) return s;
+    if (!mixed.has(s.group)) { if (!(s.group in groupNames)) groupNames[s.group] = n; return s; }
+    return { ...s, name: n, nameAuto: false };
+  });
+  return normalize({ ...song, groupNames, sections });
+}
+
 // 名前の候補をまとめて付ける。名前を付けていない区間だけを対象にし、繰り返しは1回目に付けて同じ繰り返しへ広げる
 export function applySuggestedNames(song: Song): Song {
   const names = suggestNames(song);
@@ -459,7 +487,9 @@ export function applySuggestedNames(song: Song): Song {
   for (const s of song.sections) {
     const n = names[s.id];
     if (!n || !s.nameAuto) continue;
-    if (s.group) {
+    // 同じ繰り返しでも場所で名前が違うもの（イントロの素材が間奏・アウトロで出てくるなど）は区間ごとに付ける
+    const mixed = s.group && song.sections.some((x) => x.group === s.group && names[x.id] && names[x.id] !== n);
+    if (s.group && !mixed) {
       if (done.has(s.group)) continue;
       done.add(s.group);
       const first = next.sections.find((x) => x.group === s.group)!;
@@ -575,7 +605,7 @@ export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
   };
   if (!b.firstDownbeatManual) song.firstDownbeat = r.firstDownbeat == null ? null : round3(r.firstDownbeat - t.lead);
   else if (b.audio && b.firstDownbeat != null) song.firstDownbeat = round3(b.firstDownbeat - d);
-  return normalize(song);
+  return withSuggestedNames(normalize(song));
 }
 
 const snapshotOf = (r: AnalysisResult): AnalysisSnapshot => ({
@@ -592,7 +622,7 @@ export function resetToAnalysis(song: Song): Song {
   if (!a || !a.segments.length) return song;
   const t = songTimes(a);
   const d = round3(t.lead - (song.audio?.offset ?? 0));
-  return normalize({
+  return withSuggestedNames(normalize({
     ...song,
     ...keepYoutube(song, d),
     duration: t.duration,
@@ -606,7 +636,7 @@ export function resetToAnalysis(song: Song): Song {
     sections: t.sections,
     audio: { offset: t.lead, duration: a.duration },
     groupNames: {},
-  });
+  }));
 }
 
 // 解析結果で構成を作り直す。手動修正はすべて捨てる（曲名・アーティスト・全体メモは残す）
