@@ -92,9 +92,11 @@ export function View({ viewId }: { viewId: string }) {
   // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える
   const firstName = new Map<string, { id: string; name: string }>();
   for (const s of song.sections) if (s.group && !firstName.has(s.group)) firstName.set(s.group, { id: s.id, name: s.name });
+  // 「（2回目）」などを除いた名前。自動で付く「Aメロ（1回目）」「Aメロ（2回目）」は同じ名前として扱う
+  const baseName = (n: string) => n.replace(/[（(]\d+回目[）)]$/, '').trim();
   const sameAs = (s: (typeof song.sections)[number]) => {
     const f = s.group ? firstName.get(s.group) : null;
-    return f && f.id !== s.id && !s.name.startsWith(f.name) ? f.name : null;
+    return f && f.id !== s.id && !baseName(s.name).startsWith(baseName(f.name)) ? baseName(f.name) : null;
   };
 
   return (

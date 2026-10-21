@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
@@ -43,12 +43,19 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 // 区間のコード進行。推定（または繰り返しの1回目）を表示し、書き換えるとこの区間の手入力になる
 function SectionChords({ song, s, onChange }: { song: Song; s: Section; onChange: (v: string | null, coalesce?: boolean) => void }) {
   const c = M.sectionChords(song, s);
+  // 長いコード進行や狭い画面では折り返すので、中身に合わせて高さを変える
+  const box = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + 2}px`;
+  });
   return (
     <div class="sec-chords">
       <span class="sub">コード</span>
-      {/* 16小節の区間などで長くなるので、文字数に合わせて行を増やす（改行は入れない） */}
-      <textarea class="chords" value={c?.text ?? ''} maxLength={M.LIMITS.chordText} aria-label="コード進行"
-        rows={Math.max(1, Math.ceil((c?.text.length ?? 0) / 64))}
+      {/* 改行は入れない（1行のコード進行として扱う） */}
+      <textarea ref={box} class="chords" value={c?.text ?? ''} maxLength={M.LIMITS.chordText} aria-label="コード進行" rows={1}
         placeholder={song.chords ? '（推定なし）例：| Am | G | F | E7 |' : '例：| Am | G | F | E7 |'}
         onInput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value.replace(/\s*\n\s*/g, ' '), true)} />
       {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定（閲覧ページには出ません）'}</span>}
@@ -322,6 +329,11 @@ export function Editor({ mode }: { mode: Mode }) {
       }
       setFileName(file.name);
       playerFile = file.name;
+      // 曲名が空なら、音源ファイルの名前（拡張子と先頭のトラック番号を除く）を入れておく
+      if (!songRef.current?.title.trim()) {
+        const title = file.name.replace(/\.[^.]+$/, '').replace(/^\d{1,3}[\s._-]+/, '').replace(/_/g, ' ').trim();
+        if (title) edit((s) => ({ ...s, title }));
+      }
       yt?.pause();
       const cur = songRef.current!;
       if (!cur.sections.length && !analyzeNow) {
@@ -634,6 +646,28 @@ export function Editor({ mode }: { mode: Mode }) {
         </div>
         <SongLookup title={song.title} artist={song.artist} duration={hasAudio ? media().duration : null}
           onPick={(t) => edit((s) => ({ ...s, title: t.title, artist: t.artist }))} />
+        {/* コード譜は U-FRET などで探して、正しい曲のページの URL を貼ってもらい、閲覧ページにリンクとして出す。
+            内容は取り込まない（U-FRET の規約で閲覧以外の利用はできないため） */}
+        <div class="chart-row">
+          <label class="inline">コード譜
+            <input type="url" inputMode="url" value={chartText ?? song.chordChartUrl ?? ''} maxLength={M.LIMITS.url}
+              placeholder="U-FRET などのコード譜のページの URL" aria-invalid={chartError || undefined}
+              onInput={(e) => {
+                const v = (e.currentTarget as HTMLInputElement).value;
+                setChartText(v);
+                const u = M.chordChartUrl(v);
+                if (u || !v.trim()) edit((s) => ({ ...s, chordChartUrl: u }), { coalesce: 'chart-url' });
+              }}
+              onBlur={() => { if (!chartError) setChartText(null); }} />
+          </label>
+          {song.title.trim() && (
+            <a class="button small" target="_blank" rel="noopener" title="U-FRET で曲名・アーティスト名を検索します（新しいタブ）。見つけたページの URL を左の欄に貼ってください"
+              href={`https://www.ufret.jp/search.php?${new URLSearchParams({ key: `${song.title} ${song.artist}`.trim() })}`}>U-FRET で探す</a>
+          )}
+          {song.chordChartUrl && <a class="button small" target="_blank" rel="noopener noreferrer" href={song.chordChartUrl}>開く</a>}
+          {chartError ? <span class="error">https:// で始まる URL を貼ってください</span>
+            : <span class="sub">閲覧ページにリンクとして出ます。見つからないときは U-FRET で曲名の表記（の／ノなど）を変えて探してください。</span>}
+        </div>
       </section>
 
       <section class="card player">
@@ -848,28 +882,6 @@ export function Editor({ mode }: { mode: Mode }) {
           </label>
           {hasAudio && <label class="check follow"><input type="checkbox" checked={follow} onChange={(e) => setFollow((e.currentTarget as HTMLInputElement).checked)} />再生中の区間を追って表示</label>}
         </div>
-        {/* コード譜は U-FRET などで探して、正しい曲のページの URL を貼ってもらい、閲覧ページにリンクとして出す。
-            内容は取り込まない（U-FRET の規約で閲覧以外の利用はできないため） */}
-        <div class="chart-row">
-          <label class="inline">コード譜
-            <input type="url" inputMode="url" value={chartText ?? song.chordChartUrl ?? ''} maxLength={M.LIMITS.url}
-              placeholder="U-FRET などのコード譜のページの URL" aria-invalid={chartError || undefined}
-              onInput={(e) => {
-                const v = (e.currentTarget as HTMLInputElement).value;
-                setChartText(v);
-                const u = M.chordChartUrl(v);
-                if (u || !v.trim()) edit((s) => ({ ...s, chordChartUrl: u }), { coalesce: 'chart-url' });
-              }}
-              onBlur={() => { if (!chartError) setChartText(null); }} />
-          </label>
-          {song.title.trim() && (
-            <a class="button small" target="_blank" rel="noopener" title="U-FRET で曲名・アーティスト名を検索します（新しいタブ）。見つけたページの URL を左の欄に貼ってください"
-              href={`https://www.ufret.jp/search.php?${new URLSearchParams({ key: `${song.title} ${song.artist}`.trim() })}`}>U-FRET で探す</a>
-          )}
-          {song.chordChartUrl && <a class="button small" target="_blank" rel="noopener noreferrer" href={song.chordChartUrl}>開く</a>}
-          {chartError ? <span class="error">https:// で始まる URL を貼ってください</span>
-            : <span class="sub">閲覧ページにリンクとして出ます。見つからないときは U-FRET で曲名の表記（の／ノなど）を変えて探してください。</span>}
-        </div>
         {confirmReset && (
           <div class="confirm">
             <p>区間の区切り・名前・繰り返し・小節数・区間のメモと、テンポ・拍子・最初の小節頭の手動修正をすべて捨てて、自動解析の結果に戻します。曲名・アーティスト・全体メモは残ります。戻したあとでも「元に戻す」で取り消せます。</p>
@@ -999,7 +1011,8 @@ export function Editor({ mode }: { mode: Mode }) {
       {needKey && song && <KeyForm inline onSubmit={submitKey} />}
 
       <footer class="savebar">
-        {id && (
+        {/* 変更メモ・知らせない設定は、保存する変更があるときだけ出す（スマートフォンで画面を広く使うため） */}
+        {id && (dirty || note) && (
           <div class="save-opts">
             <input value={note} maxLength={500} placeholder="変更メモ（任意・閲覧ページに表示）" onInput={(e) => setNote((e.currentTarget as HTMLInputElement).value)} />
             <label class="check"><input type="checkbox" checked={!notify} onChange={(e) => setNotify(!(e.currentTarget as HTMLInputElement).checked)} />変更として知らせない</label>

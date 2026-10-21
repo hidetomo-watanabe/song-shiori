@@ -404,6 +404,6 @@ body:has(.savebar) #toast { bottom: 140px; }
   .structure td[data-label='セクション'], .structure td[data-label='メモ'] { grid-column: 1 / -1; }
   .structure td[data-label='セクション']::before { content: none; }
   .structure td[data-label='セクション'] { order: -1; }
-  .structure td[data-label='メモ']:empty { display: none; }
+  .structure td[data-label='メモ']:empty, .structure td[data-label='コード']:empty { display: none; }
   .structure .num { text-align: left; }
 }
