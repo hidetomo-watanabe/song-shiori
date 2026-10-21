@@ -137,7 +137,8 @@ export function Editor({ mode }: { mode: Mode }) {
   // BPM を指定してやり直したとき、音から測ったテンポが指定と違った場合の記録
   const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
   const [slowDismissed, setSlowDismissed] = useState(false);
-  const [netCandidates, setNetCandidates] = useState<number[]>([]); // ネット上の BPM の候補（よく一致するものが先）
+  const [netHits, setNetHits] = useState<{ bpm: number; artist: string }[]>([]); // ネット上の BPM の候補（よく一致するものが先）
+  const netCandidates = useMemo(() => netHits.map((c) => c.bpm), [netHits]);
   // 参考にするネット上の BPM。推定とほぼ同じ候補、次に推定の倍・半分の候補、なければいちばん上の候補を使う
   // （情報源によって倍の値や別の録音の値が先に来ることがあり、それで正しい推定を作り直さないため）
   const netBpm = useMemo(() => {
@@ -147,6 +148,9 @@ export function Editor({ mode }: { mode: Mode }) {
   }, [netCandidates, song?.bpmEst]);
   const [netDismissed, setNetDismissed] = useState<number | null>(null); // 「推定のままにする」を選んだときの推定
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
+  // 参考にするネット上の BPM が、入力したアーティストの曲の値か。違えば（アーティスト未入力でカバーの値が出るなど）自動では作り直さない
+  const netTrusted = netBpm != null && netHits.some((c) => c.bpm === netBpm && sameArtistOf(c.artist));
+  function sameArtistOf(artist: string) { return M.sameArtist(artist, songRef.current?.artist ?? ''); }
   const [chartText, setChartText] = useState<string | null>(null); // コード譜の URL の入力中の文字（正しい URL になるまで構成データに入れない）
   const chartError = chartText != null && !!chartText.trim() && !M.chordChartUrl(chartText);
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
@@ -179,6 +183,8 @@ export function Editor({ mode }: { mode: Mode }) {
         if (file) {
           init(M.emptySong());
           await loadAudio(file, true);
+          // 音源から作った直後は、空の状態へ「元に戻す」ことはできないようにする
+          h.clearHistory();
           return;
         }
         const rec = await L.loadDraft('draft');
@@ -294,7 +300,7 @@ export function Editor({ mode }: { mode: Mode }) {
   useEffect(() => {
     const s = songRef.current;
     if (!s?.analysis || s.bpmManual != null || s.bpmEst == null || netBpm == null || !player.buffer || progress) return;
-    if (s.sections.some((x) => x.edited)) return;
+    if (s.sections.some((x) => x.edited) || !netTrusted) return;
     const f = M.octaveByReference(s.bpmEst, netBpm);
     if (f !== 2 && f !== 0.5) return;
     const key = `${netBpm}:${s.bpmEst}`;
@@ -303,7 +309,7 @@ export function Editor({ mode }: { mode: Mode }) {
     const from = s.bpmEst, to = Math.round(from * f * 10) / 10;
     void analyzeBuffer(player.buffer, 'replace', to).then(() =>
       setNotice(`ネット上の BPM（${netBpm}）を参考に、テンポを ${to} に直して作り直しました（推定 ${from} は${f === 2 ? '半分' : '2倍'}のテンポでした）。`));
-  }, [netBpm, song?.bpmEst, progress]);
+  }, [netBpm, netTrusted, song?.bpmEst, progress]);
 
   // メトロノームは今の BPM・拍子で鳴らし、再生中は曲の拍（小節の線と同じ位置）に合わせる。BPM が空になったら止め、入れ直したら続きを鳴らす
   const tempoBpm = song ? M.bpmOf(song) : null;
@@ -752,7 +758,7 @@ export function Editor({ mode }: { mode: Mode }) {
             <button onClick={() => setProposal(null)}>キャンセル</button>
           </div>
         )}
-        {hasAudio && <SeekBar now={now} duration={media().duration} onSeek={seekTo} />}
+        {/* 再生位置は、下のタイムラインと画面下の再生バーで動かす（同じ操作を何か所にも置かない） */}
         <Timeline
           song={song}
           now={now}
@@ -817,9 +823,10 @@ export function Editor({ mode }: { mode: Mode }) {
         {ticking && tempoBpm && <p class="sub">{!metronome.beats?.length ? 'BPM の間隔で鳴らしています（拍の位置が分からないため、曲の拍には合わせられません）。'
           : hasAudio ? '再生している間は、曲の拍（小節の線と同じ位置）に合わせて鳴らします。ずれて聞こえるときは、BPM や「最初の小節頭」を直してください。'
           : 'BPM の間隔で鳴らしています。音源ファイルか YouTube の動画で再生すると、曲の拍に合わせて鳴らします。'}</p>}
-        {octaveFix && (song.sections.some((s) => s.edited) || !canAnalyze) && (
+        {octaveFix && (song.sections.some((s) => s.edited) || !canAnalyze || !netTrusted) && (
           <div class="redo-bpm">
-            <p>ネット上の BPM（{netBpm}）から見ると、推定 {song.bpmEst} は{netFactor === 2 ? '半分' : '2倍'}のテンポのようです。</p>
+            <p>ネット上の BPM（{netBpm}）から見ると、推定 {song.bpmEst} は{netFactor === 2 ? '半分' : '2倍'}のテンポのようです。
+              {!netTrusted && (song.artist.trim() ? 'ただし、別のアーティスト（カバーなど）の値です。' : 'ただし、アーティスト名がないので別の人のカバーの値かもしれません。アーティスト名を入れると確かめられます。')}</p>
             {canAnalyze
               ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, 'propose', octaveFix)}>{octaveFix} で作り直す</button>
               : <span class="sub">音源ファイルを選ぶと {octaveFix} で作り直せます。</span>}
@@ -863,7 +870,7 @@ export function Editor({ mode }: { mode: Mode }) {
             </div>
           : <p class="sub">音源ファイルを選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
-          onResult={(c) => setNetCandidates(c.map((x) => x.bpm))}
+          onResult={(c) => setNetHits(c.map((x) => ({ bpm: x.bpm, artist: x.artist })))}
           onApply={(v) => edit((s) => M.setTempo(s, { bpmManual: v }))} />
         <details class="more">
           <summary>詳しい設定（拍子・小節の線）</summary>
@@ -1060,6 +1067,11 @@ export function Editor({ mode }: { mode: Mode }) {
         )}
         {hasAudio && <SeekBar compact now={now} duration={media().duration} onSeek={seekTo} />}
         <div class="save-row">
+          {/* スマートフォンでは画面上部の帯がスクロールで消えるので、画面下にも置く */}
+          <span class="undo-mini">
+            <button class="small" onClick={undo} disabled={!h.canUndo} aria-label="元に戻す">↶</button>
+            <button class="small" onClick={redo} disabled={!h.canRedo} aria-label="やり直す">↷</button>
+          </span>
           {hasAudio && (
             <span class="mini-player">
               <button class={`small${playing ? ' on' : ''}`} onClick={togglePlay} aria-label={playing ? '一時停止' : '再生'}>{playing ? '■ 停止' : '▶ 再生'}</button>

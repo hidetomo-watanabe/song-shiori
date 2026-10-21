@@ -687,6 +687,13 @@ export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sect
 }
 
 // 保存前の検証。問題があれば理由を返す（API でも同じ検証を行う）
+// アーティスト名が同じとみなせるか（全角半角・大文字小文字・空白・記号の違いは区別しない）。どちらかが空なら false
+export function sameArtist(a: string, b: string): boolean {
+  const n = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  const x = n(a), y = n(b);
+  return !!x && !!y && (x.includes(y) || y.includes(x));
+}
+
 // コード譜の URL として使える形に直す（https のみ）。使えなければ null
 export function chordChartUrl(text: string): string | null {
   const t = text.trim();

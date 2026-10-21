@@ -11,6 +11,7 @@ export function useSongHistory() {
   const future = useRef<Song[]>([]); // 元に戻した変更。新しく編集すると消える
   const coalesce = useRef<{ key: string; at: number } | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [, rerender] = useState(0); // 履歴だけを変えたとき、「元に戻す」の押せる・押せないを表示に反映する
 
   const show = (s: Song) => {
     ref.current = s;
@@ -40,6 +41,14 @@ export function useSongHistory() {
     return true;
   }
 
+  // 履歴を空にする（音源から作った直後など、それより前に戻る意味がないとき）
+  function clearHistory() {
+    history.current = [];
+    future.current = [];
+    coalesce.current = null;
+    rerender((n) => n + 1);
+  }
+
   // 今の状態を履歴に積む（境界のドラッグのように、続けて history: false で変更する前に呼ぶ）
   function checkpoint() {
     history.current = [...history.current.slice(-99), ref.current!];
@@ -59,7 +68,7 @@ export function useSongHistory() {
   const redo = () => step(future.current, history.current);
 
   return {
-    song, ref, dirty, setDirty, init, edit, checkpoint, undo, redo,
+    song, ref, dirty, setDirty, init, edit, checkpoint, clearHistory, undo, redo,
     canUndo: history.current.length > 0,
     canRedo: future.current.length > 0,
   };

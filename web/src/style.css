@@ -293,6 +293,8 @@ button.hint { border-style: dashed; border-color: var(--accent); color: var(--ac
 
 .savebar { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line); box-shadow: 0 -4px 16px rgb(16 24 40 / 6%); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); z-index: 10; }
 .savebar > * { max-width: 928px; margin-left: auto; margin-right: auto; }
+.undo-mini { display: none; gap: 4px; }
+.undo-mini button { min-width: 36px; justify-content: center; padding: 0 8px; }
 .save-opts { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
 .save-opts > input { flex: 1 1 220px; }
 .save-opts label.check { margin: 0; font-size: 13px; }
@@ -404,6 +406,12 @@ body:has(.savebar) #toast { bottom: 140px; }
 .start-edit { width: 100%; max-width: 520px; display: grid; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: var(--card); box-shadow: var(--shadow); }
 
 @media (max-width: 640px) {
+  .undo-mini { display: inline-flex; }
+  /* 画面下の帯：1行目に元に戻す・再生、2行目に保存の状態と保存ボタン（音源がなければ1行に収める） */
+  .save-row { flex-wrap: wrap; row-gap: 6px; }
+  .mini-player { flex: 1 1 auto; min-width: 0; }
+  .save-state { order: 3; flex: 1 1 40%; min-width: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .save-row > button.primary { order: 4; }
   .row2 { grid-template-columns: 1fr; }
   .page { padding: 12px 16px 200px; }
   .card { padding: 16px; }

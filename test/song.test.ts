@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -515,5 +515,14 @@ describe('閲覧ページの変更表示', () => {
   it('最初の小節頭だけの変更は曲全体の変更として知らせない', () => {
     const prev = sample();
     expect(diffSongs(prev, setTempo(prev, { firstDownbeat: 0.02 })).song).toEqual([]);
+  });
+});
+
+describe('アーティスト名の照合', () => {
+  it('表記ゆれは同じとみなし、空や別の人は違うとみなす', () => {
+    expect(sameArtist('椎名林檎', '椎名 林檎')).toBe(true);
+    expect(sameArtist('THEE MICHELLE GUN ELEPHANT', 'Thee Michelle Gun Elephant')).toBe(true);
+    expect(sameArtist('UTADA HIKARU', '椎名林檎')).toBe(false);
+    expect(sameArtist('椎名林檎', '')).toBe(false);
   });
 });
