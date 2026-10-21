@@ -3,9 +3,10 @@
 //   2. スペクトルの増加量（オンセット）からテンポと拍位置を推定（動的計画法）
 //   3. 低音の立ち上がりと和音の変化から小節頭を推定
 //   4. 小節ごとの特徴量の自己類似行列から、区切り（新規性の山）と繰り返しを推定
+//   5. 拍ごとのクロマを和音の型と照らし合わせ、コードを推定
 import type { AnalysisResult } from '../../../shared/song';
 
-export const ANALYSIS_VERSION = 'proto-0.4'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う
+export const ANALYSIS_VERSION = 'proto-0.5'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -236,6 +237,112 @@ function downbeatPhase(beats: number[], f: Features, beatsPerBar: number): numbe
 }
 
 // 区切り単位（小節、拍が不確かなら2秒）ごとの特徴量。クロマと音色（メル）を連結する
+const NOTES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+// 和音の型（根音からの半音）。4和音は3和音と取り違えやすいので、はっきり鳴っているときだけ選ばれるよう少し不利にする
+const CHORD_TYPES: { suffix: string; tones: number[]; prior: number }[] = [
+  { suffix: '', tones: [0, 4, 7], prior: 0 },
+  { suffix: 'm', tones: [0, 3, 7], prior: 0 },
+  { suffix: '7', tones: [0, 4, 7, 10], prior: -0.05 },
+  { suffix: 'm7', tones: [0, 3, 7, 10], prior: -0.05 },
+  { suffix: 'maj7', tones: [0, 4, 7, 11], prior: -0.05 },
+];
+// テンプレートは平均を引いてから長さ1にする（クロマ側も同じにして相関をとる）
+const centered = (v: Float64Array) => {
+  const m = v.reduce((p, x) => p + x, 0) / v.length;
+  return unit(v.map((x) => x - m));
+};
+const CHORD_TEMPLATES = CHORD_TYPES.flatMap(({ suffix, tones, prior }) => NOTES.map((root, r) => {
+  const v = new Float64Array(12);
+  for (const k of tones) v[(r + k) % 12] = 1;
+  return { name: root + suffix, root: r, v: centered(v), prior };
+}));
+export const NO_CHORD = 'N';
+const CHORD_CHANGE = 0.3; // コードを変えるときの減点。拍ごとの細かい揺れで変わらないようにする
+const BASS_WEIGHT = 0.3; // 低音が根音と合っているときの加点
+
+// コード用のクロマ。区切りに使うクロマ（2048点）では低音の半音を分けられないため、8192点で細かく分け、
+// 低音（根音の手がかり）と中高音（和音の構成音）を別に集める。半音の中心から外れた周波数は使わない
+function chordChroma(y: Float32Array, sr: number) {
+  const N = 8192, hop = 2048;
+  const frames = Math.max(0, Math.floor((y.length - N) / hop) + 1);
+  const win = Float64Array.from({ length: N }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
+  const cos = Float64Array.from({ length: N / 2 }, (_, k) => Math.cos((-2 * Math.PI * k) / N));
+  const sin = Float64Array.from({ length: N / 2 }, (_, k) => Math.sin((-2 * Math.PI * k) / N));
+  const bins = N / 2 + 1;
+  // 0〜11：音名、-1：使わない。low：低音の帯域か
+  const pc = new Int8Array(bins).fill(-1), low = new Uint8Array(bins);
+  for (let k = 1; k < bins; k++) {
+    const f = (k * sr) / N;
+    if (f < 40 || f > 2000) continue;
+    const semi = 12 * Math.log2(f / 440);
+    if (Math.abs(semi - Math.round(semi)) > 0.3) continue;
+    pc[k] = ((Math.round(semi) % 12) + 12 + 9) % 12;
+    low[k] = f < 200 ? 1 : 0;
+  }
+  const bass = new Float32Array(frames * 12), treble = new Float32Array(frames * 12);
+  const re = new Float64Array(N), im = new Float64Array(N);
+  for (let t = 0; t < frames; t++) {
+    const off = t * hop;
+    for (let i = 0; i < N; i++) { re[i] = y[off + i] * win[i]; im[i] = 0; }
+    fft(re, im, cos, sin);
+    for (let k = 0; k < bins; k++) {
+      if (pc[k] < 0) continue;
+      const m = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      if (low[k]) bass[t * 12 + pc[k]] += m;
+      else if ((k * sr) / N >= 110) treble[t * 12 + pc[k]] += m;
+    }
+  }
+  return { frames, time: (t: number) => (t * hop + N / 2) / sr, frameAt: (sec: number) => Math.max(0, Math.round((sec * sr - N / 2) / hop)), bass, treble };
+}
+
+// 拍ごと（拍が不確かなら0.5秒ごと）のクロマを和音の型と照らし合わせ、動的計画法で並びをならしてコードを推定する。
+// 戻り値はコードの変わり目（音源ファイルの秒）。N は和音なし（無音など）
+function estimateChords(y: Float32Array, sr: number, beats: number[], beatsUncertain: boolean, duration: number): { t: number; chord: string }[] {
+  const c = chordChroma(y, sr);
+  if (c.frames < 2) return [];
+  const bounds = !beatsUncertain && beats.length >= 2 ? beats : Array.from({ length: Math.floor(duration / 0.5) + 1 }, (_, i) => i * 0.5);
+  const spans = bounds.slice(0, -1).map((b, i) => [c.frameAt(b), Math.max(c.frameAt(b) + 1, c.frameAt(bounds[i + 1]))] as const);
+  const treble = spans.map(([a, b]) => meanVector(c.treble, 12, a, Math.min(b, c.frames)));
+  const bass = spans.map(([a, b]) => meanVector(c.bass, 12, a, Math.min(b, c.frames)));
+  const level = treble.map((v) => v.reduce((p, x) => p + x, 0));
+  const typical = level.slice().sort((a, b) => a - b)[Math.floor(level.length / 2)] || 1;
+  // 状態：各テンプレート + 和音なし
+  const S = CHORD_TEMPLATES.length + 1;
+  const n = spans.length;
+  const score = new Float64Array(S), back: Int16Array[] = [];
+  for (let i = 0; i < n; i++) {
+    const quiet = level[i] < typical * 0.08;
+    const v = centered(treble[i].map((x) => Math.sqrt(x)));
+    const bmax = Math.max(...bass[i]) || 1;
+    const emit = new Float64Array(S);
+    for (let k = 0; k < CHORD_TEMPLATES.length; k++) {
+      const tpl = CHORD_TEMPLATES[k];
+      emit[k] = quiet ? -1 : dot(v, tpl.v) + tpl.prior + BASS_WEIGHT * (bass[i][tpl.root] / bmax);
+    }
+    emit[S - 1] = quiet ? 1 : 0;
+    const prev = Float64Array.from(score);
+    let bestPrev = 0;
+    for (let k = 1; k < S; k++) if (prev[k] > prev[bestPrev]) bestPrev = k;
+    const from = new Int16Array(S);
+    for (let k = 0; k < S; k++) {
+      const stay = prev[k], change = prev[bestPrev] - CHORD_CHANGE;
+      from[k] = i && change > stay ? bestPrev : k;
+      score[k] = (i ? Math.max(stay, change) : 0) + emit[k];
+    }
+    back.push(from);
+  }
+  let k = 0;
+  for (let j = 1; j < S; j++) if (score[j] > score[k]) k = j;
+  const path = new Array<number>(n);
+  for (let i = n - 1; i >= 0; i--) { path[i] = k; k = back[i][k]; }
+  const out: { t: number; chord: string }[] = [];
+  path.forEach((s, i) => {
+    const chord = s === S - 1 ? NO_CHORD : CHORD_TEMPLATES[s].name;
+    if (out[out.length - 1]?.chord !== chord) out.push({ t: Math.round(bounds[i] * 1000) / 1000, chord });
+  });
+  return out;
+}
+
 function unitFeatures(f: Features, bounds: number[]): Float64Array[] {
   const melMean = new Float64Array(N_MEL), melSd = new Float64Array(N_MEL);
   for (let t = 0; t < f.frames; t++) for (let m = 0; m < N_MEL; m++) melMean[m] += f.mel[t * N_MEL + m] / f.frames;
@@ -537,6 +644,8 @@ export function analyze(
     const end = i === ranges.length - 1 ? duration : frameTime(bounds[r[1]]);
     return { start, end, group: labels[i], energy: energyDb(Math.max(start, leadingSilence), Math.min(end, duration - trailingSilence)) };
   });
+  progress(0.95, 'コードを推定しています');
+  const chords = estimateChords(y, sr, beats, beatsUncertain, duration);
   progress(1, '完了');
-  return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments, leadingSilence, trailingSilence };
+  return { version: ANALYSIS_VERSION, duration, bpm, beats, firstDownbeat, beatsUncertain, segments, leadingSilence, trailingSilence, chords };
 }

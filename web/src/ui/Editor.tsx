@@ -40,6 +40,23 @@ const metronome = new Metronome(() => player.context(), () => {
 });
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
+// 区間のコード進行。推定（または繰り返しの1回目）を表示し、書き換えるとこの区間の手入力になる
+function SectionChords({ song, s, onChange }: { song: Song; s: Section; onChange: (v: string | null, coalesce?: boolean) => void }) {
+  const c = M.sectionChords(song, s);
+  return (
+    <div class="sec-chords">
+      <span class="sub">コード</span>
+      {/* 16小節の区間などで長くなるので、文字数に合わせて行を増やす（改行は入れない） */}
+      <textarea class="chords" value={c?.text ?? ''} maxLength={M.LIMITS.chordText} aria-label="コード進行"
+        rows={Math.max(1, Math.ceil((c?.text.length ?? 0) / 64))}
+        placeholder={song.chords ? '（推定なし）例：| Am | G | F | E7 |' : '例：| Am | G | F | E7 |'}
+        onInput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value.replace(/\s*\n\s*/g, ' '), true)} />
+      {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定'}</span>}
+      {s.chords != null && <button class="tiny" onClick={() => onChange(null)}>手入力をやめる</button>}
+    </div>
+  );
+}
+
 export function Editor({ mode }: { mode: Mode }) {
   const id = mode.kind === 'saved' ? mode.id : null;
   const draftKey = id ? `pending:${id}` : 'draft';
@@ -885,6 +902,7 @@ export function Editor({ mode }: { mode: Mode }) {
                 </div>
               </div>
               {hasAudio && <SeekBar range={{ start: s.start, end: s.end }} now={now} onSeek={seekTo} label={`${s.name}の再生位置`} />}
+              <SectionChords song={song} s={s} onChange={(v, coalesce) => edit((x) => M.patchSection(x, s.id, { chords: v }), coalesce ? { coalesce: `chords-${s.id}` } : undefined)} />
               <input class="memo" value={s.memo} maxLength={2000} placeholder="メモ（入り・キメ・終わり方など）" aria-label="メモ"
                 onInput={(e) => edit((x) => M.patchSection(x, s.id, { memo: (e.currentTarget as HTMLInputElement).value }), { coalesce: `memo-${s.id}` })} />
               {splitForm?.id === s.id && (

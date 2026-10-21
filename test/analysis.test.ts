@@ -77,3 +77,12 @@ describe('自動生成の名前', () => {
     expect(song.sections.every((s) => s.nameAuto && !s.edited)).toBe(true);
   });
 });
+
+describe('コードの推定', () => {
+  it('合成音源の和音（C・F・G）を区間ごとに当てる', () => {
+    const r = analyze(synth(), 22050);
+    // A=C、B=F、A=C、C=G、A=C の順（曲頭の無音には拍がないので、最初のコードは音の始まりから）
+    expect(r.chords!.map((c) => c.chord)).toEqual(['C', 'F', 'C', 'G', 'C']);
+    expect(r.chords!.map((c) => Math.round(c.t))).toEqual([3, 19, 35, 51, 67]);
+  });
+});

@@ -42,7 +42,7 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
       if (!groupOf.has(key)) groupOf.set(key, String.fromCharCode(65 + Math.min(groupOf.size, 25)));
       group = groupOf.get(key)!;
     }
-    sections.push(newSection(start, stop, { name: r.name || 'パート', nameAuto: !r.name, group, groupManual: !!group, memo: r.memo, edited: true }));
+    sections.push(newSection(start, stop, { name: r.name || 'パート', nameAuto: !r.name, group, groupManual: !!group, memo: r.memo, chords: r.chords, edited: true }));
   });
   if (!sections.length) return { song: base, warnings };
   let song: Song = {

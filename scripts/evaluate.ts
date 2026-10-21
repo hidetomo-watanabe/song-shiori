@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { analyze, ANALYSIS_SR } from '../web/src/analysis/core.ts';
-import { octaveByReference, shiftSong, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
+import { chordAt, octaveByReference, shiftSong, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
 import { parseTruth, type Truth } from '../shared/truth.ts';
 
 const args = process.argv.slice(2);
@@ -37,6 +37,16 @@ const fmt = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%（${a}/${b}）` : '—');
 // 「サビ（2回目）」「Aメロ2」などを「サビ」「Aメロ」にそろえる
 const baseName = (n: string) => n.replace(/（.*?）|\(.*?\)/g, '').replace(/[0-9０-９]+$/, '').trim();
+
+// コードを「根音（異名同音をそろえる）＋メジャー系かマイナー系か」にそろえる。分数コードの低音は見ない
+const ROOTS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+function chordClass(name: string): string | null {
+  const m = name.match(/^([A-G])([#♯b♭]?)(.*)$/);
+  if (!m) return null;
+  const root = (ROOTS[m[1]] + (/[#♯]/.test(m[2]) ? 1 : /[b♭]/.test(m[2]) ? -1 : 0) + 12) % 12;
+  const minor = /^m(?!aj)/.test(m[3].split('/')[0]);
+  return `${root}${minor ? 'm' : ''}`;
+}
 
 function evaluate(song: Song, truth: Truth) {
   const res: string[] = [];
@@ -78,7 +88,26 @@ function evaluate(song: Song, truth: Truth) {
     else confusion.set(`${label}→${guess}`, (confusion.get(`${label}→${guess}`) ?? 0) + 1);
   }
   res.push(`名前の候補：一致 ${pct(nameOk, nameN)}${confusion.size ? `  外れ：${[...confusion].map(([k, v]) => `${k}×${v}`).join(' / ')}` : ''}`);
-  return { lines: res, hitT, tb: tb.length, hitA, ab: ab.length, barsOk, barsN, nameOk, nameN };
+  // コード：正解の「コード | Am | G |」の各コードについて、その位置（小節を等分した中央）の推定が、根音とメジャー・マイナーで一致した割合
+  let chordOk = 0, chordN = 0;
+  const chordNg: string[] = [];
+  const barLen = truth.bpm ? (60 * (truth.beatsPerBar ?? 4)) / truth.bpm : null;
+  for (const t of truth.sections) {
+    if (!t.chords || !barLen || !song.chords?.length) continue;
+    t.chords.split('|').map((c) => c.trim()).filter(Boolean).forEach((cell, k) => {
+      const names = cell.split(/\s+/);
+      names.forEach((name, j) => {
+        const want = chordClass(name);
+        if (!want) return;
+        const at = t.start + k * barLen + ((j + 0.5) * barLen) / names.length;
+        const got = chordAt(song.chords!, at) ?? 'N';
+        chordN++;
+        if (chordClass(got) === want) chordOk++; else chordNg.push(`${fmt(at)} 正解${name}・推定${got}`);
+      });
+    });
+  }
+  if (chordN) res.push(`コード（根音とメジャー・マイナー）：一致 ${pct(chordOk, chordN)}${chordNg.length ? `  外れ：${chordNg.slice(0, 6).join(' / ')}` : ''}`);
+  return { lines: res, hitT, tb: tb.length, hitA, ab: ab.length, barsOk, barsN, nameOk, nameN, chordOk, chordN };
 }
 
 const files = existsSync(folder) ? readdirSync(folder).filter((f) => /\.(mp3|wav|m4a|mp4|aac)$/i.test(f)).sort() : [];
@@ -86,7 +115,7 @@ if (!files.length) {
   console.log(`音源が見つかりません：${folder}`);
   process.exit(1);
 }
-const sum = { hitT: 0, tb: 0, hitA: 0, ab: 0, barsOk: 0, barsN: 0, nameOk: 0, nameN: 0 };
+const sum = { hitT: 0, tb: 0, hitA: 0, ab: 0, barsOk: 0, barsN: 0, nameOk: 0, nameN: 0, chordOk: 0, chordN: 0 };
 for (const f of files) {
   const name = basename(f, extname(f));
   const truthFile = join(folder, `${name}.txt`);
@@ -115,4 +144,5 @@ if (sum.tb || sum.nameN || sum.barsN) {
   console.log(`  区切り：正解のうち当たり ${pct(sum.hitT, sum.tb)}・自動のうち当たり ${pct(sum.hitA, sum.ab)}`);
   console.log(`  小節数：一致 ${pct(sum.barsOk, sum.barsN)}`);
   console.log(`  名前の候補：一致 ${pct(sum.nameOk, sum.nameN)}`);
+  if (sum.chordN) console.log(`  コード：一致 ${pct(sum.chordOk, sum.chordN)}`);
 }

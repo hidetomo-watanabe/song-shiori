@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -463,5 +463,25 @@ describe('区間名の候補：イントロの素材', () => {
     const names = suggestNames(song);
     expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ', 'サビ', 'アウトロ']);
     expect(applySuggestedNames(song).sections.map((s) => s.name)).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ（2回目）', 'サビ（2回目）', 'アウトロ']);
+  });
+});
+
+describe('コード進行', () => {
+  // 120BPM・4/4（1小節2秒）。最初の区間（0〜16秒・8小節）だけを見る
+  const withChords = (): Song => ({ ...sample(), chords: [{ t: 0, chord: 'Am' }, { t: 3, chord: 'G' }, { t: 4, chord: 'F' }, { t: 6, chord: 'N' }] });
+
+  it('推定のコードを小節ごとに1行にする（前半と後半で違えば2つ）', () => {
+    const s = withChords();
+    expect(estimatedChords(s, s.sections[0])).toBe('| Am | Am G | F | - | - | - | - | - |');
+  });
+
+  it('手で入れたコードを優先し、繰り返しの2回目以降は1回目を引き継ぐ', () => {
+    let s = withChords();
+    // sample() の区間：A / B / C / B。B の1回目に入れると、2回目にも使う
+    s = patchSection(s, s.sections[1].id, { chords: '| C | G | Am | F |' });
+    expect(sectionChords(s, s.sections[1])).toEqual({ text: '| C | G | Am | F |', source: 'manual' });
+    expect(sectionChords(s, s.sections[3])).toEqual({ text: '| C | G | Am | F |', source: 'repeat' });
+    expect(sectionChords(s, s.sections[0])?.source).toBe('estimate');
+    invariant(s);
   });
 });

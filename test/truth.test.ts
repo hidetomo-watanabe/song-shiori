@@ -109,3 +109,12 @@ BPM 120・4/4・長さ 1:10.0
     expect(songFromText('こんにちは').warnings[0]).toMatch(/区間が読み取れません/);
   });
 });
+
+describe('コード進行のテキスト', () => {
+  it('区間の次の「コード」の行を書き出し、読み込むと手で入れたコード進行になる', () => {
+    const text = '曲 / 歌手\nBPM 120・4/4\n\n0:00.0 イントロ 4小節\n  コード | Am | G | F | E7 |\n0:08.0 サビ 4小節\n';
+    const { song } = songFromText(text);
+    expect(song.sections.map((s) => s.chords ?? null)).toEqual(['| Am | G | F | E7 |', null]);
+    expect(songToText(song)).toContain('0:00.0 イントロ 4小節\n  コード | Am | G | F | E7 |\n0:08.0 サビ');
+  });
+});

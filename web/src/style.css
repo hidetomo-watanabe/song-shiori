@@ -256,6 +256,11 @@ button.hint { border-style: dashed; border-color: var(--accent); color: var(--ac
 .t-edit { display: inline-flex; align-items: center; gap: 2px; }
 .bars { flex-direction: row; align-items: center; gap: 4px; color: var(--text); font-weight: 400; font-size: 14px; }
 .bars input { width: 64px; text-align: center; }
+.sec-chords { display: flex; align-items: center; gap: 8px; }
+.sec-chords > .sub, .sec-chords > .tag { white-space: nowrap; }
+.sec-chords .chords { flex: 1 1 auto; min-width: 0; resize: none; line-height: 1.6; }
+.chords { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+.structure td.chords .tag { margin-left: 6px; }
 .memo { width: 100%; background: var(--raised); border-color: transparent; }
 .memo:hover { border-color: var(--line-strong); }
 .memo:focus { background: var(--card); }

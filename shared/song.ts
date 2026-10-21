@@ -15,6 +15,8 @@ export type Section = {
   edited: boolean; // 手動修正済み
   silence?: boolean; // 曲頭・曲末の無音（以前の形式）。今は作らず、読み込むときに trimSilence で取り除く
   energy?: number; // 解析で測った音量（dB）。名前の候補の推定に使う
+  // 手で入れたコード進行（1行。小節の区切りは |）。null なら繰り返しの1回目に入れたもの、なければ推定を使う
+  chords?: string | null;
   // 分割でできた2区間の対応。片方の小節数を入れると、もう片方を「元の小節数 − 入れた値」にする
   split?: { partner: string; total: number; start: number; end: number } | null;
 };
@@ -45,7 +47,11 @@ export type Song = {
   // 構成を作った音源ファイル。offset：ファイルの何秒目が曲の頭（0:00）か（曲頭の無音の長さ）。duration：ファイルの長さ。
   // 構成表の時刻は曲の頭からの時刻で、音源ファイルで再生するときだけ offset を足す
   audio?: { offset: number; duration: number } | null;
+  // 推定したコードの変わり目（曲の頭からの秒）。N は和音なし。区間ごとのコード進行はここから小節に合わせて作る
+  chords?: ChordChange[] | null;
 };
+
+export type ChordChange = { t: number; chord: string };
 
 // 区間の名前の候補（入力欄で選べる）
 export const SECTION_NAMES = ['イントロ', 'Aメロ', 'Bメロ', 'Cメロ', 'サビ', '大サビ', '落ちサビ', '間奏', 'ソロ', 'ブレイク', 'アウトロ'];
@@ -61,7 +67,7 @@ export type AnalysisSnapshot = {
 };
 
 export const MIN_SECTION = 0.5; // 区間の最短長（秒）
-export const LIMITS = { sections: 300, beats: 4000, text: 200, memo: 2000, duration: 3600 };
+export const LIMITS = { sections: 300, beats: 4000, chords: 4000, chordText: 500, text: 200, memo: 2000, duration: 3600 };
 
 export const newId = () => {
   const b = new Uint8Array(6);
@@ -103,6 +109,7 @@ export function shiftSong(song: Song, dt: number): Song {
     duration: sh(song.duration),
     beats: song.beats?.map(sh) ?? null,
     firstDownbeat: song.firstDownbeat == null ? null : sh(song.firstDownbeat),
+    chords: song.chords?.map((c) => ({ ...c, t: sh(c.t) })) ?? song.chords,
     sections: song.sections.map((x) => ({ ...x, start: sh(x.start), end: sh(x.end), split: x.split ? { ...x.split, start: sh(x.split.start), end: sh(x.split.end) } : x.split })),
   };
 }
@@ -343,7 +350,7 @@ export function appendSection(song: Song, seconds?: number): Song {
   return update({ ...song, duration: end }, [...song.sections, newSection(start, end, { edited: true })]);
 }
 
-export function patchSection(song: Song, id: string, patch: Partial<Pick<Section, 'name' | 'memo' | 'barsManual'>>): Song {
+export function patchSection(song: Song, id: string, patch: Partial<Pick<Section, 'name' | 'memo' | 'barsManual' | 'chords'>>): Song {
   const i = indexOf(song, id);
   const next = song.sections.slice();
   const s = { ...next[i], ...patch, edited: true };
@@ -567,6 +574,7 @@ export type AnalysisResult = {
   segments: { start: number; end: number; group: string; energy?: number }[];
   leadingSilence?: number; // 曲頭の無音（秒）。0 なら無音なし
   trailingSilence?: number; // 曲末の無音（秒）。0 なら無音なし
+  chords?: ChordChange[]; // 推定したコードの変わり目（音源ファイルの秒）。N は和音なし
 };
 
 // 解析の結果（音源ファイルの時刻）を、曲の頭を 0:00 とする時刻に直す。曲頭・曲末の無音は構成に入れず、
@@ -596,6 +604,7 @@ export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
     duration: t.duration,
     bpmEst: r.bpm,
     beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - t.lead)),
+    chords: chordsOf(r, t.lead),
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
     sections: t.sections,
@@ -607,6 +616,10 @@ export function songFromAnalysis(r: AnalysisResult, base?: Song): Song {
   else if (b.audio && b.firstDownbeat != null) song.firstDownbeat = round3(b.firstDownbeat - d);
   return withSuggestedNames(normalize(song));
 }
+
+// 解析の結果のコードを、曲の頭からの時刻に直す（off：曲の頭が音源ファイルの何秒目か）
+const chordsOf = (r: AnalysisResult, off: number): ChordChange[] | null =>
+  r.chords ? r.chords.slice(0, LIMITS.chords).map((c) => ({ t: round3(c.t - off), chord: c.chord })) : null;
 
 const snapshotOf = (r: AnalysisResult): AnalysisSnapshot => ({
   duration: r.duration, bpm: r.bpm, firstDownbeat: r.firstDownbeat, beatsUncertain: r.beatsUncertain,
@@ -630,6 +643,7 @@ export function resetToAnalysis(song: Song): Song {
     bpmManual: null,
     beatsPerBar: 4,
     beats: song.beats?.map((x) => round3(x - d)) ?? null,
+    chords: song.chords?.map((c) => ({ ...c, t: round3(c.t - d) })) ?? null,
     firstDownbeat: a.firstDownbeat == null ? null : round3(a.firstDownbeat - t.lead),
     firstDownbeatManual: false,
     beatsUncertain: a.beatsUncertain,
@@ -642,7 +656,7 @@ export function resetToAnalysis(song: Song): Song {
 // 解析結果で構成を作り直す。手動修正はすべて捨てる（曲名・アーティスト・全体メモは残す）
 export function regenerateFromAnalysis(song: Song, r: AnalysisResult): Song {
   const off = song.audio?.offset ?? 0;
-  return resetToAnalysis({ ...song, beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - off)), analysisVersion: r.version, analysis: snapshotOf(r) });
+  return resetToAnalysis({ ...song, beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - off)), chords: chordsOf(r, off), analysisVersion: r.version, analysis: snapshotOf(r) });
 }
 
 // 再解析の結果を採用する。手動修正済みの区間がある場合は区間を置き換えず、テンポの推定値だけ更新する
@@ -655,6 +669,7 @@ export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sect
     ...song,
     bpmEst: r.bpm,
     beats: r.beats.slice(0, LIMITS.beats).map((x) => round3(x - off)),
+    chords: chordsOf(r, off),
     beatsUncertain: r.beatsUncertain,
     analysisVersion: r.version,
     firstDownbeat: song.firstDownbeatManual ? song.firstDownbeat : r.firstDownbeat == null ? null : round3(r.firstDownbeat - off),
@@ -665,6 +680,57 @@ export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sect
 }
 
 // 保存前の検証。問題があれば理由を返す（API でも同じ検証を行う）
+// 時刻 t に鳴っている推定のコード（N は和音なし）。推定がなければ null
+export function chordAt(track: ChordChange[], t: number): string | null {
+  let lo = 0, hi = track.length - 1, at = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (track[mid].t <= t + 1e-6) { at = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return at >= 0 ? track[at].chord : null;
+}
+const chordLabel = (c: string | null) => (c == null || c === 'N' ? '-' : c);
+
+// 推定のコードから、区間のコード進行を1行で作る（例：| Am | Am G | F | E7 |）。
+// 小節の線が分かれば1小節ずつ、前半と後半で多い方のコードを書く（同じなら1つ）。分からなければ変わり目の順に並べる
+export function estimatedChords(song: Song, sec: Section): string | null {
+  const track = song.chords;
+  if (!track?.length) return null;
+  const beats = beatsWithBars(song)?.filter((b) => b.t >= sec.start - 0.05 && b.t < sec.end - 0.05);
+  if (!beats?.length) {
+    const seq: string[] = [];
+    const first = chordAt(track, sec.start + 0.05);
+    if (first) seq.push(chordLabel(first));
+    for (const c of track) if (c.t > sec.start + 0.05 && c.t < sec.end - 0.05 && chordLabel(c.chord) !== seq[seq.length - 1]) seq.push(chordLabel(c.chord));
+    return seq.length ? seq.join(' ') : null;
+  }
+  const bars: string[][] = [];
+  for (const b of beats) {
+    if (b.head || !bars.length) bars.push([]);
+    bars[bars.length - 1].push(chordLabel(chordAt(track, b.t + 0.05)));
+  }
+  const most = (xs: string[]) => {
+    const n = new Map<string, number>();
+    for (const x of xs) n.set(x, (n.get(x) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1])[0][0];
+  };
+  const cells = bars.map((bar) => {
+    const half = Math.ceil(bar.length / 2);
+    const a = most(bar.slice(0, half)), b = bar.length > 1 ? most(bar.slice(half)) : a;
+    return a === b ? a : `${a} ${b}`;
+  });
+  return `| ${cells.join(' | ')} |`;
+}
+
+// 区間に表示するコード進行。手で入れたもの、繰り返しの1回目に手で入れたもの、推定の順に使う
+export function sectionChords(song: Song, sec: Section): { text: string; source: 'manual' | 'repeat' | 'estimate' } | null {
+  if (sec.chords != null) return { text: sec.chords, source: 'manual' };
+  const first = sec.group ? song.sections.find((x) => x.group === sec.group) : undefined;
+  if (first && first !== sec && first.chords) return { text: first.chords, source: 'repeat' };
+  const est = estimatedChords(song, sec);
+  return est ? { text: est, source: 'estimate' } : null;
+}
+
 export function validateSong(x: unknown): string | null {
   const s = x as Song;
   if (!s || typeof s !== 'object') return '形式が正しくありません';
@@ -685,6 +751,7 @@ export function validateSong(x: unknown): string | null {
     if (Math.abs(sec.start - t) > 1e-6) return `区間${i + 1}の前に隙間か重なりがあります`;
     if (sec.group !== null && !str(sec.group, 8)) return `区間${i + 1}の繰り返しが正しくありません`;
     if (!numOrNull(sec.barsEst) || !numOrNull(sec.barsManual)) return `区間${i + 1}の小節数が正しくありません`;
+    if (sec.chords != null && !str(sec.chords, LIMITS.chordText)) return `区間${i + 1}のコード進行が長すぎます`;
     t = sec.end;
   }
   if (s.sections.length && Math.abs(t - s.duration) > 1e-6) return '最後の区間が曲の終わりと一致しません';
@@ -692,6 +759,7 @@ export function validateSong(x: unknown): string | null {
   if (s.youtube != null && (typeof s.youtube !== 'string' || !YOUTUBE_ID.test(s.youtube))) return 'YouTube の動画が正しくありません';
   if (s.youtubeOffset != null && (!num(s.youtubeOffset) || Math.abs(s.youtubeOffset) > MAX_YOUTUBE_OFFSET)) return 'YouTube の動画のずれが正しくありません';
   if (s.audio != null && (typeof s.audio !== 'object' || !num(s.audio.offset) || !num(s.audio.duration) || s.audio.offset < 0 || s.audio.duration < 0 || s.audio.duration > LIMITS.duration)) return '音源ファイルの情報が正しくありません';
+  if (s.chords != null && (!Array.isArray(s.chords) || s.chords.length > LIMITS.chords || !s.chords.every((c) => c && num(c.t) && str(c.chord, 16)))) return 'コードが正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';
   return null;
 }

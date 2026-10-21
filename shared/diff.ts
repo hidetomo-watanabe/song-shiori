@@ -1,11 +1,11 @@
 // 2つの版の差分（要件定義書 5.5）。区間は ID で対応付ける
 import { trimSilence, type Section, type Song } from './song.ts';
 
-export type Change = 'added' | 'split' | 'merged' | 'boundary' | 'name' | 'group' | 'bars' | 'memo';
+export type Change = 'added' | 'split' | 'merged' | 'boundary' | 'name' | 'group' | 'bars' | 'memo' | 'chords';
 
 export const CHANGE_LABEL: Record<Change, string> = {
   added: '追加', split: '分割', merged: '結合', boundary: '境界移動',
-  name: '名前変更', group: '繰り返し変更', bars: '小節数変更', memo: 'メモ変更',
+  name: '名前変更', group: '繰り返し変更', bars: '小節数変更', memo: 'メモ変更', chords: 'コード変更',
 };
 
 export type SongDiff = {
@@ -42,6 +42,7 @@ export function diffSongs(prevSong: Song, nextSong: Song): SongDiff {
     if (old.group !== s.group) add(s.id, 'group');
     if (bars(old) !== bars(s)) add(s.id, 'bars');
     if (old.memo !== s.memo) add(s.id, 'memo');
+    if ((old.chords ?? null) !== (s.chords ?? null)) add(s.id, 'chords');
   }
 
   const removed: Section[] = [];
