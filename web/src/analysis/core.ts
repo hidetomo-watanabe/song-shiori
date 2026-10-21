@@ -461,14 +461,20 @@ export function analyze(
   const trailingSilence = silence.trailing;
 
   progress(0.65, 'テンポと拍を推定しています');
-  const period = estimatePeriod(f.onset, f.fps, opts.bpm);
-  const beatFrames = trackBeats(f.onset, period);
-  const beats = beatFrames.map(frameTime);
-  const intervals = beats.slice(1).map((b, i) => b - beats[i]).sort((a, b) => a - b);
-  const median = intervals[Math.floor(intervals.length / 2)] ?? 0;
-  const spread = intervals.length ? intervals.reduce((p, v) => p + Math.abs(v - median), 0) / intervals.length / (median || 1) : 1;
-  const beatsUncertain = beats.length < 16 || spread > 0.08;
-  const bpm = median ? Math.round(600 / fitPeriod(beats, median)) / 10 : null;
+  const tempo = (hint?: number) => {
+    const beatFrames = trackBeats(f.onset, estimatePeriod(f.onset, f.fps, hint));
+    const beats = beatFrames.map(frameTime);
+    const intervals = beats.slice(1).map((b, i) => b - beats[i]).sort((a, b) => a - b);
+    const median = intervals[Math.floor(intervals.length / 2)] ?? 0;
+    const spread = intervals.length ? intervals.reduce((p, v) => p + Math.abs(v - median), 0) / intervals.length / (median || 1) : 1;
+    const bpm = median ? Math.round(600 / fitPeriod(beats, median)) / 10 : null;
+    return { beatFrames, beats, beatsUncertain: beats.length < 16 || spread > 0.08, bpm };
+  };
+  // 指定の BPM が音源に合わないと（別の録音の値など）、拍を無理に合わせて、指定とも実際とも違うテンポになる
+  // （丸ノ内サディスティック：実際 99.9 に 90 を指定すると 67.5）。測ったテンポが探した範囲（±4%）から外れたら、指定なしで推定し直す
+  let t = tempo(opts.bpm);
+  if (opts.bpm && t.bpm && Math.abs(t.bpm / opts.bpm - 1) > 0.04) t = tempo();
+  const { beatFrames, beats, beatsUncertain, bpm } = t;
 
   progress(0.75, '小節頭を推定しています');
   const beatsPerBar = 4;

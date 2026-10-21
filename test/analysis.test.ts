@@ -62,3 +62,10 @@ describe('自動解析（合成音源）', () => {
     expect(lines.every((n) => n % 4 === 0)).toBe(true);
   });
 });
+
+describe('BPM を指定した解析', () => {
+  it('指定が音源に合わないときは、指定なしで推定し直す', () => {
+    // 120BPM の音源に 100（別の録音の値など）を指定しても、指定とも実際とも違うテンポ（以前は 91.7）にしない
+    expect(analyze(synth(), 22050, undefined, { bpm: 100 }).bpm).toBeCloseTo(120, 0);
+  });
+});

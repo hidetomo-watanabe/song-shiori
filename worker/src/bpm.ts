@@ -67,11 +67,13 @@ export async function lookupBpm(title: string, artist: string, getSongBpmKey?: s
     getSongBpmKey ? run('GetSongBPM', () => fromGetSongBpm(title, artist, getSongBpmKey)) : Promise.resolve([]),
     run('Deezer', () => fromDeezer(title, artist)),
   ]);
-  // 同じ情報源・同じBPMの重複を除き、アーティスト名が一致するものを先にする
+  // 同じ情報源・同じBPMの重複を除き、アーティスト名が一致するもの、次に曲名がそのまま一致するものを先にする
+  // （「丸ノ内サディスティック (EXPO Ver.)」のような別の録音は、曲名が一致する原曲より後ろにする）
   const seen = new Set<string>();
+  const score = (c: BpmCandidate) => 2 * Number(similar(c.artist, artist)) + Number(norm(c.title) === norm(title));
   const candidates = [...a, ...b]
     .filter((c) => { const k = `${c.source}:${c.bpm}`; if (seen.has(k)) return false; seen.add(k); return true; })
-    .sort((x, y) => Number(similar(y.artist, artist)) - Number(similar(x.artist, artist)))
+    .sort((x, y) => score(y) - score(x))
     .slice(0, 5);
   return { candidates, errors };
 }

@@ -95,8 +95,15 @@ export function Editor({ mode }: { mode: Mode }) {
   // BPM を指定してやり直したとき、音から測ったテンポが指定と違った場合の記録
   const [bpmCheck, setBpmCheck] = useState<{ hint: number; measured: number } | null>(null);
   const [slowDismissed, setSlowDismissed] = useState(false);
-  const [netBpm, setNetBpm] = useState<number | null>(null); // ネット上の BPM（いちばん上の候補）
-  const [netDismissed, setNetDismissed] = useState<number | null>(null); // 「推定のままにする」を選んだネット上の BPM
+  const [netCandidates, setNetCandidates] = useState<number[]>([]); // ネット上の BPM の候補（よく一致するものが先）
+  // 参考にするネット上の BPM。推定とほぼ同じ候補、次に推定の倍・半分の候補、なければいちばん上の候補を使う
+  // （情報源によって倍の値や別の録音の値が先に来ることがあり、それで正しい推定を作り直さないため）
+  const netBpm = useMemo(() => {
+    const est = song?.bpmEst;
+    const by = (f: (x: ReturnType<typeof M.octaveByReference>) => boolean) => (est != null ? netCandidates.find((b) => f(M.octaveByReference(est, b))) : undefined);
+    return by((x) => x === 1) ?? by((x) => x != null) ?? netCandidates[0] ?? null;
+  }, [netCandidates, song?.bpmEst]);
+  const [netDismissed, setNetDismissed] = useState<number | null>(null); // 「推定のままにする」を選んだときの推定
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
   const [clickVolume, setClickVolume] = useState(() => L.getMetronomeVolume() ?? DEFAULT_VOLUME); // このブラウザに覚えておく
@@ -546,7 +553,10 @@ export function Editor({ mode }: { mode: Mode }) {
   const netFactor = song.analysis && song.bpmManual == null && song.bpmEst != null && netBpm != null ? M.octaveByReference(song.bpmEst, netBpm) : null;
   const octaveFix = netFactor === 2 || netFactor === 0.5 ? Math.round(song.bpmEst! * netFactor * 10) / 10 : null;
   // ネット上の BPM と推定が、倍・半分でもなく大きく違うとき（拍の取り違え。別の録音・別の曲の値のこともある）
-  const netFix = netFactor === null && netBpm != null && song.analysis && song.bpmManual == null && song.bpmEst != null && netDismissed !== netBpm ? netBpm : null;
+  // どれが正しいか分からないので、違う値の候補を並べて選んでもらう
+  const netFixes = netFactor === null && netBpm != null && song.analysis && song.bpmManual == null && song.bpmEst != null && netDismissed !== song.bpmEst
+    ? netCandidates.filter((b, i) => netCandidates.findIndex((x) => M.octaveByReference(x, b, 0.03) === 1) === i).slice(0, 3) : [];
+  const netFix = netFixes.length > 0;
   const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain && netFactor !== 1 && !octaveFix && !netFix
     ? Math.round(song.bpmEst * 20) / 10 : null;
   const redoBpm = song.analysis && song.bpmManual != null && (song.bpmEst == null || Math.abs(song.bpmManual / song.bpmEst - 1) > 0.03) ? song.bpmManual : null;
@@ -728,11 +738,12 @@ export function Editor({ mode }: { mode: Mode }) {
         )}
         {netFix && (
           <div class="redo-bpm">
-            <p>ネット上の BPM（{netFix}）と、推定 {song.bpmEst} が大きく違います。拍を取り違えているかもしれません。</p>
+            <p>ネット上の BPM（{netFixes.join('・')}）と、推定 {song.bpmEst} が大きく違います。拍を取り違えているかもしれません。
+              下の「ネット上のBPM」で曲名・録音が合っている値を選んで作り直してください。</p>
             {canAnalyze
-              ? <button class="small primary" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), netFix)}>{netFix} で作り直す</button>
-              : <span class="sub">音源ファイルを選ぶと {netFix} で作り直せます。</span>}
-            <button class="small" onClick={() => setNetDismissed(netFix)}>{song.bpmEst} のままにする</button>
+              ? netFixes.map((b) => <button key={b} class="small" disabled={!!progress} onClick={() => void analyzeBuffer(player.buffer!, redoHow(song), b)}>{b} で作り直す</button>)
+              : <span class="sub">音源ファイルを選ぶと、ネット上の BPM で作り直せます。</span>}
+            <button class="small" onClick={() => setNetDismissed(song.bpmEst)}>{song.bpmEst} のままにする</button>
             <p class="sub">ネット上の値が当てにならないときは、再生しながら「👆 タップ」を拍に合わせて押しても直せます。</p>
           </div>
         )}
@@ -763,7 +774,7 @@ export function Editor({ mode }: { mode: Mode }) {
             </div>
           : <p class="sub">音源ファイルを選ぶと、BPM {redoBpm} を前提に自動生成をやり直せます。</p>)}
         <BpmLookup title={song.title} artist={song.artist} bpmEst={song.bpmEst} bpm={M.bpmOf(song)}
-          onResult={(c) => setNetBpm(c[0]?.bpm ?? null)}
+          onResult={(c) => setNetCandidates(c.map((x) => x.bpm))}
           onApply={(v) => edit((s) => M.setTempo(s, { bpmManual: v }))} />
         <details class="more">
           <summary>詳しい設定（拍子・小節の線）</summary>
