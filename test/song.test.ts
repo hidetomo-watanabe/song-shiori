@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, type Song,
+  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -524,5 +524,19 @@ describe('アーティスト名の照合', () => {
     expect(sameArtist('THEE MICHELLE GUN ELEPHANT', 'Thee Michelle Gun Elephant')).toBe(true);
     expect(sameArtist('UTADA HIKARU', '椎名林檎')).toBe(false);
     expect(sameArtist('椎名林檎', '')).toBe(false);
+  });
+});
+
+describe('キーと移調', () => {
+  it('キーとコード進行を移調し、シャープ・フラットはキーに合わせる', () => {
+    expect(transposeKey('Eb', -2)).toBe('Db');
+    expect(transposeKey('Am', 2)).toBe('Bm');
+    expect(transposeKey('C', 1)).toBe('Db');
+    expect(transposeKey('Cm', 6)).toBe('F#m');
+    expect(transposeChords('| Abmaj7 | G7 | Cm7 | Bbm7 Eb7 |', -2, 'Db')).toBe('| Gbmaj7 | F7 | Bbm7 | Abm7 Db7 |');
+    expect(transposeChords('| C | G/B | Am7 | F(onG) |', 2, 'D')).toBe('| D | A/C# | Bm7 | G(onA) |');
+    expect(transposeChords('| - | N |', 3, 'C')).toBe('| - | N |');
+    expect(keySummary({ ...emptySong(), originalKey: 'Eb', transpose: -2 })).toBe('原曲 E♭ → 演奏 D♭（-2）');
+    expect(keySummary(emptySong())).toBeNull();
   });
 });

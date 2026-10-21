@@ -15,8 +15,11 @@ export type Section = {
   edited: boolean; // 手動修正済み
   silence?: boolean; // 曲頭・曲末の無音（以前の形式）。今は作らず、読み込むときに trimSilence で取り除く
   energy?: number; // 解析で測った音量（dB）。名前の候補の推定に使う
-  // 手で入れたコード進行（1行。小節の区切りは |）。null なら繰り返しの1回目に入れたもの、なければ推定を使う
+  // 手で入れたコード進行（1行。小節の区切りは |）。null なら繰り返しの1回目に入れたもの、なければ推定を使う。原曲のキーで書く
   chords?: string | null;
+  // 原曲との違い（カバーで演奏するときの変更）。cut：この区間は演奏しない。arrange：違う点の短いメモ（例：2回繰り返す）
+  cut?: boolean;
+  arrange?: string | null;
   // 分割でできた2区間の対応。片方の小節数を入れると、もう片方を「元の小節数 − 入れた値」にする
   split?: { partner: string; total: number; start: number; end: number } | null;
 };
@@ -51,6 +54,9 @@ export type Song = {
   chords?: ChordChange[] | null;
   // コード譜のページ（U-FRET など）。編集する人が選び、閲覧ページにリンクとして出す。内容は取り込まない
   chordChartUrl?: string | null;
+  // 原曲のキー（例：Eb、Cm）と、演奏するキーへの移調（半音、-11〜11）。コード進行は原曲のキーで持ち、表示するときに移調する
+  originalKey?: string | null;
+  transpose?: number;
 };
 
 export type ChordChange = { t: number; chord: string };
@@ -352,7 +358,7 @@ export function appendSection(song: Song, seconds?: number): Song {
   return update({ ...song, duration: end }, [...song.sections, newSection(start, end, { edited: true })]);
 }
 
-export function patchSection(song: Song, id: string, patch: Partial<Pick<Section, 'name' | 'memo' | 'barsManual' | 'chords'>>): Song {
+export function patchSection(song: Song, id: string, patch: Partial<Pick<Section, 'name' | 'memo' | 'barsManual' | 'chords' | 'cut' | 'arrange'>>): Song {
   const i = indexOf(song, id);
   const next = song.sections.slice();
   const s = { ...next[i], ...patch, edited: true };
@@ -687,6 +693,51 @@ export function adoptAnalysis(song: Song, r: AnalysisResult): { song: Song; sect
 }
 
 // 保存前の検証。問題があれば理由を返す（API でも同じ検証を行う）
+// ---- キーと移調 ----
+const SHARPS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const FLATS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const LETTER: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+// 選べるキー（長調12・短調12）。表記はよく使う方（E♭ は Eb、F# は F#）
+export const KEYS = [...['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'], ...['Cm', 'C#m', 'Dm', 'Ebm', 'Em', 'Fm', 'F#m', 'Gm', 'G#m', 'Am', 'Bbm', 'Bm']];
+// シャープで書くキー（それ以外はフラット。C・Am では B♭ のようにフラットで書くことが多い）
+const SHARP_KEYS = new Set(['G', 'D', 'A', 'E', 'B', 'F#', 'Em', 'Bm', 'F#m', 'C#m', 'G#m']);
+
+const pitchOf = (letter: string, acc: string) => (LETTER[letter] + (/[#♯]/.test(acc) ? 1 : /[b♭]/.test(acc) ? -1 : 0) + 12) % 12;
+const KEY_RE = /^([A-G])([#♯b♭]?)(m?)$/;
+// キーの主音（0〜11）。読めなければ null
+export function keyRoot(key: string): number | null {
+  const m = key.trim().match(KEY_RE);
+  return m ? pitchOf(m[1], m[2]) : null;
+}
+// キーを半音 n だけ移したキー（シャープのキーならシャープ、それ以外はフラットで書く）
+export function transposeKey(key: string, n: number): string | null {
+  const m = key.trim().match(KEY_RE);
+  if (!m) return null;
+  const p = (pitchOf(m[1], m[2]) + n + 120) % 12;
+  const sharp = SHARPS[p] + m[3];
+  return SHARP_KEYS.has(sharp) ? sharp : FLATS[p] + m[3];
+}
+// キーの表示（Eb → E♭、F# → F♯）
+export const keyLabel = (key: string) => key.replace(/([A-G])b/g, '$1♭').replace(/([A-G])#/g, '$1♯');
+
+// コード進行の文字を半音 n だけ移調する。根音と分数コードの低音（/ や on の後ろ）だけを書き換える。
+// toKey（移調後のキー）がシャープのキーならシャープで、それ以外（キーが分からないときも）はフラットで書く
+export function transposeChords(text: string, n: number, toKey?: string | null): string {
+  const k = ((n % 12) + 12) % 12;
+  if (!k) return text;
+  const names = toKey && SHARP_KEYS.has(toKey) ? SHARPS : FLATS;
+  return text.replace(/(^|[\s|/(]|on)([A-G])([#♯b♭]?)/g, (_, pre: string, letter: string, acc: string) => pre + names[(pitchOf(letter, acc) + k) % 12]);
+}
+
+// 曲のキーの表示（例：原曲 E♭ → 演奏 D♭（-2））。何も設定されていなければ null
+export function keySummary(song: Song): string | null {
+  const t = song.transpose ?? 0, key = song.originalKey ?? null;
+  const shift = t > 0 ? `+${t}` : `${t}`;
+  if (!key) return t ? `原曲から ${shift}` : null;
+  if (!t) return `キー ${keyLabel(key)}`;
+  return `原曲 ${keyLabel(key)} → 演奏 ${keyLabel(transposeKey(key, t) ?? key)}（${shift}）`;
+}
+
 // アーティスト名が同じとみなせるか（全角半角・大文字小文字・空白・記号の違いは区別しない）。どちらかが空なら false
 export function sameArtist(a: string, b: string): boolean {
   const n = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
@@ -796,6 +847,7 @@ export function validateSong(x: unknown): string | null {
     if (sec.group !== null && !str(sec.group, 8)) return `区間${i + 1}の繰り返しが正しくありません`;
     if (!numOrNull(sec.barsEst) || !numOrNull(sec.barsManual)) return `区間${i + 1}の小節数が正しくありません`;
     if (sec.chords != null && !str(sec.chords, LIMITS.chordText)) return `区間${i + 1}のコード進行が長すぎます`;
+    if ((sec.cut != null && typeof sec.cut !== 'boolean') || (sec.arrange != null && !str(sec.arrange, LIMITS.text))) return `区間${i + 1}の原曲との違いが正しくありません`;
     t = sec.end;
   }
   if (s.sections.length && Math.abs(t - s.duration) > 1e-6) return '最後の区間が曲の終わりと一致しません';
@@ -803,6 +855,8 @@ export function validateSong(x: unknown): string | null {
   if (s.youtube != null && (typeof s.youtube !== 'string' || !YOUTUBE_ID.test(s.youtube))) return 'YouTube の動画が正しくありません';
   if (s.youtubeOffset != null && (!num(s.youtubeOffset) || Math.abs(s.youtubeOffset) > MAX_YOUTUBE_OFFSET)) return 'YouTube の動画のずれが正しくありません';
   if (s.audio != null && (typeof s.audio !== 'object' || !num(s.audio.offset) || !num(s.audio.duration) || s.audio.offset < 0 || s.audio.duration < 0 || s.audio.duration > LIMITS.duration)) return '音源ファイルの情報が正しくありません';
+  if (s.originalKey != null && (typeof s.originalKey !== 'string' || keyRoot(s.originalKey) == null)) return '原曲のキーが正しくありません';
+  if (s.transpose != null && (!Number.isInteger(s.transpose) || Math.abs(s.transpose) > 11)) return '移調が正しくありません';
   if (s.chordChartUrl != null && (typeof s.chordChartUrl !== 'string' || chordChartUrl(s.chordChartUrl) !== s.chordChartUrl)) return 'コード譜の URL が正しくありません';
   if (s.chords != null && (!Array.isArray(s.chords) || s.chords.length > LIMITS.chords || !s.chords.every((c) => c && num(c.t) && str(c.chord, 16)))) return 'コードが正しくありません';
   if (s.analysis != null && (typeof s.analysis !== 'object' || !Array.isArray(s.analysis.segments) || s.analysis.segments.length > LIMITS.sections)) return '自動解析の結果が正しくありません';

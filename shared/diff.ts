@@ -1,11 +1,11 @@
 // 2つの版の差分（要件定義書 5.5）。区間は ID で対応付ける
 import { trimSilence, type Section, type Song } from './song.ts';
 
-export type Change = 'added' | 'split' | 'merged' | 'boundary' | 'name' | 'group' | 'bars' | 'memo' | 'chords';
+export type Change = 'added' | 'split' | 'merged' | 'boundary' | 'name' | 'group' | 'bars' | 'memo' | 'chords' | 'arrange';
 
 export const CHANGE_LABEL: Record<Change, string> = {
   added: '追加', split: '分割', merged: '結合', boundary: '境界移動',
-  name: '名前変更', group: '繰り返し変更', bars: '小節数変更', memo: 'メモ変更', chords: 'コード変更',
+  name: '名前変更', group: '繰り返し変更', bars: '小節数変更', memo: 'メモ変更', chords: 'コード変更', arrange: '原曲との違いの変更',
 };
 
 export type SongDiff = {
@@ -43,6 +43,7 @@ export function diffSongs(prevSong: Song, nextSong: Song): SongDiff {
     if (bars(old) !== bars(s)) add(s.id, 'bars');
     if (old.memo !== s.memo) add(s.id, 'memo');
     if ((old.chords ?? null) !== (s.chords ?? null)) add(s.id, 'chords');
+    if (!!old.cut !== !!s.cut || (old.arrange ?? '') !== (s.arrange ?? '')) add(s.id, 'arrange');
   }
 
   const removed: Section[] = [];
@@ -69,6 +70,7 @@ export function diffSongs(prevSong: Song, nextSong: Song): SongDiff {
   // 最初の小節頭は小節の線を合わせるための編集用の設定なので知らせない（小節数が変われば区間の「小節数変更」で分かる）
   if (prev.memo !== next.memo) song.push('全体メモ');
   if ((prev.chordChartUrl ?? null) !== (next.chordChartUrl ?? null)) song.push('コード譜');
+  if ((prev.originalKey ?? null) !== (next.originalKey ?? null) || (prev.transpose ?? 0) !== (next.transpose ?? 0)) song.push('キー');
   if ((prev.youtube ?? null) !== (next.youtube ?? null) || (prev.youtubeOffset ?? 0) !== (next.youtubeOffset ?? 0)) song.push('YouTube の動画');
 
   const changed = song.length > 0 || removed.length > 0 || Object.keys(sections).length > 0;

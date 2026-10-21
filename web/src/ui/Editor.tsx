@@ -773,7 +773,7 @@ export function Editor({ mode }: { mode: Mode }) {
 
       <section class="card tempo">
         <div class="tempo-head">
-          <h2>テンポ</h2>
+          <h2>テンポ・キー</h2>
           <span class="sub">{bar ? `合計 ${totalBars}小節` : '小節数は未確定'}</span>
         </div>
         {song.beatsUncertain && song.bpmManual == null && <p class="warn">拍・小節を確定できませんでした。BPMを入力すると小節数を数えます。</p>}
@@ -819,6 +819,23 @@ export function Editor({ mode }: { mode: Mode }) {
               {hasAudio && <button class="small" onClick={() => edit((s) => M.setTempo(s, { firstDownbeat: now }))}>再生位置にする</button>}
             </span>
           </label>
+        </div>
+        {/* 演奏するキー。コード進行は原曲のキーで入れ、閲覧ページでは演奏するキーに移調して表示する */}
+        <div class="key-row">
+          <label>原曲のキー
+            <select value={song.originalKey ?? ''} onChange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; edit((s) => ({ ...s, originalKey: v || null })); }}>
+              <option value="">未設定</option>
+              {M.KEYS.map((k) => <option key={k} value={k}>{M.keyLabel(k)}</option>)}
+            </select>
+          </label>
+          <label>演奏するキー
+            <select value={song.transpose ?? 0} onChange={(e) => { const v = Number((e.currentTarget as HTMLSelectElement).value); edit((s) => ({ ...s, transpose: v || undefined })); }}>
+              {Array.from({ length: 13 }, (_, i) => i - 6).map((t) => (
+                <option key={t} value={t}>{t === 0 ? '原曲どおり' : `${t > 0 ? '+' : ''}${t}`}{t !== 0 && song.originalKey ? `（${M.keyLabel(M.transposeKey(song.originalKey, t) ?? '')}）` : ''}</option>
+              ))}
+            </select>
+          </label>
+          {(song.transpose ?? 0) !== 0 && <span class="sub">コード進行は原曲のキーで入力してください。閲覧ページでは演奏するキーに直して表示します。</span>}
         </div>
         {ticking && tempoBpm && <p class="sub">{!metronome.beats?.length ? 'BPM の間隔で鳴らしています（拍の位置が分からないため、曲の拍には合わせられません）。'
           : hasAudio ? '再生している間は、曲の拍（小節の線と同じ位置）に合わせて鳴らします。ずれて聞こえるときは、BPM や「最初の小節頭」を直してください。'
@@ -921,13 +938,15 @@ export function Editor({ mode }: { mode: Mode }) {
           {song.sections.map((s, i) => selected !== s.id ? (
             // 選んでいない区間は1行にたたみ、構成全体を見渡せるようにする。押すと開いて編集できる
             <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
-              class={`section folded tone-${groupTone(s.group)}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
+              class={`section folded tone-${groupTone(s.group)}${s.cut ? ' cut' : ''}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
               <div class="sec-summary">
                 <span class="sec-no">{i + 1}</span>
                 <span class="chip" aria-hidden="true" />
                 <button class="sec-open" aria-expanded="false" aria-label={`区間${i + 1}「${s.name}」を開いて編集`}>{s.name || '（名前なし）'}</button>
                 {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
                 {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
+                {s.cut && <span class="tag">カット</span>}
+                {s.arrange?.trim() && <span class="tag warn" title={s.arrange}>原曲と違う</span>}
                 <span class="sec-range">{fmt(s.start, 0)}〜{fmt(s.end, 0)}</span>
                 <span class="sec-bars">{s.barsManual ?? s.barsEst ?? '-'}<span class="sub">小節</span></span>
                 {hasAudio && (playing && current === s.id
@@ -1005,6 +1024,13 @@ export function Editor({ mode }: { mode: Mode }) {
               </div>
               {hasAudio && <SeekBar range={{ start: s.start, end: s.end }} now={now} onSeek={seekTo} label={`${s.name}の再生位置`} />}
               <SectionChords song={song} s={s} onChange={(v, coalesce) => edit((x) => M.patchSection(x, s.id, { chords: v }), coalesce ? { coalesce: `chords-${s.id}` } : undefined)} />
+              {/* 原曲との違い（カバーで演奏するときの変更）。閲覧ページで目立つ印にする */}
+              <div class="sec-arrange">
+                <label class="check"><input type="checkbox" checked={!!s.cut}
+                  onChange={(e) => edit((x) => M.patchSection(x, s.id, { cut: (e.currentTarget as HTMLInputElement).checked || undefined }))} />カット（演奏しない）</label>
+                <input class="arrange" value={s.arrange ?? ''} maxLength={M.LIMITS.text} placeholder="原曲と違う点（例：2回繰り返す・ここで転調）" aria-label="原曲と違う点"
+                  onInput={(e) => { const v = (e.currentTarget as HTMLInputElement).value; edit((x) => M.patchSection(x, s.id, { arrange: v.trim() ? v : null }), { coalesce: `arrange-${s.id}` }); }} />
+              </div>
               <input class="memo" value={s.memo} maxLength={2000} placeholder="メモ（入り・キメ・終わり方など）" aria-label="メモ"
                 onInput={(e) => edit((x) => M.patchSection(x, s.id, { memo: (e.currentTarget as HTMLInputElement).value }), { coalesce: `memo-${s.id}` })} />
               {splitForm?.id === s.id && (

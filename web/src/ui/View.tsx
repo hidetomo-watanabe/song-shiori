@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, sectionAt, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
@@ -14,6 +14,7 @@ import { ShareButtons } from './ShareButtons';
 export function View({ viewId }: { viewId: string }) {
   const [data, setData] = useState<ViewData | null>(null);
   const [seenBefore, setSeenBefore] = useState<number | null>(null);
+  const [originalKeyChords, setOriginalKeyChords] = useState(false); // コード進行を原曲のキーで見る（既定は演奏するキー）
   const [error, setError] = useState('');
 
   // 閲覧ページは限定共有のため、検索エンジンに登録させない
@@ -88,6 +89,13 @@ export function View({ viewId }: { viewId: string }) {
   const diff: SongDiff | null = data.base ? diffSongs(data.base.song, song) : null;
   // 手で入れたコード進行がある区間が1つでもあれば、表にコードの列を出す（推定は閲覧ページに出さない）
   const hasChords = song.sections.some((s) => confirmedChords(song, s));
+  // 演奏するキーへの移調。コード進行は原曲のキーで持っているので、表示するときに直す
+  const shift = song.transpose ?? 0;
+  const playKey = song.originalKey && shift ? transposeKey(song.originalKey, shift) : song.originalKey ?? null;
+  const showChords = (text: string) => (shift && !originalKeyChords ? transposeChords(text, shift, playKey) : text);
+  const key = keySummary(song);
+  // 原曲と違うところ（カット・違う点のメモ）の数
+  const arranged = song.sections.filter((s) => s.cut || s.arrange?.trim()).length;
   const bpm = bpmOf(song);
   // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える
   const firstName = new Map<string, { id: string; name: string }>();
@@ -112,6 +120,12 @@ export function View({ viewId }: { viewId: string }) {
         <div class="view-meta">
           <span class="tag">{bpm ? `BPM ${bpm}${song.bpmManual == null ? '（推定）' : ''}` : 'BPM 未確定'}</span>
           <span class="tag">{timeSignature(song.beatsPerBar)}</span>
+          {key && <span class="tag">{key}</span>}
+          {shift !== 0 && hasChords && (
+            <button class="small" onClick={() => setOriginalKeyChords(!originalKeyChords)}>
+              {originalKeyChords ? 'コードを演奏するキーで見る' : 'コードを原曲のキーで見る'}
+            </button>
+          )}
         </div>
         {/* 編集する人が選んだコード譜のページ（U-FRET など）。全部のコードはそちらで見てもらう */}
         {song.chordChartUrl && chordChartUrl(song.chordChartUrl) && (
@@ -121,6 +135,8 @@ export function View({ viewId }: { viewId: string }) {
             </a>
           </p>
         )}
+        {/* カバーでいちばん起きやすい勘違いは「原曲どおりだと思っていた」なので、冒頭で知らせる */}
+        {arranged > 0 && <p class="arranged">原曲と違うところが {arranged} か所あります（表の「カット」「原曲と違う」の印）。</p>}
         <p class="sub">最終更新 {fmtDate(data.updatedAt)}</p>
         {/* 前回の版からの変更は1行で示し、区間ごとの変更は表の印で示す */}
         {diff?.changed && (
@@ -168,7 +184,7 @@ export function View({ viewId }: { viewId: string }) {
             {song.sections.map((s) => {
               const changes = diff?.sections[s.id] ?? [];
               return (
-                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${current?.id === s.id ? ' now' : ''}`}
+                <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.cut ? ' cut' : ''}${current?.id === s.id ? ' now' : ''}`}
                   onClick={yt ? () => yt.play(s.start) : undefined}>
                   {/* 終わりは次の区間の始まりと同じなので、1つの列にまとめる */}
                   <td data-label="時刻">
@@ -179,6 +195,8 @@ export function View({ viewId }: { viewId: string }) {
                     <span class="chip" aria-hidden="true" />
                     {s.name}
                     {sameAs(s) && <span class="group">（{sameAs(s)}と同じ）</span>}
+                    {s.cut && <span class="tag">カット（演奏しない）</span>}
+                    {s.arrange?.trim() && <span class="tag warn arrange">原曲と違う：{s.arrange}</span>}
                     {changes.map((c) => <span key={c} class="tag change">{CHANGE_LABEL[c]}</span>)}
                     {yt && (
                       // 区間の中の再生位置。行を押したときの「区間の頭から再生」にならないよう、操作を行へ伝えない
@@ -191,7 +209,7 @@ export function View({ viewId }: { viewId: string }) {
                   <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}</td>
                   {hasChords && (() => {
                     const c = confirmedChords(song, s);
-                    return <td data-label="コード" class="chords">{c?.text}{chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}</td>;
+                    return <td data-label="コード" class="chords">{c && showChords(c.text)}{chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}</td>;
                   })()}
                   <td data-label="メモ">{s.memo}</td>
                 </tr>

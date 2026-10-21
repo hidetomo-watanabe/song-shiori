@@ -42,7 +42,7 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
       if (!groupOf.has(key)) groupOf.set(key, String.fromCharCode(65 + Math.min(groupOf.size, 25)));
       group = groupOf.get(key)!;
     }
-    sections.push(newSection(start, stop, { name: r.name || 'パート', nameAuto: !r.name, group, groupManual: !!group, memo: r.memo, chords: r.chords, edited: true }));
+    sections.push(newSection(start, stop, { name: r.name || 'パート', nameAuto: !r.name, group, groupManual: !!group, memo: r.memo, chords: r.chords, cut: r.cut || undefined, arrange: r.arrange, edited: true }));
   });
   if (!sections.length) return { song: base, warnings };
   let song: Song = {
@@ -58,6 +58,8 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
     youtube: t.youtube ?? base.youtube,
     youtubeOffset: t.youtube ? t.youtubeOffset || undefined : base.youtubeOffset,
     chordChartUrl: t.chordChartUrl ?? base.chordChartUrl,
+    originalKey: t.originalKey ?? base.originalKey,
+    transpose: t.originalKey || t.transpose ? t.transpose : base.transpose,
     groupNames: Object.fromEntries([...groupOf].map(([name, g]) => [g, name])),
     sections,
   };

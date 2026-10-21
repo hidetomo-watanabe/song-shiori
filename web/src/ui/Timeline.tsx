@@ -30,7 +30,7 @@ export function Timeline({ song, now, showPlayhead, selected, onSeek, onSelect, 
       {song.sections.map((s) => (
         <div
           key={s.id}
-          class={`seg tone-${groupTone(s.group)}${showPlayhead && now >= s.start && now < s.end ? ' now' : ''}`}
+          class={`seg tone-${groupTone(s.group)}${s.cut ? ' cut' : ''}${showPlayhead && now >= s.start && now < s.end ? ' now' : ''}`}
           style={{ left: pct(s.start), width: pct(s.end - s.start) }}
           title={`${s.name}（${fmt(s.start)}〜${fmt(s.end)}）`}
           onPointerDown={(e) => { onSelect(s.id); onSeek(toTime(e.clientX)); }}

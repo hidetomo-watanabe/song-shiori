@@ -386,13 +386,26 @@ button.line:hover:not(:disabled) { background: #05923f; border-color: #05923f; }
 body:has(.savebar) #toast { bottom: 140px; }
 .view-meta { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 0; }
 .chart-link { margin: 10px 0 0; font-size: 15px; font-weight: 600; }
+.arranged { margin: 10px 0 0; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn); font-weight: 600; font-size: 14px; display: inline-block; }
+/* カットした区間は薄く、名前に取り消し線 */
+.structure tr.cut td { opacity: 0.55; }
+.structure tr.cut td[data-label='セクション'] { text-decoration: line-through; }
+.structure tr.cut td[data-label='セクション'] .tag { text-decoration: none; display: inline-block; }
+.structure .tag.arrange { margin-left: 6px; white-space: normal; }
+.section.folded.cut .sec-open { text-decoration: line-through; opacity: 0.6; }
+.seg.cut { opacity: 0.35; text-decoration: line-through; }
+.key-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+.key-row label { display: grid; gap: 4px; }
+.key-row .sub { flex: 1 1 240px; }
+.sec-arrange { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sec-arrange .arrange { flex: 1 1 240px; min-width: 0; }
 .chart-link a { text-decoration: underline; text-decoration-thickness: 1px; display: inline-block; padding: 4px 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .view-meta .tag { font-size: 13px; padding: 3px 12px; color: var(--text); }
 .update-line { margin-top: 2px; }
 .structure { width: 100%; border-collapse: collapse; }
 .structure th, .structure td { text-align: left; padding: 10px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.structure th { font-size: 12px; color: var(--sub); font-weight: 600; padding-top: 0; }
+.structure th { font-size: 12px; color: var(--sub); font-weight: 600; padding-top: 0; white-space: nowrap; }
 .structure td:first-child { border-left: 6px solid var(--tone); }
 .structure td[data-label='時刻'] { color: var(--sub); font-variant-numeric: tabular-nums; width: 7.5em; white-space: nowrap; }
 .structure td[data-label='セクション'] { font-weight: 700; font-size: 16px; }
