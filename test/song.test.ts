@@ -109,27 +109,26 @@ describe('編集ルール', () => {
     invariant(clamped);
   });
 
-  it('分割すると後半は新しい区間になる', () => {
-    const s = splitAt(sample(), 32);
+  it('分割すると後半は新しい繰り返しの、名前を付けていない区間になる', () => {
+    const s = splitAt(sample(), 32); // 繰り返し A, B, C, B
     expect(s.sections).toHaveLength(5);
     expect(s.sections[1].end).toBe(32);
-    expect(s.sections[2]).toMatchObject({ start: 32, end: 48, group: null, name: 'パート' });
+    expect(s.sections[2]).toMatchObject({ start: 32, end: 48, group: 'D', nameAuto: true, name: 'パートD' });
     invariant(s);
   });
 
-  it('分割した後半は、前半に付けた名前を引き継ぐ（仮の名前「パートB」などは引き継がない）', () => {
+  it('分割した後半は前半の名前を引き継がず、前半の名前の次に来る名前を候補にする（前半は元のまま）', () => {
     let s = sample(); // A, B, C, B
-    s = patchSection(s, s.sections[1].id, { name: 'サビ' }); // 繰り返し B の名前になる
-    s = splitAt(s, 32);
-    expect(s.sections.slice(1, 3).map((x) => x.name)).toEqual(['サビ', 'サビ']);
-    expect(s.sections[2]).toMatchObject({ nameAuto: false, group: null });
-    // 繰り返しの名前で付いている「サビ（2回目）」は、回数を除いた名前にする
-    expect(s.sections[4].name).toBe('サビ（2回目）');
-    s = splitAt(s, 80);
-    expect(s.sections.slice(4, 6).map((x) => x.name)).toEqual(['サビ（2回目）', 'サビ']);
-    // 仮の名前は引き継がない
-    s = splitAt(s, 8);
-    expect(s.sections.slice(0, 2).map((x) => x.name)).toEqual(['パートA', 'パート']);
+    s = patchSection(s, s.sections[0].id, { name: 'イントロ' });
+    s = patchSection(s, s.sections[1].id, { name: 'Bメロ' }); // 繰り返し B の名前になる
+    s = splitAt(s, 8); // イントロ（実はイントロ＋Aメロ）
+    expect(s.sections.slice(0, 2).map((x) => x.name)).toEqual(['イントロ', 'パートD']);
+    expect(suggestNames(s)[s.sections[1].id]).toBe('Aメロ');
+    // 繰り返しの2回目（「Bメロ（2回目）」）を分けても、前半は元のまま。後半の候補は「サビ」
+    const i = s.sections.findIndex((x) => x.name === 'Bメロ（2回目）');
+    s = splitAt(s, s.sections[i].start + 16);
+    expect(s.sections.slice(i, i + 2).map((x) => x.name)).toEqual(['Bメロ（2回目）', 'パートE']);
+    expect(suggestNames(s)[s.sections[i + 1].id]).toBe('サビ');
     invariant(s);
   });
 

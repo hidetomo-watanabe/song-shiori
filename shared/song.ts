@@ -374,15 +374,15 @@ export function moveBoundary(song: Song, i: number, t: number): Song {
   return update(song, next);
 }
 
-// 位置 t で区間を2つに分ける。後半は繰り返し・メモを持たない新しい区間になる。
-// 名前は前半と同じにする（手で付けた名前か、繰り返しに付けた名前があるとき。「パートB」のような仮の名前は引き継がない）
+// 位置 t で区間を2つに分ける。前半は元の区間のまま（名前・繰り返しも残す）。
+// 分割するのは、解析が2つの部分を1つにまとめたとき（イントロの中に Aメロが入っているなど）が多いので、
+// 後半は前半の名前を引き継がず、新しい繰り返しの、名前を付けていない区間にする（名前の候補は SPLIT_NEXT で出す）。メモも持たない
 export function splitAt(song: Song, t: number): Song {
   const i = song.sections.findIndex((s) => t > s.start + MIN_SECTION && t < s.end - MIN_SECTION);
   if (i < 0) return song;
   const cur = song.sections[i];
   const total = cur.barsManual ?? cur.barsEst;
-  const name = !cur.nameAuto ? cur.name.trim() : cur.group ? song.groupNames?.[cur.group] ?? '' : '';
-  const second = newSection(t, cur.end, { edited: true, energy: cur.energy, vocal: cur.vocal, ...(name ? { name, nameAuto: false } : {}) });
+  const second = newSection(t, cur.end, { edited: true, energy: cur.energy, vocal: cur.vocal, group: nextGroupName(song), groupManual: true });
   const pair = (partner: string) => (total != null ? { partner, total, start: cur.start, end: cur.end } : null);
   second.split = pair(cur.id);
   // 小節数を手で推定と違う数に直した区間（区間のテンポが曲と違う）は、手の小節数を分けて、それぞれのテンポを保つ
@@ -537,11 +537,28 @@ function followBarLines(song: Song, to: number): Section[] {
   return next;
 }
 
+// 分割でできた後半の名前の候補：前半の名前の、曲の並びで次に来る名前。ほかの名前は推定にまかせる
+const SPLIT_NEXT: Record<string, string> = { イントロ前: 'イントロ', イントロ: 'Aメロ', Aメロ: 'Bメロ', Bメロ: 'サビ' };
+
 // 区間名の候補（イントロ前・イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ）を推定する。確定ではなく候補として示す。
-// 手がかりは、繰り返し（同じ記号）、並び、音量、歌の割合（解析で推定できたとき）。
-// 歌の割合がないとき（以前の解析・推定できなかったとき）は、ソロと歌のパートを区別しない。
+// 分割でできた後半（名前を付けていないもの）は、前半の名前の次に来る名前（SPLIT_NEXT）を優先する。
 // 戻り値：区間ID → 候補名（無音・候補なしの区間は含まない）
 export function suggestNames(song: Song): Record<string, string> {
+  const out = suggestByMusic(song);
+  for (const s of song.sections) {
+    const p = s.nameAuto ? splitPartner(song.sections, s) : null;
+    if (!p || Math.abs(p.end - s.start) > 1e-6) continue;
+    // 前半の名前（手で付けた名前・繰り返しの名前・候補）から、「（2回目）」や番号を除いたもの
+    const shown = !p.nameAuto ? p.name : (p.group && song.groupNames?.[p.group]) || out[p.id] || '';
+    const next = SPLIT_NEXT[shown.replace(/（.*?）|\(.*?\)/g, '').replace(/[0-9０-９]+$/, '').trim()];
+    if (next) out[s.id] = next;
+  }
+  return out;
+}
+
+// 繰り返し（同じ記号）、並び、音量、歌の割合（解析で推定できたとき）から区間名の候補を推定する。
+// 歌の割合がないとき（以前の解析・推定できなかったとき）は、ソロと歌のパートを区別しない
+function suggestByMusic(song: Song): Record<string, string> {
   const secs = song.sections.filter((s) => !s.silence);
   const out: Record<string, string> = {};
   if (secs.length < 3) return out;
