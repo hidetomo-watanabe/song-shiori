@@ -690,7 +690,8 @@ export function Editor({ mode }: { mode: Mode }) {
             </p>
             {!ytReady && !ytError && <p class="sub">動画を読み込んでいます…</p>}
             {ytReady && yt && (!player.buffer || useVideo) && (
-              <YouTubeAlign song={song} videoDuration={yt.duration + yt.offset} videoTime={() => yt?.videoTime ?? 0}
+              <YouTubeAlign song={song} videoDuration={yt.duration + yt.offset} videoTime={() => yt?.videoTime ?? 0} video={yt}
+                audio={player.buffer ? { buffer: player.buffer, offset: song.audio?.offset ?? 0 } : null}
                 onChange={(x) => edit((s) => ({ ...s, youtubeOffset: x || undefined }), { coalesce: 'youtube-offset' })} />
             )}
           </div>
