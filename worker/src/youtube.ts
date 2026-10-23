@@ -6,9 +6,13 @@ export type VideoCandidate = { id: string; title: string; channel: string; secon
 const TIMEOUT = 5000;
 const MAX = 5;
 
+// 失敗したときは、Google が返す理由（keyInvalid・quotaExceeded など）を含める（キーは含めない）
 async function getJson(url: string): Promise<any> {
   const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => null) as { error?: { message?: string; errors?: { reason?: string }[] } } | null;
+    throw new Error(`HTTP ${res.status} ${err?.error?.errors?.[0]?.reason ?? ''} ${err?.error?.message ?? ''}`.trim());
+  }
   return res.json();
 }
 
@@ -23,7 +27,8 @@ const seconds = (d: string) => {
   return m ? Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0) : 0;
 };
 
-export async function searchYoutube(title: string, artist: string, key: string): Promise<VideoCandidate[]> {
+export async function searchYoutube(title: string, artist: string, rawKey: string): Promise<VideoCandidate[]> {
+  const key = rawKey.trim(); // 貼り付けたときに入る前後の空白・改行を除く
   // 埋め込みで再生できる動画だけを探す（閲覧ページ・編集画面のプレーヤーで流すため）
   const q = new URLSearchParams({
     part: 'snippet', type: 'video', videoEmbeddable: 'true', maxResults: String(MAX),
