@@ -20,7 +20,8 @@ const folder = args[0] ?? join(import.meta.dirname, '../../../whathides/曲の�
 const cacheDir = join(tmpdir(), 'song-shiori-eval');
 mkdirSync(cacheDir, { recursive: true });
 const TOLERANCE = 2; // 区切りの一致とみなす幅（秒）
-const LABELS = ['イントロ', 'Aメロ', 'Bメロ', 'サビ', '間奏', 'アウトロ'];
+// 名前の候補を採点する区間名。正解ファイルにこれ以外の名前（「無音」など）がある区間は数えない
+const LABELS = ['イントロ前', 'イントロ', 'Aメロ', 'Bメロ', 'Cメロ', 'サビ', '間奏', 'ソロ', 'ブレイク', 'アウトロ'];
 
 function decode(file: string): Float32Array {
   const cache = join(cacheDir, `${basename(file)}.${statSync(file).mtimeMs}.f32`);
