@@ -904,6 +904,15 @@ export function Editor({ mode }: { mode: Mode }) {
                   </span>
                 )}
                 <span class="t">〜 {fmt(s.end)}</span>
+                {i === 0 && M.canSetPickup(song) && (
+                  // 最初の小節頭より前の拍（弱起）。小節数と同じく区間の数え方を直す欄で、変えると最初の小節頭が「最初の音から N 拍後」になる
+                  <label class="bars" title="最初の小節頭より前にある拍の数（弱起）。変えると、最初の小節頭が最初の音から その拍数だけ後ろになり、小節の線と区切りも一緒に動きます。再生される音は変わりません">
+                    <select aria-label="最初の小節頭より前の拍" value={String(M.pickupBeats(song, s) ?? 0)}
+                      onChange={(e) => edit((x) => M.setPickup(x, Number((e.currentTarget as HTMLSelectElement).value)))}>
+                      {Array.from({ length: Math.max(1, song.beatsPerBar) * 2 }, (_, k) => k / 2).map((v) => <option key={v} value={String(v)}>{v}</option>)}
+                    </select>拍＋
+                  </label>
+                )}
                 <label class="bars">
                   <input type="number" inputMode="numeric" min={0} max={999} value={s.barsManual ?? ''} placeholder={s.barsEst != null ? String(s.barsEst) : '未確定'}
                     aria-label="小節数"
@@ -915,15 +924,6 @@ export function Editor({ mode }: { mode: Mode }) {
                   {M.sectionBpm(song, s) != null && <span class="tag" title="小節数を推定と違う数にしたので、この区間の小節の線とメトロノームは、その小節数で区間を等分しています（曲の途中でテンポが変わる場合）">この区間 {M.sectionBpm(song, s)} BPM</span>}
                   {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
                 </label>
-                {i === 0 && M.canSetPickup(song) && (
-                  // 最初の小節頭より前の拍（弱起）。小節数と同じく区間の数え方を直す欄で、変えると最初の小節頭が「最初の音から N 拍後」になる
-                  <label class="bars" title="最初の小節頭より前にある拍の数（弱起）。変えると、最初の小節頭が最初の音から その拍数だけ後ろになり、小節の線と区切りも一緒に動きます。再生される音は変わりません">
-                    ＋<select aria-label="最初の小節頭より前の拍" value={String(M.pickupBeats(song, s) ?? 0)}
-                      onChange={(e) => edit((x) => M.setPickup(x, Number((e.currentTarget as HTMLSelectElement).value)))}>
-                      {Array.from({ length: Math.max(1, song.beatsPerBar) * 2 }, (_, k) => k / 2).map((v) => <option key={v} value={String(v)}>{v}</option>)}
-                    </select>拍
-                  </label>
-                )}
                 <div class="sec-actions">
                   {hasAudio && (playing && current === s.id
                     ? <button class="small row-play on" onClick={togglePlay}>停止</button>

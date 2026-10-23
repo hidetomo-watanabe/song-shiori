@@ -73,7 +73,7 @@ export function Practice({ song, bpm, keyText, showChords, onClose }: Props) {
           return (
             <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
               class={`tone-${groupTone(s.group)}${at === s.id ? ' at' : ''}`} onClick={() => setAt(at === s.id ? null : s.id)}>
-              <div class="p-main"><span class="p-name">{s.name}</span><span class="p-bars">{s.barsManual ?? s.barsEst ?? '-'}<small>小節{pickupBeats(song, s) != null && `＋${pickupBeats(song, s)}拍`}{sectionBpm(song, s) != null && `・${sectionBpm(song, s)} BPM`}</small></span></div>
+              <div class="p-main"><span class="p-name">{s.name}</span><span class="p-bars">{pickupBeats(song, s) != null && <small>{pickupBeats(song, s)}拍＋</small>}{s.barsManual ?? s.barsEst ?? '-'}<small>小節{sectionBpm(song, s) != null && `・${sectionBpm(song, s)} BPM`}</small></span></div>
               {s.arrange?.trim() && <div class="p-arrange">※ {s.arrange}</div>}
               {c && <div class="p-chords">{showChords(c.text)}</div>}
               {s.memo.trim() && <div class="p-memo">{s.memo}</div>}

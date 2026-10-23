@@ -210,7 +210,7 @@ export function View({ viewId }: { viewId: string }) {
                       </div>
                     )}
                   </td>
-                  <td data-label="小節数" class="num">{s.barsManual ?? s.barsEst ?? '未確定'}{pickupBeats(song, s) != null && <span class="sub" title="最初の小節頭の前にある拍（弱起）">＋{pickupBeats(song, s)}拍</span>}{sectionBpm(song, s) != null && <span class="sub">（{sectionBpm(song, s)} BPM）</span>}</td>
+                  <td data-label="小節数" class="num">{pickupBeats(song, s) != null && <span class="sub" title="最初の小節頭の前にある拍（弱起）">{pickupBeats(song, s)}拍＋</span>}{s.barsManual ?? s.barsEst ?? '未確定'}{sectionBpm(song, s) != null && <span class="sub">（{sectionBpm(song, s)} BPM）</span>}</td>
                   {hasChords && (() => {
                     const c = confirmedChords(song, s);
                     return <td data-label="コード" class="chords">{c && showChords(c.text)}{chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}</td>;
