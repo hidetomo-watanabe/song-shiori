@@ -269,6 +269,7 @@ function timeAtIndex(lines: number[], k: number): number {
 
 // 最初の小節頭より前の拍を n 拍（半拍単位）にする。最初の小節頭と小節の線は音源の上で動かさず、曲の頭を
 // 「曲の頭のあとの最初の小節頭の n 拍前」に置き直す。音源ファイル・YouTube のずれも同じだけ動かして、再生位置を保つ。
+// 拍ちょうどに置くと、少し前に突っ込んだ最初の音の出だしが切れるので、0.05秒（最大0.2拍）前に置く（解析の曲の頭と同じ余裕）。
 // 曲の頭を音源ファイルの頭より前にする・最初の区間が短くなりすぎるときは、何もしない
 export function setPickup(song: Song, n: number): Song {
   const first = song.sections[0], beats = beatGrid(song);
@@ -278,7 +279,8 @@ export function setPickup(song: Song, n: number): Song {
   const head = indexAt(beats, first.start);
   const d = (((indexAt(beats, song.firstDownbeat!) - head) % per) + per) % per;
   const bar = head + (d > per - 0.25 ? d - per : d); // 曲の頭の直前（0.25拍以内）の小節頭は、曲の頭の小節頭とみなす
-  const at = round3(timeAtIndex(beats, bar - want));
+  const margin = Math.min(0.05, 0.2 * (timeAtIndex(beats, bar) - timeAtIndex(beats, bar - 1)));
+  const at = round3(timeAtIndex(beats, bar - want) - margin);
   const dt = round3(at - first.start);
   if (!dt || at >= first.end - MIN_SECTION || (song.audio && song.audio.offset + dt < 0)) return song;
   const moved: Song = {

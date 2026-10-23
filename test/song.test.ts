@@ -54,14 +54,16 @@ describe('編集ルール', () => {
     const s = normalize({ ...emptySong(25), bpmEst: 120, firstDownbeat: 1, audio: { offset: 2, duration: 40 }, youtube: 'abcdefghijk', youtubeOffset: 1, sections: [newSection(0, 9), newSection(9, 25)] });
     expect(pickupBeats(s, s.sections[0])).toBe(2);
     const t = setPickup(s, 1.5);
-    expect([t.audio!.offset, t.youtubeOffset, t.firstDownbeat]).toEqual([2.25, 1.25, 0.75]);
-    expect(t.sections.map((x) => [x.start, x.end])).toEqual([[0, 8.75], [8.75, 24.75]]);
+    // 曲の頭は、拍の位置（音源ファイルの 2.25秒）より 0.05秒前
+    expect([t.audio!.offset, t.youtubeOffset, t.firstDownbeat]).toEqual([2.2, 1.2, 0.8]);
+    expect(t.sections.map((x) => [x.start, x.end])).toEqual([[0, 8.8], [8.8, 24.8]]);
+    expect(setPickup(t, 1.5)).toBe(t);
     expect([pickupBeats(t, t.sections[0]), t.sections[0].barsEst]).toEqual([1.5, 4]);
     // 最初の小節頭は音源ファイルの上で同じ位置（3.0秒）
     expect(t.audio!.offset + t.firstDownbeat!).toBe(3);
     invariant(t);
     // 前の拍を増やすと曲の頭が前へ動く。音源ファイルの頭より前になるときは何もしない
-    expect(setPickup(s, 3.5).audio!.offset).toBe(1.25);
+    expect(setPickup(s, 3.5).audio!.offset).toBe(1.2);
     const early = normalize({ ...s, audio: { offset: 0.1, duration: 40 } });
     expect(setPickup(early, 3)).toBe(early);
   });
