@@ -267,13 +267,14 @@ function timeAtIndex(lines: number[], k: number): number {
   return a + (timeAt(lines, i + 1) - a) * (k - i);
 }
 
-// 最初の小節頭より前の拍を n 拍（半拍単位）にする。最初の小節頭と小節の線は音源の上で動かさず、曲の頭を
-// 「曲の頭のあとの最初の小節頭の n 拍前」に置き直す。音源ファイル・YouTube のずれも同じだけ動かして、再生位置を保つ。
-// 拍ちょうどに置くと、少し前に突っ込んだ最初の音の出だしが切れるので、0.05秒（最大0.2拍）前に置く（解析の曲の頭と同じ余裕）。
-// 曲の頭を音源ファイルの頭より前にする・最初の区間が短くなりすぎるときは、何もしない
-export function setPickup(song: Song, n: number): Song {
+// 最初の小節頭より前の拍を n 拍（半拍単位）にしたときの曲の頭（今の曲の時刻）。最初の小節頭と小節の線は音源の上で動かさず、
+// 曲の頭を「曲の頭のあとの最初の小節頭の n 拍前」に置く。拍ちょうどに置くと、少し前に突っ込んだ最初の音の出だしが切れるので、
+// 0.05秒（最大0.2拍）前に置く（解析の曲の頭と同じ余裕）。
+// 曲はカットしないので、曲の頭は最初の音より後ろにはしない（最初の音は解析で見つけた無音の終わり。解析がなければ今の曲の頭）。
+// 音源ファイルの頭より前になる・最初の区間が短くなりすぎるときも null
+function pickupHead(song: Song, n: number): number | null {
   const first = song.sections[0], beats = beatGrid(song);
-  if (!canSetPickup(song) || !beats) return song;
+  if (!canSetPickup(song) || !beats) return null;
   const per = Math.max(1, song.beatsPerBar);
   const want = Math.max(0, Math.min(per - 0.5, Math.round(n * 2) / 2));
   const head = indexAt(beats, first.start);
@@ -281,8 +282,25 @@ export function setPickup(song: Song, n: number): Song {
   const bar = head + (d > per - 0.25 ? d - per : d); // 曲の頭の直前（0.25拍以内）の小節頭は、曲の頭の小節頭とみなす
   const margin = Math.min(0.05, 0.2 * (timeAtIndex(beats, bar) - timeAtIndex(beats, bar - 1)));
   const at = round3(timeAtIndex(beats, bar - want) - margin);
+  const off = song.audio?.offset ?? 0;
+  const sound = song.audio && song.analysis ? (song.analysis.leadingSilence ?? 0) + 0.05 - off : first.start;
+  if (at > sound + 0.001 || at >= first.end - MIN_SECTION || (song.audio && off + at < 0)) return null;
+  return at;
+}
+
+// 前の拍として選べる数（半拍単位、1小節未満）。曲の頭を最初の音より後ろにする数は選べない
+export function pickupChoices(song: Song): number[] {
+  const per = Math.max(1, song.beatsPerBar);
+  return Array.from({ length: per * 2 }, (_, k) => k / 2).filter((n) => pickupHead(song, n) != null);
+}
+
+// 最初の小節頭より前の拍を n 拍にする。曲の頭を動かし、音源ファイル・YouTube のずれも同じだけ動かして再生位置を保つ。
+// 最初の音より前の無音の中でだけ動かすので、聞こえる音は変わらない。選べない数のときは何もしない
+export function setPickup(song: Song, n: number): Song {
+  const first = song.sections[0], at = pickupHead(song, n);
+  if (at == null) return song;
   const dt = round3(at - first.start);
-  if (!dt || at >= first.end - MIN_SECTION || (song.audio && song.audio.offset + dt < 0)) return song;
+  if (!dt) return song;
   const moved: Song = {
     ...song,
     sections: [{ ...first, start: at, edited: true }, ...song.sections.slice(1)],
