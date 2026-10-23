@@ -85,6 +85,10 @@ export function listMine(): MineEntry[] {
 export function rememberMine(e: MineEntry) {
   set('ks-mine', JSON.stringify([e, ...listMine().filter((x) => x.id !== e.id)].slice(0, 50)));
 }
+// サーバーで確かめた曲名・更新日時を一覧に反映する（並び順は変えない）
+export function updateMine(patch: Map<string, { title: string; updatedAt: number }>) {
+  set('ks-mine', JSON.stringify(listMine().map((x) => ({ ...x, ...patch.get(x.id) }))));
+}
 export function forgetMine(id: string) {
   set('ks-mine', JSON.stringify(listMine().filter((x) => x.id !== id)));
 }

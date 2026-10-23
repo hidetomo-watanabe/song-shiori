@@ -1,15 +1,31 @@
 import { useEffect, useState } from 'preact/hooks';
+import { api, type MemoStatus } from '../api';
 import { checkFile } from '../audio/player';
-import { forgetMine, listMine, loadDraft, removeDraft, type DraftRecord } from '../storage/local';
-import { fmtDate, go, handoff } from './util';
+import { forgetMine, getSession, listMine, loadDraft, removeDraft, updateMine, type DraftRecord } from '../storage/local';
+import { fmtDate, fmtDay, go, handoff } from './util';
+
+const SOON_DAYS = 30; // 削除予定日を出す、期限までの日数
 
 export function Top() {
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<DraftRecord | null>(null);
   const [mine, setMine] = useState(listMine());
+  const [status, setStatus] = useState(new Map<string, MemoStatus>());
   const [agreed, setAgreed] = useState(false);
 
   useEffect(() => { void loadDraft('draft').then(setDraft); }, []);
+
+  // 一覧の曲メモがまだあるかをサーバーで確かめ、曲名・更新日時を最新にする。確かめられなければ記録のまま出す
+  useEffect(() => {
+    const list = listMine();
+    if (!list.length) return;
+    api.status(list.map((m) => ({ id: m.id, session: getSession(m.id) }))).then(({ items }) => {
+      const found = new Map(items.map((x) => [x.id, x]));
+      updateMine(new Map(items.flatMap((x) => (x.title != null && x.updatedAt != null ? [[x.id, { title: x.title, updatedAt: x.updatedAt }]] : []))));
+      setMine(listMine());
+      setStatus(found);
+    }).catch(() => {});
+  }, []);
 
   const confirmReplace = () => !draft || window.confirm('作成中の下書きがあります。新しく作ると下書きは破棄されます。よろしいですか？');
 
@@ -89,13 +105,24 @@ export function Top() {
         <section class="card">
           <h2>このブラウザで編集した曲メモ</h2>
           <ul class="mine">
-            {mine.map((m) => (
-              <li key={m.id}>
-                <a href={`#/e/${m.id}`}>{m.title || '曲名未入力'}</a>
-                <span class="sub">{fmtDate(m.updatedAt)}</span>
-                <button class="small ghost" onClick={() => { forgetMine(m.id); setMine(listMine()); }}>一覧から外す</button>
-              </li>
-            ))}
+            {mine.map((m) => {
+              const st = status.get(m.id);
+              const soon = st?.expiresAt != null && st.expiresAt - Date.now() < SOON_DAYS * 864e5;
+              return (
+                <li key={m.id}>
+                  {st?.gone ? (
+                    <div class="mine-gone">
+                      <b>{m.title || '曲名未入力'}</b>
+                      <span class="sub">見つかりません。削除されたか、保存期間が終わりました</span>
+                    </div>
+                  ) : (
+                    <a href={`#/e/${m.id}`}>{m.title || '曲名未入力'}</a>
+                  )}
+                  {!st?.gone && <span class="sub">{soon ? `${fmtDay(st!.expiresAt!)} に削除予定` : fmtDate(m.updatedAt)}</span>}
+                  <button class="small ghost" onClick={() => { forgetMine(m.id); setMine(listMine()); }}>一覧から外す</button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

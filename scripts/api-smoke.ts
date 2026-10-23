@@ -101,8 +101,16 @@ const ext = await call('POST', `/api/memos/${id}/extend`, {}, session);
 check('保持期限の更新', ext.status === 200 && ext.data.expiresAt > Date.now() + 179 * 864e5, ext);
 const ev = await call('POST', '/api/events', { kind: 'analysis_ok', anon: 'x', durationMs: 800, audioSec: 273 });
 check('利用イベント', ev.status === 204, ev);
+// トップの一覧：セッションがあれば曲名と期限、なければ有無だけ
+let st = await call('POST', '/api/memos/status', { items: [{ id, session }, { id, session: hex(32) }, { id: 'x' }] });
+check('一覧の状態（セッションありは曲名、なしは有無だけ）', st.status === 200 && st.data.items.length === 2
+  && st.data.items[0].title === 'テスト' && st.data.items[0].expiresAt > Date.now() && st.data.items[1].title === undefined && !st.data.items[1].gone, st);
 const del = await call('DELETE', `/api/memos/${id}`, undefined, session);
 const after = await call('GET', `/api/memos/${id}`, undefined, session);
 check('削除後はアクセスできない', del.status === 204 && after.status === 404, after);
+st = await call('POST', '/api/memos/status', { items: [{ id, session }] });
+check('削除後は一覧の状態が見つからない', st.status === 200 && st.data.items[0]?.gone === true, st);
+const tooMany = await call('POST', '/api/memos/status', { items: Array.from({ length: 51 }, () => ({ id })) });
+check('一覧の状態は51件以上を拒否', tooMany.status === 400, tooMany);
 
 process.exit(failed ? 1 : 0);

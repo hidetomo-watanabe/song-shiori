@@ -95,14 +95,18 @@ async function authorize(req: Request, env: Env, id: string, need: Role = 'edit'
   const memo = await findMemo(env, id);
   const token = bearer(req);
   if (!token || !HEX(64).test(token)) throw new HttpError(401, '編集するには編集キーか管理キーを入力してください');
+  const role = await sessionRole(env, memo, token);
+  if (!role) throw new HttpError(401, '編集の有効期限が切れたか、キーが再発行されました。キーを入力し直してください');
+  if (need === 'admin' && role !== 'admin') throw new HttpError(403, 'この操作は管理キーでのみできます');
+  return { ...memo, role };
+}
+
+// セッションの役割。キー再発行で世代が変わった・期限切れ・編集が止められたセッションは null
+async function sessionRole(env: Env, memo: MemoRow, token: string): Promise<Role | null> {
   const s = await env.DB.prepare('SELECT key_gen, expires_at, role FROM sessions WHERE token_hash = ? AND memo_id = ?')
-    .bind(await digest(token), id).first<{ key_gen: number; expires_at: number; role: Role }>();
+    .bind(await digest(token), memo.id).first<{ key_gen: number; expires_at: number; role: Role }>();
   const gen = s?.role === 'edit' ? memo.edit_key_gen : memo.key_gen;
-  if (!s || s.key_gen !== gen || s.expires_at < Date.now() || (s.role === 'edit' && !memo.edit_key_hash)) {
-    throw new HttpError(401, '編集の有効期限が切れたか、キーが再発行されました。キーを入力し直してください');
-  }
-  if (need === 'admin' && s.role !== 'admin') throw new HttpError(403, 'この操作は管理キーでのみできます');
-  return { ...memo, role: s.role };
+  return !s || s.key_gen !== gen || s.expires_at < Date.now() || (s.role === 'edit' && !memo.edit_key_hash) ? null : s.role;
 }
 
 const info = (m: MemoRow) => ({ id: m.id, viewId: m.view_id, version: m.version, updatedAt: m.updated_at, expiresAt: m.expires_at, editKey: !!m.edit_key_hash });
@@ -232,6 +236,25 @@ async function bpmInfo(req: Request, env: Env) {
   return json(body);
 }
 
+// トップの「このブラウザで編集した曲メモ」の今の状態。
+// 有効な編集セッションがあれば曲名・更新日時・期限を返し、なければ有無だけを返す（有無は ID だけでも他の API で分かる）
+const STATUS_MAX = 50;
+async function memoStatus(req: Request, env: Env) {
+  const { items } = await body<{ items?: { id?: unknown; session?: unknown }[] }>(req);
+  if (!Array.isArray(items) || items.length > STATUS_MAX) throw new HttpError(400, '形式が正しくありません');
+  await limit(req, env, 'status', 120);
+  const now = Date.now();
+  const result = await Promise.all(items.map(async (item) => {
+    const { id, session } = item ?? {};
+    if (typeof id !== 'string' || !HEX(24).test(id)) return null;
+    const memo = await env.DB.prepare('SELECT * FROM memos WHERE id = ?').bind(id).first<MemoRow & { title: string }>();
+    if (!memo || memo.expires_at < now) return { id, gone: true };
+    if (typeof session !== 'string' || !HEX(64).test(session) || !(await sessionRole(env, memo, session))) return { id };
+    return { id, title: memo.title, updatedAt: memo.updated_at, expiresAt: memo.expires_at };
+  }));
+  return json({ items: result.filter(Boolean) });
+}
+
 async function route(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
@@ -239,6 +262,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/api/memos' && m === 'POST') return createMemo(req, env);
   if (path === '/api/events' && m === 'POST') return recordEvent(req, env);
   if (path === '/api/bpm' && m === 'GET') return bpmInfo(req, env);
+  if (path === '/api/memos/status' && m === 'POST') return memoStatus(req, env);
   let match = path.match(/^\/api\/view\/([^/]+)$/);
   if (match && m === 'GET') return viewMemo(req, env, match[1]);
   // 閲覧ページから編集を始める：閲覧識別子と、編集キーまたは管理キー

@@ -38,6 +38,9 @@ export type ViewData = {
   base: { version: number; song: Song } | null; notify: boolean; notes: { version: number; note: string }[];
 };
 
+// 一覧の曲メモの今の状態。gone：削除済み・期限切れ。曲名などは有効な編集セッションがあるときだけ返る
+export type MemoStatus = { id: string; gone?: true; title?: string; updatedAt?: number; expiresAt?: number };
+
 export type BpmCandidate = { source: 'GetSongBPM' | 'Deezer'; title: string; artist: string; bpm: number; url: string | null };
 
 export const api = {
@@ -57,6 +60,7 @@ export const api = {
   unshare: (id: string, s: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/share`, undefined, s),
   extend: (id: string, s: string) => call<MemoInfo>('POST', `/api/memos/${id}/extend`, {}, s),
   remove: (id: string, s: string) => call<null>('DELETE', `/api/memos/${id}`, undefined, s),
+  status: (items: { id: string; session: string | null }[]) => call<{ items: MemoStatus[] }>('POST', '/api/memos/status', { items }),
   // 曲名・アーティスト名でネット上の BPM 情報を調べる（音源は送らない）
   bpm: (title: string, artist: string) =>
     call<{ candidates: BpmCandidate[]; sources: string[] }>('GET', `/api/bpm?${new URLSearchParams({ title, artist })}`),

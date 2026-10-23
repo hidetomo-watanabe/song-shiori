@@ -152,6 +152,8 @@ label.check input { min-height: 0; flex: none; }
 .mine li:first-child { border-top: 0; }
 .mine li a { flex: 1; min-width: 0; padding: 8px 0; font-weight: 600; text-decoration: none; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mine li a:hover { color: var(--accent); }
+.mine-gone { flex: 1; min-width: 0; padding: 6px 0; display: flex; flex-direction: column; }
+.mine-gone b { color: var(--sub); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 編集画面 */
 .editor .bar { position: sticky; top: 0; z-index: 9; margin: 0 -16px; padding: 10px 16px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
