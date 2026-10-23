@@ -6,7 +6,7 @@
 //   5. 拍ごとのクロマを和音の型と照らし合わせ、コードを推定
 import type { AnalysisResult } from '../../../shared/song';
 
-export const ANALYSIS_VERSION = 'proto-0.6'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ
+export const ANALYSIS_VERSION = 'proto-0.7'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -393,16 +393,23 @@ const stats = (nov: Float64Array) => {
 // 新規性が最も多く乗るものにする（ここではずれを許さない。許すと隣の起点と同点になり取り違える）。
 // 起点を決めたあとの判定では、山が格子から1小節ずれていても拾えるよう、前後1小節の最大値を使う
 // threshold：格子の上の新規性が「平均 + threshold × 標準偏差」を超えたら区切る（実曲3曲で調整し 0.4）
-function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number, minGap = 4, maxLen = 16): number[] {
+// 新規性がどの起点にも同じくらいに散らばる曲（区間の長さが 18・11・9 小節のようにそろわない曲）は、
+// 格子に合わせると区切りが1〜2小節ずれるので、格子を使わない（null を返す）。
+// 最も多い起点に乗る割合が GRID_SHARE 未満なら散らばっているとみなす（4小節の格子なら、均等で 0.25）。
+// 検証音源4曲で、そろう2曲は 0.42・0.57、そろわない2曲は 0.29・0.30
+const GRID_SHARE = 0.35;
+function pickOnPhraseGrid(nov: Float64Array, unit: number, threshold: number, minGap = 4, maxLen = 16): number[] | null {
   const n = nov.length;
   const { mean, sd } = stats(nov);
   const score = (i: number) => Math.max(nov[i], i > 1 ? nov[i - 1] : -Infinity, i + 1 < n ? nov[i + 1] : -Infinity);
-  let offset = 0, best = -Infinity;
+  let offset = 0, best = -Infinity, total = 0;
   for (let o = 0; o < unit; o++) {
     let sum = 0;
     for (let i = o || unit; i < n; i += unit) sum += Math.max(0, nov[i] - mean);
+    total += sum;
     if (sum > best) { best = sum; offset = o; }
   }
+  if (total > 0 && best / total < GRID_SHARE) return null;
   const grid: number[] = [];
   for (let i = offset || unit; i < n - 1; i += unit) grid.push(i);
   // 区切りらしさの強い順に選び、すでに選んだ区切りから minGap 小節未満の位置は捨てる
@@ -606,7 +613,7 @@ export function analyze(
   const S = feats.map((a) => feats.map((b) => dot(a, b)));
   const phrase = opts.phrase ?? 4;
   const nov = novelty(S, 4);
-  const base = n < 8 ? [] : !beatsUncertain && phrase > 0 ? pickOnPhraseGrid(nov, phrase, opts.phraseThreshold ?? 0.4, opts.minGap ?? 4) : pickBoundaries(S, 4, 4, !beatsUncertain);
+  const base = n < 8 ? [] : (!beatsUncertain && phrase > 0 ? pickOnPhraseGrid(nov, phrase, opts.phraseThreshold ?? 0.4, opts.minGap ?? 4) : null) ?? pickBoundaries(S, 4, 4, !beatsUncertain);
   const useRuns = n >= 8 && !beatsUncertain && opts.repetition !== false;
   const runs = useRuns ? findRuns(S, opts.repetition || {}) : [];
   const cuts = useRuns ? refineByRepetition(S, nov, base, runs, opts.repetition || {}) : base;
