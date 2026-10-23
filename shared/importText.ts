@@ -1,5 +1,5 @@
 // テキスト（構成表の書き出し）から曲メモの構成を作る
-import { emptySong, MIN_SECTION, newSection, normalize, trimSilence, usesDetectedBeats, type Section, type Song } from './song.ts';
+import { emptySong, MIN_SECTION, newSection, normalize, pickupDownbeat, trimSilence, type Section, type Song } from './song.ts';
 import { parseTruth } from './truth.ts';
 
 export type Imported = { song: Song; warnings: string[] };
@@ -63,13 +63,9 @@ export function songFromText(text: string, base: Song = emptySong(), duration?: 
     groupNames: Object.fromEntries([...groupOf].map(([name, g]) => [g, name])),
     sections,
   };
-  // 最初の区間の「＋1.5拍」（最初の小節頭より前の拍）から、最初の小節頭を決める。解析で見つけた拍があれば、いちばん近い拍に合わせる
-  const pickup = rows[0].pickup, first = sections.find((s) => !s.silence);
-  if (pickup != null && first && bpm) {
-    const at = first.start + (pickup * 60) / bpm;
-    const near = usesDetectedBeats(song) ? song.beats!.reduce((a, b) => (Math.abs(b - at) < Math.abs(a - at) ? b : a)) : at;
-    song = { ...song, firstDownbeat: Math.round(near * 1000) / 1000, firstDownbeatManual: true };
-  }
+  // 最初の区間の「＋1.5拍」（最初の小節頭より前の拍）から、最初の小節頭を決める（最初の音から1.5拍後）
+  const at = rows[0].pickup != null ? pickupDownbeat(song, rows[0].pickup) : null;
+  if (at != null) song = { ...song, firstDownbeat: at, firstDownbeatManual: true };
   song = normalize(song);
   // 書かれていた小節数が、拍から数えた小節数と違う区間だけ、手入力の小節数として残す
   song = normalize({

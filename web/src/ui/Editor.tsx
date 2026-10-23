@@ -916,11 +916,11 @@ export function Editor({ mode }: { mode: Mode }) {
                   {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
                 </label>
                 {i === 0 && M.canSetPickup(song) && (
-                  // 最初の小節頭より前の拍（弱起）。変えると曲の頭を最初の音より前の無音の中で動かす（小節の線・聞こえる音は変わらない）
-                  <label class="bars" title="最初の小節頭より前にある拍の数（弱起）。変えると、最初の音より前の無音の中で曲の頭が動きます。小節の線と聞こえる音は変わりません。曲の頭が最初の音より後ろになる数は選べません">
+                  // 最初の小節頭より前の拍（弱起）。小節数と同じく区間の数え方を直す欄で、変えると最初の小節頭が「最初の音から N 拍後」になる
+                  <label class="bars" title="最初の小節頭より前にある拍の数（弱起）。変えると、最初の小節頭が最初の音から その拍数だけ後ろになり、小節の線と区切りも一緒に動きます。再生される音は変わりません">
                     ＋<select aria-label="最初の小節頭より前の拍" value={String(M.pickupBeats(song, s) ?? 0)}
                       onChange={(e) => edit((x) => M.setPickup(x, Number((e.currentTarget as HTMLSelectElement).value)))}>
-                      {[...new Set([M.pickupBeats(song, s) ?? 0, ...M.pickupChoices(song)])].sort((a, b) => a - b).map((v) => <option key={v} value={String(v)}>{v}</option>)}
+                      {Array.from({ length: Math.max(1, song.beatsPerBar) * 2 }, (_, k) => k / 2).map((v) => <option key={v} value={String(v)}>{v}</option>)}
                     </select>拍
                   </label>
                 )}

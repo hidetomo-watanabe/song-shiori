@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, pickupBeats, pickupChoices, setPickup, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
+  applySuggestedNames, barPositionIn, pickupBeats, setPickup, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -49,27 +49,20 @@ describe('編集ルール', () => {
     expect(setTempo(s, { bpmManual: 121, firstDownbeat: 1 }).sections.map((x) => x.start)).toEqual([0, 8, 24, 30.5]);
   });
 
-  it('前の拍を手で直すと、小節の線を動かさずに、最初の音より前の無音の中で曲の頭を動かす（音源ファイル・YouTube のずれも同じだけ動かす）', () => {
-    // 曲の頭が本当より半拍早く、前の拍が2拍に見えている（音源ファイルの 2.0秒が曲の頭、最初の音は 2.3秒、最初の小節頭は 3.0秒）
-    const analysis = { duration: 40, bpm: 120, firstDownbeat: 3, beatsUncertain: false, segments: [{ start: 0, end: 40, group: 'A' }], leadingSilence: 2.25, trailingSilence: 0 };
-    const s = normalize({ ...emptySong(25), bpmEst: 120, firstDownbeat: 1, audio: { offset: 2, duration: 40 }, analysis, youtube: 'abcdefghijk', youtubeOffset: 1, sections: [newSection(0, 9), newSection(9, 25)] });
-    expect(pickupBeats(s, s.sections[0])).toBe(2);
-    // 1拍・0拍は曲の頭が最初の音より後ろになる（曲をカットする）ので選べない
-    expect(pickupChoices(s)).toEqual([1.5, 2, 2.5, 3, 3.5]);
-    expect(setPickup(s, 1)).toBe(s);
+  it('前の拍を手で直すと、最初の小節頭が最初の音から その拍数後になり、区切りも動く（曲の頭・再生のずれは動かない）', () => {
+    // 120BPM・4/4。解析が小節頭を曲の頭（0秒）と取り違え、区切りもそれに合わせて 8秒・24秒にある
+    const s = normalize({ ...emptySong(40), bpmEst: 120, firstDownbeat: 0, audio: { offset: 2, duration: 50 }, youtube: 'abcdefghijk', youtubeOffset: 1,
+      sections: [newSection(0, 8), newSection(8, 24), newSection(24, 30.5), newSection(30.5, 40)] });
+    expect(pickupBeats(s, s.sections[0])).toBeNull();
     const t = setPickup(s, 1.5);
-    // 曲の頭は、拍の位置（音源ファイルの 2.25秒）より 0.05秒前
-    expect([t.audio!.offset, t.youtubeOffset, t.firstDownbeat]).toEqual([2.2, 1.2, 0.8]);
-    expect(t.sections.map((x) => [x.start, x.end])).toEqual([[0, 8.8], [8.8, 24.8]]);
-    expect(setPickup(t, 1.5)).toBe(t);
+    expect([t.firstDownbeat, t.firstDownbeatManual, t.audio, t.youtubeOffset]).toEqual([0.75, true, s.audio, s.youtubeOffset]);
+    expect(t.sections.map((x) => x.start)).toEqual([0, 8.75, 24.75, 30.5]);
     expect([pickupBeats(t, t.sections[0]), t.sections[0].barsEst]).toEqual([1.5, 4]);
-    // 最初の小節頭は音源ファイルの上で同じ位置（3.0秒）
-    expect(t.audio!.offset + t.firstDownbeat!).toBe(3);
     invariant(t);
-    // 前の拍を増やすと曲の頭が前へ動く。音源ファイルの頭より前になるときは何もしない
-    expect(setPickup(s, 3.5).audio!.offset).toBe(1.2);
-    const early = normalize({ ...s, audio: { offset: 0.1, duration: 40 } });
-    expect(setPickup(early, 3)).toBe(early);
+    // 解析で見つけた最初の音（音源ファイルの 2.3秒 = 曲の 0.3秒）から数える
+    const analysis = { duration: 50, bpm: 120, firstDownbeat: 2, beatsUncertain: false, segments: [{ start: 0, end: 50, group: 'A' }], leadingSilence: 2.25, trailingSilence: 0 };
+    const u = setPickup(normalize({ ...s, analysis }), 1);
+    expect([u.firstDownbeat, pickupBeats(u, u.sections[0])]).toEqual([0.8, 1]);
   });
 
   it('推定小節数と自動の名前を付ける', () => {

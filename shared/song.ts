@@ -235,13 +235,21 @@ function indexAt(lines: number[], t: number): number {
   return lo + (t - lines[lo]) / (lines[hi] - lines[lo]);
 }
 
-// 最初の区間の始まりから、その後の最初の小節頭までの拍の数（小数）。イントロ前の1拍・1.5拍など（弱起）。
-// 半拍単位に丸めて 0 か1小節分になるとき（曲の頭が小節頭とほぼ同じ）は 0
+// 最初の音の位置（曲の時刻）。解析で見つけた無音の終わり（最初の音の 0.05秒前）から求める。解析がなければ曲の頭
+function firstSound(song: Song): number {
+  const first = song.sections[0], a = song.analysis;
+  const t = song.audio && a ? (a.leadingSilence ?? 0) + 0.05 - song.audio.offset : first.start;
+  return Math.max(first.start, Math.min(first.end, t));
+}
+
+// 最初の音から、その後の最初の小節頭までの拍の数（小数）。イントロ前の1拍・1.5拍など（弱起）。
+// 曲の頭の前後の無音に左右されないよう、曲の頭ではなく最初の音から数える。
+// 半拍単位に丸めて 0 か1小節分になるとき（最初の音が小節頭とほぼ同じ）は 0
 function leadBeats(song: Song, beats: number[]): number {
   const first = song.sections[0];
   if (!first || first.silence || song.firstDownbeat == null) return 0;
   const n = Math.max(1, song.beatsPerBar);
-  const d = (((indexAt(beats, song.firstDownbeat) - indexAt(beats, first.start)) % n) + n) % n;
+  const d = (((indexAt(beats, song.firstDownbeat) - indexAt(beats, firstSound(song))) % n) + n) % n;
   const half = Math.round(d * 2) / 2;
   return half > 0 && half < n ? d : 0;
 }
@@ -255,10 +263,10 @@ export function pickupBeats(song: Song, sec: Section): number | null {
   return d ? Math.round(d * 2) / 2 : null;
 }
 
-// 前の拍を手で直せるか。拍と最初の小節頭が決まっていて、最初の区間を手の小節数で等分していないとき
+// 前の拍を手で直せるか。拍が決まっていて、最初の区間を手の小節数で等分していないとき
 export function canSetPickup(song: Song): boolean {
   const first = song.sections[0], beats = beatGrid(song);
-  return !!first && !first.silence && song.firstDownbeat != null && !!beats && beats.length >= 2 && sectionBpm(song, first) == null;
+  return !!first && !first.silence && !!beats && beats.length >= 2 && sectionBpm(song, first) == null;
 }
 
 // 拍の番号 k（小数）の時刻。拍の間は直線で補い、前後は端の間隔で延長する
@@ -267,47 +275,20 @@ function timeAtIndex(lines: number[], k: number): number {
   return a + (timeAt(lines, i + 1) - a) * (k - i);
 }
 
-// 最初の小節頭より前の拍を n 拍（半拍単位）にしたときの曲の頭（今の曲の時刻）。最初の小節頭と小節の線は音源の上で動かさず、
-// 曲の頭を「曲の頭のあとの最初の小節頭の n 拍前」に置く。拍ちょうどに置くと、少し前に突っ込んだ最初の音の出だしが切れるので、
-// 0.05秒（最大0.2拍）前に置く（解析の曲の頭と同じ余裕）。
-// 曲はカットしないので、曲の頭は最初の音より後ろにはしない（最初の音は解析で見つけた無音の終わり。解析がなければ今の曲の頭）。
-// 音源ファイルの頭より前になる・最初の区間が短くなりすぎるときも null
-function pickupHead(song: Song, n: number): number | null {
-  const first = song.sections[0], beats = beatGrid(song);
-  if (!canSetPickup(song) || !beats) return null;
-  const per = Math.max(1, song.beatsPerBar);
-  const want = Math.max(0, Math.min(per - 0.5, Math.round(n * 2) / 2));
-  const head = indexAt(beats, first.start);
-  const d = (((indexAt(beats, song.firstDownbeat!) - head) % per) + per) % per;
-  const bar = head + (d > per - 0.25 ? d - per : d); // 曲の頭の直前（0.25拍以内）の小節頭は、曲の頭の小節頭とみなす
-  const margin = Math.min(0.05, 0.2 * (timeAtIndex(beats, bar) - timeAtIndex(beats, bar - 1)));
-  const at = round3(timeAtIndex(beats, bar - want) - margin);
-  const off = song.audio?.offset ?? 0;
-  const sound = song.audio && song.analysis ? (song.analysis.leadingSilence ?? 0) + 0.05 - off : first.start;
-  if (at > sound + 0.001 || at >= first.end - MIN_SECTION || (song.audio && off + at < 0)) return null;
-  return at;
+// 前の拍を n 拍（半拍単位）にしたときの最初の小節頭（最初の音から n 拍後）。拍が決まっていなければ null。
+// 解析で見つけた拍を使うときは、小節の線はこの位置にいちばん近い拍になる
+export function pickupDownbeat(song: Song, n: number): number | null {
+  const beats = canSetPickup(song) ? beatGrid(song) : null;
+  if (!beats) return null;
+  const want = Math.max(0, Math.min(Math.max(1, song.beatsPerBar) - 0.5, Math.round(n * 2) / 2));
+  return round3(timeAtIndex(beats, indexAt(beats, firstSound(song)) + want));
 }
 
-// 前の拍として選べる数（半拍単位、1小節未満）。曲の頭を最初の音より後ろにする数は選べない
-export function pickupChoices(song: Song): number[] {
-  const per = Math.max(1, song.beatsPerBar);
-  return Array.from({ length: per * 2 }, (_, k) => k / 2).filter((n) => pickupHead(song, n) != null);
-}
-
-// 最初の小節頭より前の拍を n 拍にする。曲の頭を動かし、音源ファイル・YouTube のずれも同じだけ動かして再生位置を保つ。
-// 最初の音より前の無音の中でだけ動かすので、聞こえる音は変わらない。選べない数のときは何もしない
+// 前の拍を n 拍にする。小節数と同じく区間の数え方を直す操作で、最初の小節頭を「最初の音から n 拍後」に置き直す
+// （小節の線に乗っていた区切りも一緒に動く）。曲の頭・再生・聞こえる音は動かさない
 export function setPickup(song: Song, n: number): Song {
-  const first = song.sections[0], at = pickupHead(song, n);
-  if (at == null) return song;
-  const dt = round3(at - first.start);
-  if (!dt) return song;
-  const moved: Song = {
-    ...song,
-    sections: [{ ...first, start: at, edited: true }, ...song.sections.slice(1)],
-    audio: song.audio ? { ...song.audio, offset: round3(song.audio.offset + dt) } : song.audio,
-    youtubeOffset: song.youtube ? clampOffset((song.youtubeOffset ?? 0) + dt) || undefined : song.youtubeOffset,
-  };
-  return normalize(shiftSong(moved, -at));
+  const at = pickupDownbeat(song, n);
+  return at == null ? song : setTempo(song, { firstDownbeat: at });
 }
 
 function timeAt(lines: number[], k: number): number {
