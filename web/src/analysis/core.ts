@@ -9,7 +9,7 @@ import type { AnalysisResult } from '../../../shared/song';
 import { fft } from './fft.ts';
 import { vocalShare, type VocalCurve } from './vocal.ts';
 
-export const ANALYSIS_VERSION = 'proto-0.8'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない、0.8：区間ごとの歌の割合
+export const ANALYSIS_VERSION = 'proto-0.9'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない、0.8：区間ごとの歌の割合、0.9：曲の頭を無音の中の小節頭に揃えない
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -574,8 +574,10 @@ export function analyze(
   const beatsPerBar = 4;
   const phase = beatsUncertain ? 0 : downbeatPhase(beatFrames, f, beatsPerBar);
   const firstDownbeat = beatsUncertain || !beats.length ? null : beats[phase];
-  // 無音の終わりが最初の小節頭とほぼ同じなら、小節頭に揃える（最初の区間の小節数がずれないように）
-  if (leadingSilence && firstDownbeat != null && Math.abs(leadingSilence - firstDownbeat) < 0.25) leadingSilence = firstDownbeat;
+  // 無音の終わりのすぐ後ろが最初の小節頭なら、小節頭に揃える（最初の区間の小節数がずれないように）。
+  // 小節頭が無音の中（最初の音より前）にあるときは揃えない。最初の音が拍の裏にある曲（透明人間：最初の音が小節頭の1.5拍前）で、
+  // 曲の頭が最初の音より前の拍になり、前の拍が半拍多く見えるため
+  if (leadingSilence && firstDownbeat != null && firstDownbeat >= leadingSilence && firstDownbeat - leadingSilence < 0.25) leadingSilence = firstDownbeat;
 
   progress(0.85, '区切りと繰り返しを推定しています');
   // 区切り単位：小節（拍が不確かなら2秒ごと）

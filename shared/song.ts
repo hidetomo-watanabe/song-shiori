@@ -255,6 +255,41 @@ export function pickupBeats(song: Song, sec: Section): number | null {
   return d ? Math.round(d * 2) / 2 : null;
 }
 
+// 前の拍を手で直せるか。拍と最初の小節頭が決まっていて、最初の区間を手の小節数で等分していないとき
+export function canSetPickup(song: Song): boolean {
+  const first = song.sections[0], beats = beatGrid(song);
+  return !!first && !first.silence && song.firstDownbeat != null && !!beats && beats.length >= 2 && sectionBpm(song, first) == null;
+}
+
+// 拍の番号 k（小数）の時刻。拍の間は直線で補い、前後は端の間隔で延長する
+function timeAtIndex(lines: number[], k: number): number {
+  const i = Math.floor(k), a = timeAt(lines, i);
+  return a + (timeAt(lines, i + 1) - a) * (k - i);
+}
+
+// 最初の小節頭より前の拍を n 拍（半拍単位）にする。最初の小節頭と小節の線は音源の上で動かさず、曲の頭を
+// 「曲の頭のあとの最初の小節頭の n 拍前」に置き直す。音源ファイル・YouTube のずれも同じだけ動かして、再生位置を保つ。
+// 曲の頭を音源ファイルの頭より前にする・最初の区間が短くなりすぎるときは、何もしない
+export function setPickup(song: Song, n: number): Song {
+  const first = song.sections[0], beats = beatGrid(song);
+  if (!canSetPickup(song) || !beats) return song;
+  const per = Math.max(1, song.beatsPerBar);
+  const want = Math.max(0, Math.min(per - 0.5, Math.round(n * 2) / 2));
+  const head = indexAt(beats, first.start);
+  const d = (((indexAt(beats, song.firstDownbeat!) - head) % per) + per) % per;
+  const bar = head + (d > per - 0.25 ? d - per : d); // 曲の頭の直前（0.25拍以内）の小節頭は、曲の頭の小節頭とみなす
+  const at = round3(timeAtIndex(beats, bar - want));
+  const dt = round3(at - first.start);
+  if (!dt || at >= first.end - MIN_SECTION || (song.audio && song.audio.offset + dt < 0)) return song;
+  const moved: Song = {
+    ...song,
+    sections: [{ ...first, start: at, edited: true }, ...song.sections.slice(1)],
+    audio: song.audio ? { ...song.audio, offset: round3(song.audio.offset + dt) } : song.audio,
+    youtubeOffset: song.youtube ? clampOffset((song.youtubeOffset ?? 0) + dt) || undefined : song.youtubeOffset,
+  };
+  return normalize(shiftSong(moved, -at));
+}
+
 function timeAt(lines: number[], k: number): number {
   const last = lines.length - 1;
   if (k < 0) return lines[0] + k * (lines[1] - lines[0]);
