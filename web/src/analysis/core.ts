@@ -9,7 +9,7 @@ import type { AnalysisResult } from '../../../shared/song';
 import { fft } from './fft.ts';
 import { vocalShare, type VocalCurve } from './vocal.ts';
 
-export const ANALYSIS_VERSION = 'proto-0.9'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない、0.8：区間ごとの歌の割合、0.9：曲の頭を無音の中の小節頭に揃えない
+export const ANALYSIS_VERSION = 'proto-0.10'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない、0.8：区間ごとの歌の割合、0.9：曲の頭を無音の中の小節頭に揃えない、0.10：小節頭を低音と2拍ごとの和音の変化をそろえて選ぶ
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -198,20 +198,31 @@ const dot = (a: Float64Array, b: Float64Array) => {
   return s;
 };
 
-// 小節頭の位相（拍の何番目から数えるか）を、低音の立ち上がりと和音の変化で選ぶ
+// 小節頭の位相（拍の何番目から数えるか）を、低音の立ち上がりと和音の変化で選ぶ。
+// 和音の変化は、その拍の前後2拍ずつの和音の違い（小節の頭で和音が変わる）。2つの手がかりは大きさが桁違いなので
+// （低音は 1〜2、和音の変化は 0.02 程度）、それぞれ位相の候補の中で平均0・標準偏差1にそろえてから足す。
+// 和音がほとんど変わらない曲では和音の変化は雑音なので、標準偏差に下限を設けて、低音で決まるようにする。
+// 低音だけだと、低音が小節の3拍目に強く入る曲（透明人間）で2拍取り違える
 function downbeatPhase(beats: number[], f: Features, beatsPerBar: number): number {
-  let best = 0, bestScore = -Infinity;
   const change = beats.map((b, i) => {
-    if (i === 0 || i === beats.length - 1) return 0;
-    const before = unit(meanVector(f.chroma, 12, beats[i - 1], b));
-    const after = unit(meanVector(f.chroma, 12, b, beats[i + 1]));
+    if (i < 2 || i + 2 >= beats.length) return 0;
+    const before = unit(meanVector(f.chroma, 12, beats[i - 2], b));
+    const after = unit(meanVector(f.chroma, 12, b, beats[i + 2]));
     return 1 - dot(before, after);
   });
-  for (let phase = 0; phase < beatsPerBar; phase++) {
+  const byPhase = (x: (i: number) => number) => Array.from({ length: beatsPerBar }, (_, phase) => {
     let s = 0, n = 0;
-    for (let i = phase; i < beats.length; i += beatsPerBar) { s += f.low[beats[i]] + 2 * change[i]; n++; }
-    if (n && s / n > bestScore) { bestScore = s / n; best = phase; }
-  }
+    for (let i = phase; i < beats.length; i += beatsPerBar) { s += x(i); n++; }
+    return n ? s / n : 0;
+  });
+  const standardize = (v: number[], floor: number) => {
+    const m = v.reduce((p, x) => p + x, 0) / v.length;
+    const sd = Math.max(floor, Math.sqrt(v.reduce((p, x) => p + (x - m) ** 2, 0) / v.length));
+    return v.map((x) => (x - m) / sd);
+  };
+  const low = standardize(byPhase((i) => f.low[beats[i]]), 1e-6), chord = standardize(byPhase((i) => change[i]), 0.002);
+  let best = 0;
+  for (let phase = 1; phase < beatsPerBar; phase++) if (low[phase] + chord[phase] > low[best] + chord[best]) best = phase;
   return best;
 }
 

@@ -11,7 +11,7 @@ import { basename, extname, join } from 'node:path';
 import * as ort from 'onnxruntime-web';
 import { analyze, ANALYSIS_SR } from '../web/src/analysis/core.ts';
 import { vocalCurve, VOCAL_SR, type VocalCurve } from '../web/src/analysis/vocal.ts';
-import { chordAt, octaveByReference, shiftSong, songFromAnalysis, type Song } from '../shared/song.ts';
+import { barLines, chordAt, octaveByReference, shiftSong, songFromAnalysis, type Song } from '../shared/song.ts';
 import { parseTruth, type Truth } from '../shared/truth.ts';
 
 const args = process.argv.slice(2);
@@ -78,6 +78,24 @@ function evaluate(song: Song, truth: Truth) {
   const hitT = tb.filter((t) => ab.some((a) => Math.abs(a - t) <= TOLERANCE)).length;
   const hitA = ab.filter((a) => tb.some((t) => Math.abs(a - t) <= TOLERANCE)).length;
   res.push(`区切り：正解のうち当たり ${pct(hitT, tb.length)}・自動のうち当たり ${pct(hitA, ab.length)}`);
+  // 小節頭：正解の区切り（小節の頭にあるはず）が、自動の小節の線から何拍あとにあるか。いちばん多いずれを、その曲の小節頭のずれとする
+  let downOk = 0, downN = 0;
+  const lines = barLines(song);
+  if (lines && tb.length) {
+    const per = Math.max(1, song.beatsPerBar);
+    const count = new Map<number, number>();
+    for (const t of tb) {
+      let k = 0;
+      while (k + 2 < lines.length && lines[k + 1] <= t) k++;
+      const beat = (lines[k + 1] - lines[k]) / per;
+      const shift = ((Math.round((t - lines[k]) / beat) % per) + per) % per;
+      count.set(shift, (count.get(shift) ?? 0) + 1);
+    }
+    const [shift, n] = [...count].sort((a, b) => b[1] - a[1])[0];
+    downN = 1;
+    if (shift === 0) downOk = 1;
+    res.push(`小節頭：${shift === 0 ? '一致' : `自動の小節の線が ${shift}拍ずれ`}（正解の区切り ${n}/${tb.length} が同じずれ${count.size > 1 ? `。ほか ${[...count].filter(([s]) => s !== shift).map(([s, c]) => `${s}拍×${c}`).join('・')}` : ''}）`);
+  }
   // 小節数：正解の区間と始まり・終わりが ±2秒以内で重なる自動の区間について、小節数が一致した割合
   let barsOk = 0, barsN = 0;
   const barsNg: string[] = [];
@@ -125,7 +143,7 @@ function evaluate(song: Song, truth: Truth) {
     });
   }
   if (chordN) res.push(`コード（根音とメジャー・マイナー）：一致 ${pct(chordOk, chordN)}${chordNg.length ? `  外れ：${chordNg.slice(0, 6).join(' / ')}` : ''}`);
-  return { lines: res, hitT, tb: tb.length, hitA, ab: ab.length, barsOk, barsN, nameOk, nameN, chordOk, chordN };
+  return { lines: res, hitT, tb: tb.length, hitA, ab: ab.length, downOk, downN, barsOk, barsN, nameOk, nameN, chordOk, chordN };
 }
 
 const files = existsSync(folder) ? readdirSync(folder).filter((f) => /\.(mp3|wav|m4a|mp4|aac)$/i.test(f)).sort() : [];
@@ -133,7 +151,7 @@ if (!files.length) {
   console.log(`音源が見つかりません：${folder}`);
   process.exit(1);
 }
-const sum = { hitT: 0, tb: 0, hitA: 0, ab: 0, barsOk: 0, barsN: 0, nameOk: 0, nameN: 0, chordOk: 0, chordN: 0 };
+const sum = { hitT: 0, tb: 0, hitA: 0, ab: 0, downOk: 0, downN: 0, barsOk: 0, barsN: 0, nameOk: 0, nameN: 0, chordOk: 0, chordN: 0 };
 for (const f of files) {
   const name = basename(f, extname(f));
   // 正解ファイルは音源と同じ名前。「パープルヘイズ.m4a」と「パープル・ヘイズ.txt」のような、中黒・空白・濁点の表し方の違いは同じとみなす
@@ -166,6 +184,7 @@ for (const f of files) {
 if (sum.tb || sum.nameN || sum.barsN) {
   console.log('\n■ 全体');
   console.log(`  区切り：正解のうち当たり ${pct(sum.hitT, sum.tb)}・自動のうち当たり ${pct(sum.hitA, sum.ab)}`);
+  console.log(`  小節頭：一致 ${sum.downOk}/${sum.downN}曲`);
   console.log(`  小節数：一致 ${pct(sum.barsOk, sum.barsN)}`);
   console.log(`  名前の候補：一致 ${pct(sum.nameOk, sum.nameN)}`);
   if (sum.chordN) console.log(`  コード：一致 ${pct(sum.chordOk, sum.chordN)}`);
