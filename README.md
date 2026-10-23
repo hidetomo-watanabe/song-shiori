@@ -40,6 +40,8 @@ node scripts/evaluate.ts [フォルダ]        # 検証音源フォルダの全�
 - DB の変更：`npx wrangler d1 migrations apply kyoku-shiori --remote`
 - シークレット：`SALT`（設定済み）、`GETSONGBPM_KEY`（https://getsongbpm.com/api で無料登録。未設定なら Deezer のみで検索）
   - 設定は `npx wrangler secret put GETSONGBPM_KEY`。ローカルでは `.dev.vars` に書く
+- シークレット：`YOUTUBE_API_KEY`（Google Cloud で YouTube Data API v3 を有効にして作る API キー。「曲を検索」で YouTube の動画を探す。未設定なら iTunes の結果だけを出す）
+  - 設定は `npx wrangler secret put YOUTUBE_API_KEY`。検索1回で 100 ユニット（無料枠は1日 10,000）を使うので、結果は7日間キャッシュし、IP ごとに1時間 30 回までにしている
 - GitHub のリポジトリ変数 `API_BASE` に API の URL を設定する（画面のビルドで使う）
 - `web/public/CNAME` が独自ドメイン（song-shiori.whathides.co.jp）。DNS に `song-shiori` → `hidetomo-watanabe.github.io` の CNAME が必要
 - BPM 検索結果は Cache API で7日間キャッシュする（情報源が変わったら別の結果として扱う）

@@ -224,7 +224,12 @@ export function Editor({ mode }: { mode: Mode }) {
     e.preventDefault();
     const v = M.youtubeId(ytInput);
     if (!v) { setYtError('YouTube の動画の URL を読み取れませんでした'); return; }
+    pickVideo(v);
+  }
+  // 再生に YouTube の動画を使う（URL を貼り付けたとき・曲を検索で選んだとき）
+  function pickVideo(v: string) {
     setYtInput('');
+    setYtError('');
     setAudioNote('');
     edit((s) => ({ ...s, youtube: v, youtubeOffset: undefined }));
     track('youtube_set');
@@ -623,7 +628,7 @@ export function Editor({ mode }: { mode: Mode }) {
           <label>アーティスト<input value={song.artist} maxLength={200} onInput={(e) => edit((s) => ({ ...s, artist: (e.currentTarget as HTMLInputElement).value }), { coalesce: 'artist' })} /></label>
         </div>
         <SongLookup title={song.title} artist={song.artist} duration={hasAudio ? media().duration : null}
-          onPick={(t) => edit((s) => ({ ...s, title: t.title, artist: t.artist }))} />
+          onPick={(t) => edit((s) => ({ ...s, title: t.title, artist: t.artist }))} onPickVideo={pickVideo} />
         <ChordChartInput song={song} onChange={(u) => edit((s) => ({ ...s, chordChartUrl: u }), { coalesce: 'chart-url' })} />
       </section>
 

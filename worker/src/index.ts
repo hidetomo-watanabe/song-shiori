@@ -1,8 +1,9 @@
 // 曲のしおり API（Cloudflare Workers + D1）。要件定義書 5.4・5.5・16.3
 import { validateSong, type Song } from '../../shared/song';
 import { lookupBpm, norm } from './bpm';
+import { searchYoutube } from './youtube';
 
-type Env = { DB: D1Database; ALLOWED_ORIGINS: string; SALT?: string; GETSONGBPM_KEY?: string };
+type Env = { DB: D1Database; ALLOWED_ORIGINS: string; SALT?: string; GETSONGBPM_KEY?: string; YOUTUBE_API_KEY?: string };
 
 const DAY = 864e5;
 const KEEP_DAYS = 180; // 構成メモの保持期間
@@ -13,6 +14,7 @@ const MAX_BODY = 512 * 1024;
 const EVENT_KINDS = new Set(['analysis_ok', 'analysis_fail', 'manual_start', 'loop_play', 'view_after_update', 'bpm_lookup_applied', 'youtube_set', 'youtube_view_play']);
 const BPM_CACHE_SECONDS = 7 * 86400;
 const BPM_LOOKUP_VERSION = 2; // 2：曲名がそのまま一致する候補を先にする
+const YOUTUBE_CACHE_SECONDS = 7 * 86400;
 
 const HEX = (n: number) => new RegExp(`^[a-f0-9]{${n}}$`);
 const isKey = (s: unknown): s is string => typeof s === 'string' && HEX(48).test(s);
@@ -236,6 +238,30 @@ async function bpmInfo(req: Request, env: Env) {
   return json(body);
 }
 
+// 曲を検索：YouTube の動画。曲名・アーティスト名だけを Google へ送り、結果は7日間キャッシュする。
+// API キーが設定されていなければ、使えないことだけを返す（画面は iTunes の結果だけを出す）
+async function youtubeSearch(req: Request, env: Env) {
+  const url = new URL(req.url);
+  const title = (url.searchParams.get('title') ?? '').trim().slice(0, 200);
+  const artist = (url.searchParams.get('artist') ?? '').trim().slice(0, 200);
+  if (!title && !artist) throw new HttpError(400, '曲名を入力してください');
+  if (!env.YOUTUBE_API_KEY) return json({ videos: [], available: false });
+  const cacheKey = new Request(`https://cache.song-shiori/youtube?t=${encodeURIComponent(norm(title))}&a=${encodeURIComponent(norm(artist))}`);
+  const cache = (caches as unknown as { default: Cache }).default;
+  const hit = await cache.match(cacheKey);
+  if (hit) return json(await hit.json());
+  // 検索1回で無料枠を多く使うので、BPM より回数を絞る
+  await limit(req, env, 'youtube', 30);
+  try {
+    const body = { videos: await searchYoutube(title, artist, env.YOUTUBE_API_KEY), available: true };
+    await cache.put(cacheKey, new Response(JSON.stringify(body), { headers: { 'Cache-Control': `max-age=${YOUTUBE_CACHE_SECONDS}` } }));
+    return json(body);
+  } catch (e) {
+    console.warn('youtube search', e);
+    throw new HttpError(502, 'YouTube を検索できませんでした');
+  }
+}
+
 // トップの「このブラウザで編集した曲メモ」の今の状態。
 // 有効な編集セッションがあれば曲名・更新日時・期限を返し、なければ有無だけを返す（有無は ID だけでも他の API で分かる）
 const STATUS_MAX = 50;
@@ -262,6 +288,7 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/api/memos' && m === 'POST') return createMemo(req, env);
   if (path === '/api/events' && m === 'POST') return recordEvent(req, env);
   if (path === '/api/bpm' && m === 'GET') return bpmInfo(req, env);
+  if (path === '/api/youtube' && m === 'GET') return youtubeSearch(req, env);
   if (path === '/api/memos/status' && m === 'POST') return memoStatus(req, env);
   let match = path.match(/^\/api\/view\/([^/]+)$/);
   if (match && m === 'GET') return viewMemo(req, env, match[1]);
