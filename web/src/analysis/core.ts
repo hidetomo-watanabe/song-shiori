@@ -6,7 +6,7 @@
 //   5. 拍ごとのクロマを和音の型と照らし合わせ、コードを推定
 import type { AnalysisResult } from '../../../shared/song';
 
-export const ANALYSIS_VERSION = 'proto-0.5'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定
+export const ANALYSIS_VERSION = 'proto-0.6'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -481,9 +481,10 @@ function refineByRepetition(S: number[][], nov: Float64Array, cuts: number[], ru
     for (const [c, count] of [...support].sort((x, y) => y[1] - x[1] || nov[y[0]] - nov[x[0]])) {
       if (!strong(c) || result.includes(c)) continue;
       const near = result.filter((x) => Math.abs(x - c) < minGap);
-      // 近くの区切りより多くの繰り返しから支持されていれば置き換える
-      // （4小節単位で選んだ区切りが、4小節＋6小節のような並びで2小節ずれている場合など）
-      if (near.length && !near.every((x) => count > (support.get(x) ?? 0))) continue;
+      // 近くの区切りより多くの繰り返しから支持されていて、区切りらしさも劣らなければ置き換える
+      // （4小節単位で選んだ区切りが、4小節＋6小節のような並びで2小節ずれている場合など）。
+      // 区切りらしさを見ないと、繰り返しの帯の端の1小節のずれで、正しい区切りが隣の小節へ動く（丸ノ内サディスティック）
+      if (near.length && !near.every((x) => count > (support.get(x) ?? 0) && nov[c] >= nov[x])) continue;
       result = result.filter((x) => !near.includes(x));
       result.push(c);
       grew = true;
