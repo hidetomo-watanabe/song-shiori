@@ -547,8 +547,29 @@ export function suggestNames(song: Song): Record<string, string> {
 // 自動生成した構成に、名前の候補（Aメロ・サビなど）を最初から付けておく。
 // 繰り返しの名前（groupNames）として付けるので、区間は「自動で付いた名前」のままで、手で直した区間とはみなさない。
 // 同じ繰り返しでも場所で名前が違うもの（イントロの素材が間奏・アウトロで出てくるなど）は、区間ごとに付ける
-function withSuggestedNames(song: Song): Song {
-  const names = suggestNames(song);
+// 名前の候補を付けるときに、隣り合う区間のうち同じ名前のものを1つにまとめる（余計な区切りを減らす）。
+// 同じ繰り返しのもの（サビ 16小節＋サビ 14小節 など）と、曲に1度だけ出てくるまとまり（Cメロ・アウトロ）が細かく割れたものに限る。
+// Aメロ・間奏などは、別々の区間が並ぶことがある（間奏1・間奏2、Aメロと Bメロの取り違え）のでまとめない。
+// まとめた区間は、長いほうの繰り返しの記号を持ち、手で直した区間とはみなさない。
+// まとめて MERGE_MAX_BARS 小節を超えるときはまとめない（変化の少ない部分が1つの長い区間にならないように。検証音源の正解の区間は最長 32小節）
+const MERGE_NAMES = new Set(['Cメロ', 'アウトロ']);
+const MERGE_MAX_BARS = 32;
+function mergeSameNames(song: Song, names: Record<string, string>): Song {
+  const out: Section[] = [];
+  const w = (x: Section) => x.end - x.start;
+  for (const s of song.sections) {
+    const p = out[out.length - 1];
+    const n = names[s.id];
+    if (!p || !n || names[p.id] !== n || !s.nameAuto || !p.nameAuto || (p.group !== s.group && !MERGE_NAMES.has(n)) || (p.barsEst ?? 0) + (s.barsEst ?? 0) > MERGE_MAX_BARS) { out.push(s); continue; }
+    const avgOf = (k: 'energy' | 'vocal', d: number) => (p[k] != null && s[k] != null ? Math.round(((p[k]! * w(p) + s[k]! * w(s)) / (w(p) + w(s))) * d) / d : p[k] ?? s[k]);
+    out[out.length - 1] = { ...p, end: s.end, group: w(s) > w(p) ? s.group : p.group, energy: avgOf('energy', 10), vocal: avgOf('vocal', 1000) };
+  }
+  return { ...song, sections: out };
+}
+
+function withSuggestedNames(base: Song): Song {
+  const names = suggestNames(base);
+  const song = mergeSameNames(base, names);
   const groupNames = { ...song.groupNames };
   const mixed = new Set<string>();
   for (const s of song.sections) {

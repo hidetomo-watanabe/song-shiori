@@ -54,8 +54,11 @@ describe('自動解析（合成音源）', () => {
       y[i] = 0.08 * (Math.sin(2 * Math.PI * 261.6 * t) + Math.sin(2 * Math.PI * 329.6 * t))
         + (bi % 2 === 0 && bt < 0.12 ? 0.6 * Math.sin(2 * Math.PI * 80 * bt) * Math.exp(-bt * 25) : 0);
     }
-    const long = songFromAnalysis(analyze(y, 22050)).sections.filter((x) => !x.silence);
-    expect(Math.max(...long.map((x) => x.barsEst ?? 0))).toBeLessThanOrEqual(16);
+    // 解析の区切りは16小節以内。名前の候補を付けるときに同じ繰り返しをまとめても、32小節を超える区間にはしない
+    const r = analyze(y, 22050);
+    expect(Math.max(...r.segments.map((x) => (x.end - x.start) / 2))).toBeLessThanOrEqual(16.5);
+    const long = songFromAnalysis(r).sections.filter((x) => !x.silence);
+    expect(Math.max(...long.map((x) => x.barsEst ?? 0))).toBeLessThanOrEqual(32);
   });
 
   it('区切りは4小節の格子の上にある', () => {
@@ -104,5 +107,20 @@ describe('歌の割合', () => {
     const res = analyze(synth(), 22050, undefined, { vocals: curve });
     expect(res.segments[0].vocal).toBeGreaterThan(0);
     expect(res.segments[res.segments.length - 1].vocal).toBeUndefined();
+  });
+});
+
+describe('名前の候補を付けるときの区切りのまとめ', () => {
+  it('隣り合う同じ繰り返しのサビと、割れた Cメロ・アウトロを1つにする', () => {
+    // 120BPM（1小節2秒）。サビ（C）が2回続く・1回だけの歌（N・M）が2つ続く・最後に歌のない部分（Y・Z）が2つ続く
+    const plan: [string, number, number, number][] = [
+      ['X', 8, -22, 0], ['A', 16, -20, 0.2], ['C', 16, -15, 0.3], ['C', 16, -15, 0.3], ['A', 16, -20, 0.2], ['C', 16, -15, 0.3],
+      ['N', 8, -18, 0.25], ['M', 8, -18, 0.25], ['C', 16, -15, 0.3], ['Y', 8, -21, 0], ['Z', 8, -23, 0]];
+    let t = 0;
+    const segments = plan.map(([group, bars, energy, vocal]) => { const s = { start: t, end: t + bars * 2, group, energy, vocal }; t += bars * 2; return s; });
+    const song = songFromAnalysis({ version: 't', duration: t, bpm: 120, beats: [], firstDownbeat: 0, beatsUncertain: false, segments });
+    expect(song.sections.map((s) => [s.name.replace(/（.*）/, ''), s.barsEst])).toEqual([
+      ['イントロ', 8], ['Aメロ', 16], ['サビ', 32], ['Aメロ', 16], ['サビ', 16], ['Cメロ', 16], ['サビ', 16], ['アウトロ', 16]]);
+    expect(song.sections.every((s) => !s.edited)).toBe(true);
   });
 });
