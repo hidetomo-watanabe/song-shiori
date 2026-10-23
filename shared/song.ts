@@ -429,11 +429,12 @@ export function suggestNames(song: Song): Record<string, string> {
   const avg = (xs: number[]) => (xs.length ? xs.reduce((p, x) => p + x, 0) / xs.length : NaN);
   const all = secs.map((s) => s.energy).filter((e): e is number => e != null);
   const mean = avg(all), sd = Math.sqrt(avg(all.map((e) => (e - mean) ** 2))) || 1;
+  const bars = (i: number) => secs[i].barsManual ?? secs[i].barsEst ?? 0;
   // サビ：繰り返すパートのうち、長く・音量が大きく・回数が多いもの。曲の頭から鳴るパート（イントロのリフなど）は下げる。
   // 音量差の小さい曲（音圧をそろえたロックなど）が多いので、音量より長さを重く見る
   const chorusScore = ([, g]: [string, { idx: number[]; energy: number[] }]) => {
     const e = g.energy.length ? (avg(g.energy) - mean) / sd : 0;
-    const len = avg(g.idx.map((i) => secs[i].barsManual ?? secs[i].barsEst ?? 0));
+    const len = avg(g.idx.map(bars));
     return 0.7 * e + 0.3 * g.idx.length + 0.6 * (len / 8) - (g.idx[0] <= 1 ? 0.8 : 0);
   };
   const [chorus, cg] = repeated.slice().sort((a, b) => chorusScore(b) - chorusScore(a))[0];
@@ -450,8 +451,13 @@ export function suggestNames(song: Song): Record<string, string> {
   for (let i = 0; i < firstRepeat; i++) name(i, 'イントロ');
   for (let i = lastChorus + 1; i < secs.length; i++) if ((groups.get(secs[i].group ?? '')?.idx.length ?? 1) < 2) name(i, 'アウトロ');
   for (const i of cg.idx) name(i, 'サビ');
+  // サビの続き：いつもサビの直後にだけ出てくる、サビより短い繰り返しのパートは、サビの一部とみなす
+  // （サビが 12小節＋4小節 のように分かれる場合。夏の日の午後）
+  const chorusLen = avg(cg.idx.map(bars));
+  const tails = new Set(melodies.filter(([g, x]) => g !== chorus && x.idx.every((i) => i > 0 && secs[i - 1].group === chorus) && avg(x.idx.map(bars)) < chorusLen).map(([g]) => g));
+  for (const g of tails) for (const i of groups.get(g)!.idx) name(i, 'サビ');
   // Aメロ：イントロの後、最初に出てくる繰り返しのパート。Bメロ：Aメロとサビの間によく出てくる繰り返しのパート
-  const others = melodies.filter(([g]) => g !== chorus).sort((a, b) => a[1].idx[0] - b[1].idx[0]);
+  const others = melodies.filter(([g]) => g !== chorus && !tails.has(g)).sort((a, b) => a[1].idx[0] - b[1].idx[0]);
   const verse = others.find(([, g]) => g.idx[0] < cg.idx[0]) ?? null;
   if (verse) for (const i of verse[1].idx) name(i, 'Aメロ');
   if (verse) {

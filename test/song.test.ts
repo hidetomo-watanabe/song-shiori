@@ -464,6 +464,17 @@ describe('区間名の候補：イントロの素材', () => {
     expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ', 'サビ', 'アウトロ']);
     expect(applySuggestedNames(song).sections.map((s) => s.name)).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ（2回目）', 'サビ（2回目）', 'アウトロ']);
   });
+
+  it('いつもサビの直後にだけ出てくる短いパートは、サビの続きにする', () => {
+    // サビが C（12小節）＋ T（4小節）に分かれている。T を Aメロ・Bメロの候補にしない
+    const plan: [string, number, number][] = [
+      ['X', 8, -22], ['A', 16, -20], ['C', 12, -15], ['T', 4, -17], ['A', 16, -20], ['C', 12, -15], ['T', 4, -17], ['Y', 8, -21]];
+    let t = 0;
+    const sections = plan.map(([g, bars, e]) => { const s = newSection(t, t + bars * 2, { group: g, energy: e }); t += bars * 2; return s; });
+    const song = normalize({ ...emptySong(t), bpmEst: 120, firstDownbeat: 0, sections });
+    const names = suggestNames(song);
+    expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ', 'Aメロ', 'サビ', 'サビ', 'Aメロ', 'サビ', 'サビ', 'アウトロ']);
+  });
 });
 
 describe('コード進行', () => {
