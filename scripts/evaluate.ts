@@ -134,9 +134,11 @@ for (const f of files) {
     console.log('  正解ファイルがない（または区間が書かれていない）ため、判定はしません');
     continue;
   }
-  // 構成表は曲の頭を 0:00 にしているので、正解ファイル（音源ファイルの時刻）と比べるときは音源ファイルの時刻に戻す。
+  // 構成表は曲の頭を 0:00 にしている。「テキストで保存」の正解ファイルも同じ時刻なので、そのまま比べる。
+  // 曲頭が「無音」の行で始まる正解ファイル（無音を区間にしていたころの形式）は音源ファイルの時刻なので、自動の側を音源ファイルの時刻に戻す。
   // 正解の「無音」の行は区切りとして数えない（自動の側も曲頭・曲末の無音を区切りにしないため）
-  const r = evaluate(shiftSong(song, song.audio?.offset ?? 0), { ...truth, sections: truth.sections.filter((s) => s.name !== '無音') });
+  const fileTime = truth.sections[0]?.name === '無音';
+  const r = evaluate(fileTime ? shiftSong(song, song.audio?.offset ?? 0) : song, { ...truth, sections: truth.sections.filter((s) => s.name !== '無音') });
   for (const l of r.lines) console.log(`  ${l}`);
   for (const k of Object.keys(sum) as (keyof typeof sum)[]) sum[k] += r[k];
 }
