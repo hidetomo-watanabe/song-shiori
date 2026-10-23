@@ -62,7 +62,7 @@ export type Song = {
 export type ChordChange = { t: number; chord: string };
 
 // 区間の名前の候補（入力欄で選べる）
-export const SECTION_NAMES = ['イントロ', 'Aメロ', 'Bメロ', 'Cメロ', 'サビ', '大サビ', '落ちサビ', '間奏', 'ソロ', 'ブレイク', 'アウトロ'];
+export const SECTION_NAMES = ['イントロ前', 'イントロ', 'Aメロ', 'Bメロ', 'Cメロ', 'サビ', '大サビ', '落ちサビ', '間奏', 'ソロ', 'ブレイク', 'アウトロ'];
 
 export type AnalysisSnapshot = {
   duration: number;
@@ -409,7 +409,7 @@ export function setTempo(song: Song, patch: Partial<Pick<Song, 'bpmManual' | 'be
   return normalize(s);
 }
 
-// 区間名の候補（イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ）を推定する。確定ではなく候補として示す。
+// 区間名の候補（イントロ前・イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ）を推定する。確定ではなく候補として示す。
 // 手がかりは、繰り返し（同じ記号）、並び、音量。歌の有無は分からないため、ソロと歌のパートは区別しない。
 // 戻り値：区間ID → 候補名（無音・候補なしの区間は含まない）
 export function suggestNames(song: Song): Record<string, string> {
@@ -440,16 +440,21 @@ export function suggestNames(song: Song): Record<string, string> {
   const [chorus, cg] = repeated.slice().sort((a, b) => chorusScore(b) - chorusScore(a))[0];
   const lastChorus = cg.idx[cg.idx.length - 1];
   const name = (i: number, n: string) => { out[secs[i].id] = n; };
-  // 曲の最初のパートは、サビでなければイントロとみなす（Aメロから始まる曲より、イントロから始まる曲のほうがずっと多い）。
-  // イントロの素材は間奏・アウトロでもう一度出てくることが多いので、繰り返していても Aメロ・Bメロの候補にしない
-  const introGroup = secs[0].group && secs[0].group !== chorus ? secs[0].group : null;
-  const intro = introGroup ? groups.get(introGroup)! : null;
-  if (intro) for (const i of intro.idx) name(i, i === 0 ? 'イントロ' : i > lastChorus ? 'アウトロ' : '間奏');
-  const melodies = repeated.filter(([g]) => g !== introGroup);
+  // イントロ前：曲の頭の、2小節以下の短いパート（ドラムのフィルなど）か、ほかより音が小さい（平均より標準偏差1つ分以上）パート。
+  // 音が小さいだけのときは、次のパートが繰り返さない場合に限る（次が Aメロなら、音の小さいパートはイントロそのもの）
+  const once = (i: number) => (groups.get(secs[i].group ?? '')?.idx.length ?? 1) < 2;
+  const quiet = (i: number) => secs[i].energy != null && (secs[i].energy! - mean) / sd < -1;
+  let head = 0;
+  while (head < secs.length - 2 && secs[head].group !== chorus && (bars(head) <= 2 || (quiet(head) && once(head + 1)))) head++;
+  // イントロ前の次のパートは、サビでなければイントロとみなす（Aメロから始まる曲より、イントロから始まる曲のほうがずっと多い）。
+  // イントロ前・イントロの素材は間奏・アウトロでもう一度出てくることが多いので、繰り返していても Aメロ・Bメロの候補にしない
+  const introGroups = new Set(secs.slice(0, head + 1).map((s) => s.group).filter((g): g is string => !!g && g !== chorus));
+  for (const g of introGroups) for (const i of groups.get(g)!.idx) name(i, i < head ? 'イントロ前' : i === head ? 'イントロ' : i > lastChorus ? 'アウトロ' : '間奏');
+  const melodies = repeated.filter(([g]) => !introGroups.has(g));
   // イントロ：最初に（イントロ以外の）繰り返しが始まる前。アウトロ：最後のサビの後の、繰り返さないパート
   const firstRepeat = melodies.length ? Math.min(...melodies.map(([, g]) => g.idx[0])) : 0;
-  for (let i = 0; i < firstRepeat; i++) name(i, 'イントロ');
-  for (let i = lastChorus + 1; i < secs.length; i++) if ((groups.get(secs[i].group ?? '')?.idx.length ?? 1) < 2) name(i, 'アウトロ');
+  for (let i = 0; i < firstRepeat; i++) name(i, i < head ? 'イントロ前' : 'イントロ');
+  for (let i = lastChorus + 1; i < secs.length; i++) if (once(i)) name(i, 'アウトロ');
   for (const i of cg.idx) name(i, 'サビ');
   // サビの続き：いつもサビの直後にだけ出てくる、サビより短い繰り返しのパートは、サビの一部とみなす
   // （サビが 12小節＋4小節 のように分かれる場合。夏の日の午後）
@@ -467,14 +472,14 @@ export function suggestNames(song: Song): Record<string, string> {
       if (ci == null) continue;
       for (let i = vi + 1; i < ci; i++) {
         const g = secs[i].group;
-        if (g && g !== chorus && g !== verse[0] && g !== introGroup && (groups.get(g)?.idx.length ?? 0) >= 2) between.set(g, (between.get(g) ?? 0) + 1);
+        if (g && g !== chorus && g !== verse[0] && !introGroups.has(g) && (groups.get(g)?.idx.length ?? 0) >= 2) between.set(g, (between.get(g) ?? 0) + 1);
       }
     }
     const pre = [...between.entries()].sort((a, b) => b[1] - a[1])[0];
     if (pre) for (const i of groups.get(pre[0])!.idx) if (!out[secs[i].id]) name(i, 'Bメロ');
   }
   // 間奏：曲の途中の、繰り返さないパート
-  for (let i = firstRepeat; i <= lastChorus; i++) if (!out[secs[i].id] && (groups.get(secs[i].group ?? '')?.idx.length ?? 1) < 2) name(i, '間奏');
+  for (let i = firstRepeat; i <= lastChorus; i++) if (!out[secs[i].id] && once(i)) name(i, '間奏');
   return out;
 }
 

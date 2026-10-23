@@ -465,6 +465,17 @@ describe('区間名の候補：イントロの素材', () => {
     expect(applySuggestedNames(song).sections.map((s) => s.name)).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ（2回目）', 'サビ（2回目）', 'アウトロ']);
   });
 
+  it('曲の頭の音が小さいパート・短いパートはイントロ前にし、その次をイントロにする', () => {
+    // P：音の小さい4小節（イントロ前）、F：2小節のフィル。イントロ前の素材 P が最後にも出てくればアウトロにする
+    const plan: [string, number, number][] = [
+      ['P', 4, -30], ['F', 2, -19], ['X', 8, -19], ['A', 16, -20], ['C', 16, -15], ['A', 16, -20], ['C', 16, -15], ['P', 4, -30]];
+    let t = 0;
+    const sections = plan.map(([g, bars, e]) => { const s = newSection(t, t + bars * 2, { group: g, energy: e }); t += bars * 2; return s; });
+    const song = normalize({ ...emptySong(t), bpmEst: 120, firstDownbeat: 0, sections });
+    const names = suggestNames(song);
+    expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ前', 'イントロ前', 'イントロ', 'Aメロ', 'サビ', 'Aメロ', 'サビ', 'アウトロ']);
+  });
+
   it('いつもサビの直後にだけ出てくる短いパートは、サビの続きにする', () => {
     // サビが C（12小節）＋ T（4小節）に分かれている。T を Aメロ・Bメロの候補にしない
     const plan: [string, number, number][] = [
