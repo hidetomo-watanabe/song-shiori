@@ -11,7 +11,7 @@ import { basename, extname, join } from 'node:path';
 import * as ort from 'onnxruntime-web';
 import { analyze, ANALYSIS_SR } from '../web/src/analysis/core.ts';
 import { vocalCurve, VOCAL_SR, type VocalCurve } from '../web/src/analysis/vocal.ts';
-import { chordAt, octaveByReference, shiftSong, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
+import { chordAt, octaveByReference, shiftSong, songFromAnalysis, type Song } from '../shared/song.ts';
 import { parseTruth, type Truth } from '../shared/truth.ts';
 
 const args = process.argv.slice(2);
@@ -90,8 +90,7 @@ function evaluate(song: Song, truth: Truth) {
     if (n === t.bars) barsOk++; else barsNg.push(`${fmt(t.start)} ${t.name} 正解${t.bars}・自動${n ?? '未確定'}`);
   }
   res.push(`小節数（区間が一致したもの）：一致 ${pct(barsOk, barsN)}${barsNg.length ? `  ずれ：${barsNg.slice(0, 5).join(' / ')}` : ''}`);
-  // 名前の候補：正解の区間の中央にある自動の区間の候補が、正解の区間名と一致した割合
-  const hints = suggestNames(song);
+  // 名前の候補：正解の区間の中央にある自動の区間の名前（自動生成で付いた候補）が、正解の区間名と一致した割合
   let nameOk = 0, nameN = 0;
   const confusion = new Map<string, number>();
   for (const t of truth.sections) {
@@ -99,7 +98,9 @@ function evaluate(song: Song, truth: Truth) {
     if (!LABELS.includes(label)) continue;
     const mid = (t.start + t.end) / 2;
     const a = song.sections.find((s) => mid >= s.start && mid < s.end);
-    const guess = a ? hints[a.id] ?? '候補なし' : '候補なし';
+    // 画面に出る名前（自動生成で付いた候補）。「パートA」などの仮の名前は候補なしとみなす
+    const shown = a ? baseName(a.name) : '';
+    const guess = shown && !shown.startsWith('パート') ? shown : '候補なし';
     nameN++;
     if (guess === label) nameOk++;
     else confusion.set(`${label}→${guess}`, (confusion.get(`${label}→${guess}`) ?? 0) + 1);
