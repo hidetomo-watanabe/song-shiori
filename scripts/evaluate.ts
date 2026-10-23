@@ -119,7 +119,10 @@ if (!files.length) {
 const sum = { hitT: 0, tb: 0, hitA: 0, ab: 0, barsOk: 0, barsN: 0, nameOk: 0, nameN: 0, chordOk: 0, chordN: 0 };
 for (const f of files) {
   const name = basename(f, extname(f));
-  const truthFile = join(folder, `${name}.txt`);
+  // 正解ファイルは音源と同じ名前。「パープルヘイズ.m4a」と「パープル・ヘイズ.txt」のような、中黒・空白・濁点の表し方の違いは同じとみなす
+  const key = (n: string) => n.normalize('NFC').replace(/[・･\s]/g, '');
+  const truthName = readdirSync(folder).find((x) => extname(x) === '.txt' && key(basename(x, '.txt')) === key(name));
+  const truthFile = join(folder, truthName ?? `${name}.txt`);
   const truth = existsSync(truthFile) ? parseTruth(readFileSync(truthFile, 'utf8')) : null;
   const y = decode(join(folder, f));
   let song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, tuning));
