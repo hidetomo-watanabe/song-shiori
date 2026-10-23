@@ -30,7 +30,7 @@ export function FoldedSection({ song, s, i, isCurrent, playing, hasAudio, rowRef
         {s.cut && <span class="tag">カット</span>}
         {s.arrange?.trim() && <span class="tag warn" title={s.arrange}>原曲と違う</span>}
         <span class="sec-range">{fmt(s.start, 0)}〜{fmt(s.end, 0)}</span>
-        <span class="sec-bars">{s.barsManual ?? s.barsEst ?? '-'}<span class="sub">小節{M.sectionBpm(song, s) != null && `・${M.sectionBpm(song, s)} BPM`}</span></span>
+        <span class="sec-bars">{s.barsManual ?? s.barsEst ?? '-'}<span class="sub">小節{M.pickupBeats(song, s) != null && `＋${M.pickupBeats(song, s)}拍`}{M.sectionBpm(song, s) != null && `・${M.sectionBpm(song, s)} BPM`}</span></span>
         {hasAudio && (playing && isCurrent
           ? <button class="small row-play on" onClick={(e) => { e.stopPropagation(); onStop(); }}>停止</button>
           : <button class="small row-play" onClick={(e) => { e.stopPropagation(); onPlay(); }}>再生</button>)}

@@ -911,6 +911,7 @@ export function Editor({ mode }: { mode: Mode }) {
                       const raw = (e.currentTarget as HTMLInputElement).value;
                       edit((x) => M.patchSection(x, s.id, { barsManual: raw === '' ? null : Math.max(0, Math.round(Number(raw))) }), { coalesce: `bars-${s.id}` });
                     }} />小節
+                  {M.pickupBeats(song, s) != null && <span title="最初の小節頭の前にある拍（弱起）。「最初の小節頭」で直せます">＋{M.pickupBeats(song, s)}拍</span>}
                   <span class="sub">{s.barsManual != null ? '手動' : s.barsEst != null ? '推定' : ''}</span>
                   {M.sectionBpm(song, s) != null && <span class="tag" title="小節数を推定と違う数にしたので、この区間の小節の線とメトロノームは、その小節数で区間を等分しています（曲の途中でテンポが変わる場合）">この区間 {M.sectionBpm(song, s)} BPM</span>}
                   {s.barsNeedsCheck && <span class="tag warn">要確認</span>}

@@ -10,11 +10,12 @@
 //     カット
 // 1行に1区間。区間の行の次の「コード」の行はコード進行、「原曲と違う」の行は原曲との違い、「カット」の行は演奏しない区間。
 // 見出しの「キー 原曲 Eb → -2」は原曲のキーと移調。区間の始まりの時刻・区間名・小節数（任意）・「｜」の後ろにメモ（任意）。区間の終わりは次の行の始まり。
+// 最初の区間の「8小節 ＋1.5拍」は、最初の小節頭より前に1.5拍あること（弱起。小節数には含めない）。
 // YouTube の動画を使っていれば、見出しに「YouTube https://youtu.be/… ずれ +5.02秒」の行を加える。
 // 時刻で始まらない行は見出し（曲名、BPM・拍子、長さ、YouTube）として扱う。検証音源フォルダの README の書き方（# で始まる行）も読める
-import { chordChartUrl, clampOffset, confirmedChords, keyRoot, trimSilence, youtubeId, type Song } from './song.ts';
+import { chordChartUrl, clampOffset, confirmedChords, keyRoot, pickupBeats, trimSilence, youtubeId, type Song } from './song.ts';
 
-export type TruthSection = { start: number; end: number; name: string; bars: number | null; memo: string; chords: string | null; cut: boolean; arrange: string | null };
+export type TruthSection = { start: number; end: number; name: string; bars: number | null; pickup?: number | null; memo: string; chords: string | null; cut: boolean; arrange: string | null };
 export type Truth = {
   title: string; artist: string; memo: string;
   bpm: number | null; beatsPerBar: number | null; duration: number | null; sections: TruthSection[];
@@ -48,7 +49,8 @@ export function songToText(original: Song): string {
   for (const s of song.sections) {
     const bars = s.silence ? null : s.barsManual ?? s.barsEst;
     const memo = s.memo.replace(/\s+/g, ' ').trim();
-    lines.push([time(s.start), s.silence ? SILENCE_LABEL : s.name.replace(/\s+/g, ''), bars != null ? `${bars}小節` : '', memo ? `｜${memo}` : '']
+    const pickup = s.silence ? null : pickupBeats(song, s);
+    lines.push([time(s.start), s.silence ? SILENCE_LABEL : s.name.replace(/\s+/g, ''), bars != null ? `${bars}小節` : '', pickup != null ? `＋${pickup}拍` : '', memo ? `｜${memo}` : '']
       .filter(Boolean).join(' '));
     // 推定は書き出さず、手で入れた（確かめた）コード進行だけを書く
     const chords = s.silence ? null : confirmedChords(song, s)?.text.replace(/\s+/g, ' ').trim();
@@ -70,7 +72,7 @@ export function parseTruth(text: string): Truth {
   let title = '', artist = '';
   let youtube: string | null = null, youtubeOffset = 0, chart: string | null = null, originalKey: string | null = null, transpose = 0;
   const songMemo: string[] = [];
-  const rows: { start: number; name: string; bars: number | null; memo: string; chords: string | null; cut: boolean; arrange: string | null }[] = [];
+  const rows: { start: number; name: string; bars: number | null; pickup: number | null; memo: string; chords: string | null; cut: boolean; arrange: string | null }[] = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
@@ -120,7 +122,8 @@ export function parseTruth(text: string): Truth {
     const [body, memo = ''] = line.replace(/#.*/, '').split('｜');
     const [, name = '', barsText] = body.trim().split(/\s+/);
     const bars = barsText?.match(/^(\d+)小節$/) ? Number(barsText.replace('小節', '')) : null;
-    rows.push({ start, name: name === SILENCE_LABEL ? '無音' : name, bars, memo: memo.trim(), chords: null, cut: false, arrange: null });
+    const pk = body.match(/[＋+](\d+(?:\.\d+)?)拍/);
+    rows.push({ start, name: name === SILENCE_LABEL ? '無音' : name, bars, pickup: pk ? Number(pk[1]) : null, memo: memo.trim(), chords: null, cut: false, arrange: null });
   }
   rows.sort((a, b) => a.start - b.start);
   const sections = rows.map((r, i) => ({ ...r, end: rows[i + 1]?.start ?? duration ?? r.start }));

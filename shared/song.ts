@@ -235,6 +235,26 @@ function indexAt(lines: number[], t: number): number {
   return lo + (t - lines[lo]) / (lines[hi] - lines[lo]);
 }
 
+// 最初の区間の始まりから、その後の最初の小節頭までの拍の数（小数）。イントロ前の1拍・1.5拍など（弱起）。
+// 半拍単位に丸めて 0 か1小節分になるとき（曲の頭が小節頭とほぼ同じ）は 0
+function leadBeats(song: Song, beats: number[]): number {
+  const first = song.sections[0];
+  if (!first || first.silence || song.firstDownbeat == null) return 0;
+  const n = Math.max(1, song.beatsPerBar);
+  const d = (((indexAt(beats, song.firstDownbeat) - indexAt(beats, first.start)) % n) + n) % n;
+  const half = Math.round(d * 2) / 2;
+  return half > 0 && half < n ? d : 0;
+}
+
+// 区間 sec が最初の区間で、最初の小節頭より前に拍があれば、その拍の数（半拍単位）。なければ null。
+// 小節数を手で直してその小節数で等分している区間は、小節頭を区間の始まりに置くので null
+export function pickupBeats(song: Song, sec: Section): number | null {
+  if (song.sections[0]?.id !== sec.id || sectionBpm(song, sec) != null) return null;
+  const beats = beatGrid(song);
+  const d = beats && beats.length >= 2 ? leadBeats(song, beats) : 0;
+  return d ? Math.round(d * 2) / 2 : null;
+}
+
 function timeAt(lines: number[], k: number): number {
   const last = lines.length - 1;
   if (k < 0) return lines[0] + k * (lines[1] - lines[0]);
@@ -273,14 +293,17 @@ export function wholeSong(song: Song, duration: number, fromFile = false): Song 
 // 推定小節数を再計算し、自動の名前を付け直す
 export function normalize(song: Song): Song {
   // 小節数は区間ごとに、その区間の始まりから拍を数えて求める（拍の数 ÷ 拍子）。
-  // 曲の頭から通しで数えると、最初の小節頭のずれや途中の2拍だけの小節が、後ろの区間すべてに持ち越されるため
+  // 曲の頭から通しで数えると、最初の小節頭のずれや途中の2拍だけの小節が、後ろの区間すべてに持ち越されるため。
+  // 最初の区間は、最初の小節頭より前の拍（弱起）を除いて数える（画面では「＋1.5拍」のように別に示す）
   const beats = beatGrid(song);
   const perBar = Math.max(1, song.beatsPerBar);
+  const lead = beats && beats.length >= 2 ? leadBeats(song, beats) : 0;
   const total = new Map<string, number>();
   for (const s of song.sections) if (s.group) total.set(s.group, (total.get(s.group) ?? 0) + 1);
   const seen = new Map<string, number>();
-  const sections = song.sections.map((s) => {
-    const barsEst = beats && !s.silence ? Math.max(0, Math.round((indexAt(beats, s.end) - indexAt(beats, s.start)) / perBar)) : null;
+  const sections = song.sections.map((s, i) => {
+    const count = beats && !s.silence ? indexAt(beats, s.end) - indexAt(beats, s.start) - (i === 0 ? lead : 0) : null;
+    const barsEst = count != null ? Math.max(0, Math.round(count / perBar)) : null;
     let name = s.name;
     if (s.nameAuto && !s.silence) {
       // 例：パートA（1回目）・パートA（2回目）。1回しか出てこなければ「パートA」

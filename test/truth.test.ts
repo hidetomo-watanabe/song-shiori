@@ -136,6 +136,14 @@ describe('コード譜のページ', () => {
 });
 
 describe('原曲との違いとキーのテキスト', () => {
+  it('最初の小節頭より前の拍（弱起）を「＋1.5拍」で書き出して読み込める', () => {
+    const text = '曲 / 歌手\nBPM 120・4/4\n\n0:00.0 イントロ 4小節 ＋1.5拍\n0:08.8 Aメロ 8小節\n';
+    const { song } = songFromText(text, undefined, 24.8);
+    expect(song.firstDownbeat).toBe(0.75);
+    expect(song.sections.map((s) => [s.barsEst, s.barsManual])).toEqual([[4, null], [8, null]]);
+    expect(songToText(song)).toContain('0:00.0 イントロ 4小節 ＋1.5拍\n0:08.8 Aメロ 8小節');
+  });
+
   it('カット・原曲と違う点・キーを書き出して読み込める', () => {
     const text = '曲 / 歌手\nBPM 120・4/4\nキー 原曲 Eb → -2\n\n0:00.0 イントロ 4小節\n  カット\n0:08.0 サビ 4小節\n  原曲と違う 2回繰り返す\n';
     const { song } = songFromText(text);

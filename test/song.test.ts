@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
+  applySuggestedNames, barPositionIn, pickupBeats, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -22,6 +22,19 @@ function sample(): Song {
 const invariant = (s: Song) => expect(validateSong(s)).toBeNull();
 
 describe('編集ルール', () => {
+  it('最初の小節頭より前の拍（弱起）は、最初の区間の小節数に含めず、拍の数で示す', () => {
+    // 120BPM・4/4（1拍0.5秒）。曲の頭に1.5拍、そのあとイントロ4小節（8秒）、Aメロ8小節
+    const s = normalize({ ...emptySong(24.75), bpmEst: 120, firstDownbeat: 0.75, sections: [newSection(0, 8.75), newSection(8.75, 24.75)] });
+    expect(s.sections.map((x) => x.barsEst)).toEqual([4, 8]);
+    expect(s.sections.map((x) => pickupBeats(s, x))).toEqual([1.5, null]);
+    // 曲の頭が小節頭とほぼ同じ（0.1拍のずれ）なら弱起なし
+    const t = normalize({ ...s, firstDownbeat: 0.05 });
+    expect(pickupBeats(t, t.sections[0])).toBeNull();
+    // 最初の小節頭を2小節あとに置いても、曲の頭のあとの最初の小節頭までの拍を数える
+    const u = normalize({ ...s, firstDownbeat: 4.75 });
+    expect([u.sections[0].barsEst, pickupBeats(u, u.sections[0])]).toEqual([4, 1.5]);
+  });
+
   it('推定小節数と自動の名前を付ける', () => {
     const s = sample();
     expect(s.sections.map((x) => x.barsEst)).toEqual([8, 16, 8, 16]);
