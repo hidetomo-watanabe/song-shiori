@@ -501,7 +501,39 @@ export function setGroup(song: Song, id: string, group: string | 'new' | null): 
 export function setTempo(song: Song, patch: Partial<Pick<Song, 'bpmManual' | 'beatsPerBar' | 'firstDownbeat'>>): Song {
   const s = { ...song, ...patch };
   if ('firstDownbeat' in patch) s.firstDownbeatManual = patch.firstDownbeat != null;
+  // 最初の小節頭だけを直したときは、小節の線に乗っていた区切りも小節の線と一緒に動かす
+  // （解析が小節頭を2拍取り違えると、区切りもすべて2拍ずれているため）
+  if (Object.keys(patch).length === 1 && patch.firstDownbeat != null && song.firstDownbeat != null) {
+    s.sections = followBarLines(song, patch.firstDownbeat);
+  }
   return normalize(s);
+}
+
+// 最初の小節頭を to に動かしたとき、小節の線に乗っていた区切り（0.25拍以内）を、線と同じ拍数だけ動かした区切りの列。
+// 動かす拍数は1小節未満にし、向きは最初の小節頭を動かした向きにそろえる（半小節ずらしたときに、どちらへ動かすかを決めるため）。
+// 最初の区間の始まり（曲の頭）は動かさない。動かすと区間が短くなりすぎる区切りはそのまま
+function followBarLines(song: Song, to: number): Section[] {
+  const beats = beatGrid(song), secs = song.sections;
+  if (!beats || beats.length < 2 || song.firstDownbeat == null || manualTempoSections(song).length) return secs;
+  const per = Math.max(1, song.beatsPerBar);
+  const from = indexAt(beats, song.firstDownbeat);
+  let move = indexAt(beats, to) - from;
+  if (usesDetectedBeats(song)) move = Math.round(move); // 解析で見つけた拍を使うときは、小節頭はいちばん近い拍になる
+  move = Math.sign(move) * (Math.abs(move) % per);
+  if (Math.abs(move) < 0.25 || per - Math.abs(move) < 0.25) return secs;
+  const onBar = (t: number) => {
+    const d = (((indexAt(beats, t) - from) % per) + per) % per;
+    return d < 0.25 || per - d < 0.25;
+  };
+  const next = secs.map((x) => ({ ...x }));
+  for (let i = 1; i < next.length; i++) {
+    if (!onBar(secs[i].start)) continue;
+    const at = round3(timeAtIndex(beats, indexAt(beats, secs[i].start) + move));
+    if (at - next[i - 1].start < MIN_SECTION || next[i].end - at < MIN_SECTION) continue;
+    next[i - 1].end = at;
+    next[i] = { ...next[i], start: at, edited: true };
+  }
+  return next;
 }
 
 // 区間名の候補（イントロ前・イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ）を推定する。確定ではなく候補として示す。

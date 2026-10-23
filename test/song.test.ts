@@ -35,6 +35,20 @@ describe('編集ルール', () => {
     expect([u.sections[0].barsEst, pickupBeats(u, u.sections[0])]).toEqual([4, 1.5]);
   });
 
+  it('最初の小節頭を直すと、小節の線に乗っていた区切りも同じ拍数だけ動く', () => {
+    // 120BPM・4/4。解析が小節頭を2拍早く取り違え（0.0秒。本当は 1.0秒）、区切りも 8秒・24秒（本当は 9秒・25秒）
+    const s = normalize({ ...emptySong(40), bpmEst: 120, firstDownbeat: 0, sections: [newSection(0, 8), newSection(8, 24), newSection(24, 30.5), newSection(30.5, 40)] });
+    const t = setTempo(s, { firstDownbeat: 1 });
+    // 小節の線に乗っていない区切り（30.5秒）は動かさない。曲の頭も動かさない
+    expect(t.sections.map((x) => x.start)).toEqual([0, 9, 25, 30.5]);
+    expect(t.sections.map((x) => x.edited)).toEqual([false, true, true, false]);
+    // 小節頭を2拍前へ直したときは、区切りも前へ動く。1小節ちょうど動かしたときは区切りは動かない
+    expect(setTempo(s, { firstDownbeat: -1 }).sections.map((x) => x.start)).toEqual([0, 7, 23, 30.5]);
+    expect(setTempo(s, { firstDownbeat: 2 }).sections.map((x) => x.start)).toEqual([0, 8, 24, 30.5]);
+    // BPM と一緒に変えたとき（タップ）は区切りを動かさない
+    expect(setTempo(s, { bpmManual: 121, firstDownbeat: 1 }).sections.map((x) => x.start)).toEqual([0, 8, 24, 30.5]);
+  });
+
   it('前の拍を手で直すと、小節の線を動かさずに曲の頭を動かす（音源ファイル・YouTube のずれも同じだけ動かす）', () => {
     // 曲の頭が本当より半拍早く、前の拍が2拍に見えている（音源ファイルの 2.0秒が曲の頭、最初の小節頭は 3.0秒）
     const s = normalize({ ...emptySong(25), bpmEst: 120, firstDownbeat: 1, audio: { offset: 2, duration: 40 }, youtube: 'abcdefghijk', youtubeOffset: 1, sections: [newSection(0, 9), newSection(9, 25)] });
@@ -214,7 +228,7 @@ describe('編集ルール', () => {
   });
 
   it('小節の頭へのスナップと、区間の先頭から n 小節の位置', () => {
-    const s = setTempo(sample(), { firstDownbeat: 0.5 }); // 1小節2秒、小節の頭は 0.5, 2.5, 4.5 …
+    const s = normalize({ ...sample(), firstDownbeat: 0.5 }); // 1小節2秒、小節の頭は 0.5, 2.5, 4.5 …（区切りは小節の線に乗せない）
     expect(snapToBar(s, 17.2)).toBeCloseTo(16.5);
     expect(barPositionIn(s, s.sections[1], 4)).toBeCloseTo(24); // 区間B（16秒〜）の始まりから4小節
     const t = barPositionIn(s, s.sections[1], 4)!;
