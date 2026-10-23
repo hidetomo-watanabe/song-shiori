@@ -37,8 +37,10 @@ type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: '
 const player = new Player();
 let playerFile = '';
 let yt: YouTubePlayer | null = null;
+// 音源ファイルがあっても YouTube の動画で再生するか（動画とのずれを確かめるとき）
+let videoFirst = false;
 // 再生に使うもの。音源ファイルを選んでいればそれを、なければ YouTube の動画を使う
-const media = (): Playback => (player.buffer || !yt ? player : yt);
+const media = (): Playback => ((player.buffer && !videoFirst) || !yt ? player : yt);
 const canPlay = () => !!player.buffer || !!yt;
 // メトロノームは再生と同じ AudioContext で鳴らし、再生中は曲の拍に合わせる
 const metronome = new Metronome(() => player.context(), () => {
@@ -78,6 +80,7 @@ export function Editor({ mode }: { mode: Mode }) {
   // YouTube の動画（song.youtube）。音源ファイルがないときの再生に使う
   const ytHost = useRef<HTMLDivElement>(null);
   const [ytReady, setYtReady] = useState(false);
+  const [useVideo, setUseVideoState] = useState(() => { videoFirst = false; return false; });
   const [ytError, setYtError] = useState('');
   const [ytInput, setYtInput] = useState('');
   const [now, setNow] = useState(0);
@@ -231,8 +234,20 @@ export function Editor({ mode }: { mode: Mode }) {
     setYtInput('');
     setYtError('');
     setAudioNote('');
-    edit((s) => ({ ...s, youtube: v, youtubeOffset: undefined }));
+    // 音源ファイルで作った構成なら、動画も音源ファイルと同じだけ曲頭に無音がある（動画の時刻 = 音源ファイルの時刻）として始める
+    edit((s) => ({ ...s, youtube: v, youtubeOffset: s.audio ? M.clampOffset(s.audio.offset) || undefined : undefined }));
     track('youtube_set');
+  }
+
+  // 音源ファイルと YouTube の動画のどちらで再生するかを切り替える。切り替える前の再生は止める
+  function setUseVideo(on: boolean) {
+    media().setLoop(null);
+    media().pause();
+    setLoopId(null);
+    videoFirst = on;
+    setUseVideoState(on);
+    setPlaying(false);
+    setNow(media().currentTime);
   }
 
   // 再生位置の表示
@@ -658,18 +673,23 @@ export function Editor({ mode }: { mode: Mode }) {
               onClick={() => void analyzeBuffer(player.buffer!, 'chords', M.bpmOf(song) ?? undefined)}>コードだけ推定する</button>
           )}
         </div>
-        {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
+        {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && !useVideo && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
         {!hasAudio && !videoId && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
         {videoId ? (
-          <div class={`yt${player.buffer ? ' muted' : ''}`}>
+          <div class={`yt${player.buffer && !useVideo ? ' muted' : ''}`}>
+            {/* 閲覧ページは動画で再生するので、音源ファイルがあっても動画で区間の位置を確かめられるようにする */}
+            {player.buffer && ytReady && (
+              <label class="check"><input type="checkbox" checked={useVideo} onChange={(e) => setUseVideo((e.currentTarget as HTMLInputElement).checked)} />
+                YouTube の動画で再生して、音源とのずれを確かめる（閲覧ページは動画で再生します）</label>
+            )}
             <div class="yt-frame"><div ref={ytHost} /></div>
             <p class="sub">
               YouTube の動画で再生します（自動生成には使えません）。動画は構成表と一緒に保存され、閲覧ページでも聴けます。
               <a href={M.youtubeUrl(videoId)} target="_blank" rel="noopener">YouTube で開く</a>
-              <button class="link" onClick={() => { setYtError(''); edit((s) => ({ ...s, youtube: null, youtubeOffset: undefined })); }}>動画を外す</button>
+              <button class="link" onClick={() => { setYtError(''); setUseVideo(false); edit((s) => ({ ...s, youtube: null, youtubeOffset: undefined })); }}>動画を外す</button>
             </p>
             {!ytReady && !ytError && <p class="sub">動画を読み込んでいます…</p>}
-            {ytReady && yt && !player.buffer && (
+            {ytReady && yt && (!player.buffer || useVideo) && (
               <YouTubeAlign song={song} videoDuration={yt.duration + yt.offset} videoTime={() => yt?.videoTime ?? 0}
                 onChange={(x) => edit((s) => ({ ...s, youtubeOffset: x || undefined }), { coalesce: 'youtube-offset' })} />
             )}
