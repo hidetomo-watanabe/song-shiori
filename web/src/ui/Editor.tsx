@@ -810,7 +810,8 @@ export function Editor({ mode }: { mode: Mode }) {
             </select>
           </label>
           <p class="sub">変えると小節数の数え方が変わります。</p>
-          {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM と最初の小節頭から等間隔に引いています。'}</p>}
+          {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM と最初の小節頭から等間隔に引いています。'}
+            曲の途中でテンポが変わる区間は、その区間の小節数を入れると、小節の線とメトロノームをその小節数に合わせます。</p>}
         </details>
       </section>
 
@@ -900,6 +901,7 @@ export function Editor({ mode }: { mode: Mode }) {
                       edit((x) => M.patchSection(x, s.id, { barsManual: raw === '' ? null : Math.max(0, Math.round(Number(raw))) }), { coalesce: `bars-${s.id}` });
                     }} />小節
                   <span class="sub">{s.barsManual != null ? '手動' : s.barsEst != null ? '推定' : ''}</span>
+                  {M.sectionBpm(song, s) != null && <span class="tag" title="小節数を推定と違う数にしたので、この区間の小節の線とメトロノームは、その小節数で区間を等分しています（曲の途中でテンポが変わる場合）">この区間 {M.sectionBpm(song, s)} BPM</span>}
                   {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
                 </label>
                 <div class="sec-actions">

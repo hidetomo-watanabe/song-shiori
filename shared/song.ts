@@ -177,7 +177,19 @@ function beatGrid(s: Song): number[] | null {
   return beats;
 }
 
-// 拍の位置の列と、それぞれが小節の頭か。最初の小節頭に最も近い拍から、拍子の数ごとに小節の頭にする
+// 小節数を手で推定と違う数に直した区間。曲の途中でテンポが変わる曲（夏の日の午後のイントロなど）では、
+// 曲のテンポで数えた小節数が合わないので、その区間の中は手で入れた小節数で等分した拍にする
+const manualTempoSections = (s: Song) =>
+  s.sections.filter((x) => !x.silence && x.barsManual != null && x.barsManual > 0 && x.barsEst != null && x.barsManual !== x.barsEst);
+
+// 区間のテンポ。小節数を手で推定と違う数に直した区間だけ、手の小節数から求める（それ以外は曲の BPM なので null）
+export function sectionBpm(s: Song, sec: Section): number | null {
+  if (!manualTempoSections(s).some((x) => x.id === sec.id) || sec.end <= sec.start) return null;
+  return Math.round(((sec.barsManual! * Math.max(1, s.beatsPerBar) * 60) / (sec.end - sec.start)) * 10) / 10;
+}
+
+// 拍の位置の列と、それぞれが小節の頭か。最初の小節頭に最も近い拍から、拍子の数ごとに小節の頭にする。
+// 小節数を手で直した区間の中は、その小節数で等分した拍に置き換える
 function beatsWithBars(s: Song): { t: number; head: boolean }[] | null {
   const beats = beatGrid(s);
   if (!beats || beats.length < 2) return null;
@@ -185,8 +197,20 @@ function beatsWithBars(s: Song): { t: number; head: boolean }[] | null {
   let phase = 0;
   for (let i = 1; i < beats.length; i++) if (Math.abs(beats[i] - origin) < Math.abs(beats[phase] - origin)) phase = i;
   const n = Math.max(1, s.beatsPerBar);
-  return beats.map((t, i) => ({ t, head: (((i - phase) % n) + n) % n === 0 }));
+  const out = beats.map((t, i) => ({ t, head: (((i - phase) % n) + n) % n === 0 }));
+  const manual = manualTempoSections(s);
+  if (!manual.length) return out;
+  const inside = (t: number) => manual.some((x) => t >= x.start - 0.05 && t < x.end - 0.05);
+  const res = out.filter((b) => !inside(b.t));
+  for (const x of manual) {
+    const k = x.barsManual! * n;
+    for (let i = 0; i < k; i++) res.push({ t: x.start + ((x.end - x.start) * i) / k, head: i % n === 0 });
+  }
+  return res.sort((a, b) => a.t - b.t);
 }
+
+// 拍の位置の列（秒）。小節数を手で直した区間の中は、その小節数で等分した拍
+const beatTimes = (s: Song) => beatsWithBars(s)?.map((b) => b.t) ?? null;
 
 // 小節の頭の位置の列（秒）
 export function barLines(s: Song): number[] | null {
@@ -299,8 +323,15 @@ export function splitAt(song: Song, t: number): Song {
   const second = newSection(t, cur.end, { edited: true, energy: cur.energy });
   const pair = (partner: string) => (total != null ? { partner, total, start: cur.start, end: cur.end } : null);
   second.split = pair(cur.id);
+  // 小節数を手で推定と違う数に直した区間（区間のテンポが曲と違う）は、手の小節数を分けて、それぞれのテンポを保つ
+  let firstBars: number | null = null;
+  if (manualTempoSections(song).some((x) => x.id === cur.id)) {
+    firstBars = Math.round((cur.barsManual! * (t - cur.start)) / (cur.end - cur.start));
+    if (firstBars > 0 && firstBars < cur.barsManual!) second.barsManual = cur.barsManual! - firstBars;
+    else firstBars = null;
+  }
   const next = song.sections.slice();
-  next.splice(i, 1, { ...cur, end: t, barsManual: null, edited: true, split: pair(second.id) }, second);
+  next.splice(i, 1, { ...cur, end: t, barsManual: firstBars, edited: true, split: pair(second.id) }, second);
   return update(song, next);
 }
 
@@ -558,7 +589,7 @@ export function tapTempo(taps: number[]): { bpm: number; first: number } | null 
 
 // 最も近い拍の位置を返す
 export function snapToBeat(song: Song, t: number): number {
-  const beats = beatGrid(song);
+  const beats = beatTimes(song);
   return beats ? timeAt(beats, Math.round(indexAt(beats, t))) : t;
 }
 
@@ -569,7 +600,7 @@ export function snapToBar(song: Song, t: number, anchor?: number): number {
     const lines = barLines(song);
     return lines ? timeAt(lines, Math.round(indexAt(lines, t))) : t;
   }
-  const beats = beatGrid(song);
+  const beats = beatTimes(song);
   if (!beats) return t;
   const perBar = Math.max(1, song.beatsPerBar);
   const k0 = Math.round(indexAt(beats, anchor));
@@ -578,7 +609,7 @@ export function snapToBar(song: Song, t: number, anchor?: number): number {
 
 // 区間の先頭から n 小節の位置（区間の始まりから拍を数える）。小節が未確定なら null
 export function barPositionIn(song: Song, sec: Section, n: number): number | null {
-  const beats = beatGrid(song);
+  const beats = beatTimes(song);
   return beats ? timeAt(beats, Math.round(indexAt(beats, sec.start)) + n * Math.max(1, song.beatsPerBar)) : null;
 }
 

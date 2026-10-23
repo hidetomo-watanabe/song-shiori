@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
+  applySuggestedNames, barPositionIn, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -207,6 +207,30 @@ describe('編集ルール', () => {
     // 最初の小節頭がずれていても、区間の小節数は変わらない
     s = setTempo(s, { firstDownbeat: 1 });
     expect(s.sections.map((x) => x.barsEst)).toEqual([8, 1, 8, 1]);
+  });
+
+  it('小節数を手で推定と違う数に直した区間は、その小節数で等分した拍・小節の線にする（途中でテンポが変わる曲）', () => {
+    // 曲は 120BPM（1小節2秒）。0〜24秒のイントロだけ 160BPM（1小節1.5秒）で、16小節ある
+    const beats = Array.from({ length: 120 }, (_, i) => i * 0.5);
+    let s = normalize({ ...emptySong(56), bpmEst: 120, beats, firstDownbeat: 0, sections: [newSection(0, 24), newSection(24, 56)] });
+    expect(s.sections.map((x) => x.barsEst)).toEqual([12, 16]);
+    s = patchSection(s, s.sections[0].id, { barsManual: 16 });
+    expect(sectionBpm(s, s.sections[0])).toBe(160);
+    expect(sectionBpm(s, s.sections[1])).toBeNull();
+    const lines = barLines(s)!;
+    expect(lines.filter((t) => t >= 0 && t < 24)).toHaveLength(16);
+    expect(lines.filter((t) => t >= 24 && t < 56)).toHaveLength(16);
+    expect(beatClicks(s)!.filter((b) => b.t < 24 - 0.05).map((b) => b.t).slice(0, 3)).toEqual([0, 0.375, 0.75]);
+    expect(barPositionIn(s, s.sections[0], 4)).toBeCloseTo(6);
+    expect(snapToBar(s, 6.4, 0)).toBeCloseTo(6);
+    expect(s.sections[0].barsEst).toBe(12); // 推定は曲の拍のまま
+    // 分けても、手の小節数を分けてそれぞれのテンポを保つ
+    const split = splitAt(s, 6);
+    expect(split.sections.slice(0, 2).map((x) => x.barsManual)).toEqual([4, 12]);
+    expect(split.sections.slice(0, 2).map((x) => sectionBpm(split, x))).toEqual([160, 160]);
+    // 推定と同じ数を入れたときは、今までどおり曲の拍を使う
+    const same = patchSection(s, s.sections[0].id, { barsManual: 12 });
+    expect(sectionBpm(same, same.sections[0])).toBeNull();
   });
 
   it('区間名の候補：イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ', () => {
