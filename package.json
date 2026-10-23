@@ -13,6 +13,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261019.1",
     "@preact/preset-vite": "^2.10.6",
+    "onnxruntime-web": "^1.30.0",
     "preact": "^11.0.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",

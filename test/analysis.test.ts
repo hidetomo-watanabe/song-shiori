@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { analyze } from '../web/src/analysis/core';
+import { vocalCurve, vocalShare, VOCAL_SR } from '../web/src/analysis/vocal';
 import { songFromAnalysis } from '../shared/song';
 
 // 合成音源：120BPM・4/4（1小節2秒）。曲頭に無音3秒、各8小節で A-B-A-C-A、曲末に無音4秒
@@ -84,5 +85,24 @@ describe('コードの推定', () => {
     // A=C、B=F、A=C、C=G、A=C の順（曲頭の無音には拍がないので、最初のコードは音の始まりから）
     expect(r.chords!.map((c) => c.chord)).toEqual(['C', 'F', 'C', 'G', 'C']);
     expect(r.chords!.map((c) => Math.round(c.t))).toEqual([3, 19, 35, 51, 67]);
+  });
+});
+
+describe('歌の割合', () => {
+  it('モデルの出した歌の振幅から、時刻ごとの歌の割合を求め、区間に付ける', async () => {
+    // 44.1kHz ステレオ・20秒。前半10秒だけ「歌」とし、モデルの代わりに、前半は振幅の半分（エネルギー 1/4）・後半は 0 を返す
+    const sr = VOCAL_SR, n = 20 * sr;
+    const l = Float32Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * 440 * i) / sr) * 0.5), r = l.slice();
+    let chunk = 0;
+    const curve = await vocalCurve(l, r, async (x) => {
+      const fps = sr / 1024, start = chunk++ * 512;
+      return x.map((v, k) => (start + Math.floor((k % (512 * 1024)) / 1024) < 10 * fps ? v / 2 : 0));
+    });
+    expect(vocalShare(curve, 1, 9)).toBeCloseTo(0.25, 2);
+    expect(vocalShare(curve, 11, 19)).toBe(0);
+    // 解析に渡すと、区間ごとの歌の割合になる（歌の割合が分からない時刻だけの区間には付けない）
+    const res = analyze(synth(), 22050, undefined, { vocals: curve });
+    expect(res.segments[0].vocal).toBeGreaterThan(0);
+    expect(res.segments[res.segments.length - 1].vocal).toBeUndefined();
   });
 });

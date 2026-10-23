@@ -5,6 +5,7 @@
 
 - 画面：Vite + Preact + TypeScript（`web/`）。GitHub Pages で公開する想定
 - 自動解析：ブラウザ内の Web Worker（`web/src/analysis/`）。音源はサーバーへ送らない
+  - 歌の有無：Spleeter（Deezer、MIT）の歌のモデル（`web/public/models/`、約20MB）を onnxruntime-web で動かし、区間ごとの歌の割合を名前の候補に使う。モデルは自動解析のときだけ読み込む。出どころとライセンスは `web/public/models/LICENSE-spleeter.txt`
 - YouTube の動画：埋め込みプレーヤー（IFrame Player API、`web/src/audio/youtube.ts`）で再生だけに使う。音は取り出せないため自動解析には使わない。閲覧ページでは開いたときに動画を表示する（プライバシー強化モード）
 - API：Cloudflare Workers + D1（`worker/`、`migrations/`）
 - 構成データと編集ルール・差分計算：`shared/`（画面と API で共用）

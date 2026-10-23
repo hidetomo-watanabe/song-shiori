@@ -1,13 +1,16 @@
 // 検証音源フォルダの全曲を自動解析し、正解ファイル（曲名.txt。曲のしおりの「テキストで保存」の形式）と比べる（要件定義書 14章）。
 //   node scripts/evaluate.ts [検証音源フォルダ] [--phrase 4] [--threshold 0.4]
 //   --phrase / --threshold は、区切りを選ぶ小節の単位としきい値を試すためのもの（既定は画面と同じ）
+//   --novocal：歌の割合の推定（学習済みモデル）を使わない
 // 音源の読み込みには Python の librosa を使う（変換結果は一時フォルダにキャッシュする）。
 // 正解ファイルの BPM がある場合は、ネット上の BPM の代わりに倍・半分の判定に使った結果も示す（画面と同じ動き）。
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
+import * as ort from 'onnxruntime-web';
 import { analyze, ANALYSIS_SR } from '../web/src/analysis/core.ts';
+import { vocalCurve, VOCAL_SR, type VocalCurve } from '../web/src/analysis/vocal.ts';
 import { chordAt, octaveByReference, shiftSong, songFromAnalysis, suggestNames, type Song } from '../shared/song.ts';
 import { parseTruth, type Truth } from '../shared/truth.ts';
 
@@ -16,6 +19,8 @@ const opt = (name: string) => { const i = args.indexOf(`--${name}`); return i >=
 const rep = { quantile: opt('rq'), minRun: opt('rrun'), minLag: opt('rlag'), novFloor: opt('rfloor'), minGap: opt('rgap') };
 const tuning = { phrase: opt('phrase'), phraseThreshold: opt('threshold'), minGap: opt('mingap'), repetition: args.includes('--norep') ? false as const : rep };
 if (args.includes('--norep')) args.splice(args.indexOf('--norep'), 1);
+const useVocal = !args.includes('--novocal');
+if (!useVocal) args.splice(args.indexOf('--novocal'), 1);
 const folder = args[0] ?? join(import.meta.dirname, '../../../whathides/曲のしおり/検証音源');
 const cacheDir = join(tmpdir(), 'song-shiori-eval');
 mkdirSync(cacheDir, { recursive: true });
@@ -23,15 +28,26 @@ const TOLERANCE = 2; // 区切りの一致とみなす幅（秒）
 // 名前の候補を採点する区間名。正解ファイルにこれ以外の名前（「無音」など）がある区間は数えない
 const LABELS = ['イントロ前', 'イントロ', 'Aメロ', 'Bメロ', 'Cメロ', 'サビ', '間奏', 'ソロ', 'ブレイク', 'アウトロ'];
 
-function decode(file: string): Float32Array {
-  const cache = join(cacheDir, `${basename(file)}.${statSync(file).mtimeMs}.f32`);
+// mono でなければ左右を [左…, 右…] の順に並べて返す（モノラルの音源は左右に同じものを入れる）
+function decode(file: string, sr = ANALYSIS_SR, mono = true): Float32Array {
+  const cache = join(cacheDir, `${basename(file)}.${statSync(file).mtimeMs}${mono ? '' : `.${sr}.stereo`}.f32`);
   if (!existsSync(cache)) {
     execFileSync('python3', ['-c', `import sys, librosa, numpy
-y, _ = librosa.load(sys.argv[1], sr=${ANALYSIS_SR}, mono=True)
+y, _ = librosa.load(sys.argv[1], sr=${sr}, mono=${mono ? 'True' : 'False'})
+${mono ? '' : 'y = numpy.stack([y, y]) if y.ndim == 1 else y[:2]'}
 y.astype(numpy.float32).tofile(sys.argv[2])`, file, cache], { stdio: ['ignore', 'ignore', 'ignore'] });
   }
   const b = readFileSync(cache);
   return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+}
+
+// 画面と同じ歌のモデル（web/public/models）で、歌の割合を求める
+let session: ort.InferenceSession | null = null;
+async function vocals(file: string): Promise<VocalCurve> {
+  ort.env.wasm.numThreads = 1;
+  session ??= await ort.InferenceSession.create(join(import.meta.dirname, '../web/public/models/spleeter-vocals.fp16.onnx'));
+  const st = decode(file, VOCAL_SR, false), n = st.length / 2;
+  return vocalCurve(st.subarray(0, n), st.subarray(n), async (x) => (await session!.run({ x: new ort.Tensor('float32', x, [2, 1, 512, 1024]) })).y.data as Float32Array);
 }
 
 const fmt = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
@@ -125,11 +141,12 @@ for (const f of files) {
   const truthFile = join(folder, truthName ?? `${name}.txt`);
   const truth = existsSync(truthFile) ? parseTruth(readFileSync(truthFile, 'utf8')) : null;
   const y = decode(join(folder, f));
-  let song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, tuning));
+  const v = useVocal ? await vocals(join(folder, f)) : undefined;
+  let song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, { ...tuning, vocals: v }));
   const raw = song.bpmEst;
   // 画面と同じく、参考の BPM（ここでは正解の BPM）から倍・半分を判定して作り直す
   const f2 = truth?.bpm && raw ? octaveByReference(raw, truth.bpm) : null;
-  if (f2 === 2 || f2 === 0.5) song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, { ...tuning, bpm: Math.round(raw! * f2 * 10) / 10 }));
+  if (f2 === 2 || f2 === 0.5) song = songFromAnalysis(analyze(y, ANALYSIS_SR, undefined, { ...tuning, vocals: v, bpm: Math.round(raw! * f2 * 10) / 10 }));
   const parts = song.sections;
   console.log(`\n■ ${name}`);
   console.log(`  推定 BPM ${raw}${f2 === 2 || f2 === 0.5 ? ` → 参考の BPM で ${song.bpmEst} に修正` : ''} / 区間 ${parts.length} / 最長 ${Math.max(...parts.map((s) => s.barsEst ?? 0))}小節`);

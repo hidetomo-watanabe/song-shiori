@@ -4,7 +4,8 @@ import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
 import { DEFAULT_VOLUME, Metronome } from '../audio/metronome';
 import { YouTubePlayer, type Playback } from '../audio/youtube';
-import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/run';
+import { runAnalysis, toAnalysisSamples, toVocalInput, type AnalysisJob } from '../analysis/run';
+import type { VocalCurve } from '../analysis/vocal';
 import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
@@ -94,6 +95,7 @@ export function Editor({ mode }: { mode: Mode }) {
   // 解析
   const [progress, setProgress] = useState<{ ratio: number; stage: string } | null>(null);
   const job = useRef<AnalysisJob | null>(null);
+  const vocalCurves = useRef(new WeakMap<AudioBuffer, VocalCurve>()); // 音源ごとの歌の割合（やり直しで求め直さない）
   const [analysisError, setAnalysisError] = useState('');
   const [proposal, setProposal] = useState<AnalysisResult | null>(null);
   const [notice, setNotice] = useState('');
@@ -337,9 +339,13 @@ export function Editor({ mode }: { mode: Mode }) {
     setProgress({ ratio: 0, stage: '解析の準備をしています' });
     try {
       const samples = await toAnalysisSamples(buf);
-      const j = runAnalysis(samples, (ratio, stage) => setProgress({ ratio, stage }), bpm);
+      // 歌の割合は音源ごとに1度だけ求め、やり直し（BPM を変えたときなど）では前の結果を使う。コードだけのときは求めない
+      const known = vocalCurves.current.get(buf);
+      const vocals = how === 'chords' ? undefined : known ? { curve: known } : await toVocalInput(buf);
+      const j = runAnalysis(samples, (ratio, stage) => setProgress({ ratio, stage }), bpm, vocals);
       job.current = j;
-      const { result, ms } = await j.promise;
+      const { result, ms, vocals: curve } = await j.promise;
+      if (curve) vocalCurves.current.set(buf, curve);
       track('analysis_ok', { durationMs: Math.round(ms), audioSec: buf.duration });
       if (how === 'chords') {
         edit((s) => M.adoptChords(s, result));
@@ -823,7 +829,7 @@ export function Editor({ mode }: { mode: Mode }) {
         <div class="sections-tools">
           {hasAudio && <button class="small" disabled={!song.sections.some((s) => now > s.start + M.MIN_SECTION && now < s.end - M.MIN_SECTION)} onClick={() => edit((s) => M.splitAt(s, snapT(now, containingStart(s, now))))}>再生位置で分割</button>}
           {!hasAudio && <button class="small" onClick={() => edit((s) => M.appendSection(s))}>末尾に区間を追加</button>}
-          {hintCount > 0 && <button class="small" title="繰り返し・並び・音量から推定した候補です。聴いて確かめてください"
+          {hintCount > 0 && <button class="small" title="繰り返し・並び・音量・歌の有無から推定した候補です。聴いて確かめてください"
             onClick={() => { edit((s) => M.applySuggestedNames(s)); setNotice('名前の候補を付けました。推定なので、聴いて確かめてください（「元に戻す」で取り消せます）。'); }}>名前の候補をまとめて付ける</button>}
           {song.analysis?.segments.length ? <button class="small" onClick={() => setConfirmReset(true)}>自動解析の結果に戻す</button> : null}
           <span class="spacer" />
@@ -844,7 +850,7 @@ export function Editor({ mode }: { mode: Mode }) {
           </div>
         )}
         {song.sections.some((s) => s.nameAuto && s.group && song.groupNames?.[s.group] === suggested[s.id]) && (
-          <p class="sub">イントロ・Aメロ・サビなどの名前は、繰り返し・並び・音量から推定して付けています。聴いて確かめて、違っていたら直してください。</p>
+          <p class="sub">イントロ・Aメロ・サビなどの名前は、繰り返し・並び・音量・歌の有無から推定して付けています。聴いて確かめて、違っていたら直してください。</p>
         )}
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
         <ol class="section-list">
@@ -861,7 +867,7 @@ export function Editor({ mode }: { mode: Mode }) {
                 <input class="name" value={s.name} maxLength={200} aria-label={`区間${i + 1}の名前`}
                   onInput={(e) => edit((x) => M.patchSection(x, s.id, { name: (e.currentTarget as HTMLInputElement).value }), { coalesce: `name-${s.id}` })} />
                 {hintFor(s) && (
-                  <button class="small hint" title="繰り返し・並び・音量から推定した候補です"
+                  <button class="small hint" title="繰り返し・並び・音量・歌の有無から推定した候補です"
                     onClick={() => edit((x) => M.patchSection(x, s.id, { name: hintFor(s)! }))}>候補：{hintFor(s)}</button>
                 )}
                 <select class="name-preset" aria-label="名前の候補から選ぶ" value="" onChange={(e) => {

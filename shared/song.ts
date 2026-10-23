@@ -15,6 +15,7 @@ export type Section = {
   edited: boolean; // 手動修正済み
   silence?: boolean; // 曲頭・曲末の無音（以前の形式）。今は作らず、読み込むときに trimSilence で取り除く
   energy?: number; // 解析で測った音量（dB）。名前の候補の推定に使う
+  vocal?: number; // 解析で測った歌の割合（0〜1。歌の音の大きさ ÷ 全体）。名前の候補の推定に使う
   // 手で入れたコード進行（1行。小節の区切りは |）。null なら繰り返しの1回目に入れたもの、なければ推定を使う。原曲のキーで書く
   chords?: string | null;
   // 原曲との違い（カバーで演奏するときの変更）。cut：この区間は演奏しない。arrange：違う点の短いメモ（例：2回繰り返す）
@@ -69,7 +70,7 @@ export type AnalysisSnapshot = {
   bpm: number | null;
   firstDownbeat: number | null;
   beatsUncertain: boolean;
-  segments: { start: number; end: number; group: string; energy?: number }[];
+  segments: { start: number; end: number; group: string; energy?: number; vocal?: number }[];
   leadingSilence?: number; // 曲頭の無音（秒）
   trailingSilence?: number; // 曲末の無音（秒）
 };
@@ -322,7 +323,7 @@ export function splitAt(song: Song, t: number): Song {
   const cur = song.sections[i];
   const total = cur.barsManual ?? cur.barsEst;
   const name = !cur.nameAuto ? cur.name.trim() : cur.group ? song.groupNames?.[cur.group] ?? '' : '';
-  const second = newSection(t, cur.end, { edited: true, energy: cur.energy, ...(name ? { name, nameAuto: false } : {}) });
+  const second = newSection(t, cur.end, { edited: true, energy: cur.energy, vocal: cur.vocal, ...(name ? { name, nameAuto: false } : {}) });
   const pair = (partner: string) => (total != null ? { partner, total, start: cur.start, end: cur.end } : null);
   second.split = pair(cur.id);
   // 小節数を手で推定と違う数に直した区間（区間のテンポが曲と違う）は、手の小節数を分けて、それぞれのテンポを保つ
@@ -363,6 +364,9 @@ function combine(song: Song, keep: number, drop: number): Song {
     energy: a.energy != null && b.energy != null
       ? Math.round(((a.energy * (a.end - a.start) + b.energy * (b.end - b.start)) / (Math.max(a.end, b.end) - Math.min(a.start, b.start))) * 10) / 10
       : a.energy ?? b.energy,
+    vocal: a.vocal != null && b.vocal != null
+      ? Math.round(((a.vocal * (a.end - a.start) + b.vocal * (b.end - b.start)) / (Math.max(a.end, b.end) - Math.min(a.start, b.start))) * 1000) / 1000
+      : a.vocal ?? b.vocal,
   };
   const next = song.sections.slice();
   next.splice(Math.min(keep, drop), 2, merged);
@@ -443,7 +447,8 @@ export function setTempo(song: Song, patch: Partial<Pick<Song, 'bpmManual' | 'be
 }
 
 // 区間名の候補（イントロ前・イントロ・Aメロ・Bメロ・サビ・間奏・アウトロ）を推定する。確定ではなく候補として示す。
-// 手がかりは、繰り返し（同じ記号）、並び、音量。歌の有無は分からないため、ソロと歌のパートは区別しない。
+// 手がかりは、繰り返し（同じ記号）、並び、音量、歌の割合（解析で推定できたとき）。
+// 歌の割合がないとき（以前の解析・推定できなかったとき）は、ソロと歌のパートを区別しない。
 // 戻り値：区間ID → 候補名（無音・候補なしの区間は含まない）
 export function suggestNames(song: Song): Record<string, string> {
   const secs = song.sections.filter((s) => !s.silence);
@@ -457,9 +462,19 @@ export function suggestNames(song: Song): Record<string, string> {
     if (s.energy != null) g.energy.push(s.energy);
     groups.set(s.group, g);
   });
-  const repeated = [...groups.entries()].filter(([, g]) => g.idx.length >= 2);
-  if (!repeated.length) return out;
   const avg = (xs: number[]) => (xs.length ? xs.reduce((p, x) => p + x, 0) / xs.length : NaN);
+  // 歌のある区間：歌の割合が、曲の中の上位4分の1の区間の値（その曲の歌の大きさの目安）の 0.3 倍以上。
+  // 歌の割合の大きさは曲によって違う（0.08〜0.5）ので、曲の中で比べる。全区間に歌の割合があるときだけ使う
+  const vocals = secs.map((s) => s.vocal);
+  const ref = vocals.every((v) => v != null) ? vocals.map((v) => v!).sort((a, b) => a - b)[Math.floor(secs.length * 0.75)] : 0;
+  const sing = (i: number) => !ref || secs[i].vocal! >= ref * 0.3;
+  // サビ・Aメロ・Bメロを決めるときは、繰り返しのうち歌のある回だけを見る（イントロや間奏でサビの伴奏だけが鳴る回を除く）
+  const sung = new Map([...groups].map(([k, g]) => {
+    const idx = g.idx.filter(sing);
+    return [k, { idx, energy: idx.map((i) => secs[i].energy).filter((e): e is number => e != null) }];
+  }));
+  const repeated = [...sung.entries()].filter(([, g]) => g.idx.length >= 2);
+  if (!repeated.length) return out;
   const all = secs.map((s) => s.energy).filter((e): e is number => e != null);
   const mean = avg(all), sd = Math.sqrt(avg(all.map((e) => (e - mean) ** 2))) || 1;
   const bars = (i: number) => secs[i].barsManual ?? secs[i].barsEst ?? 0;
@@ -493,7 +508,7 @@ export function suggestNames(song: Song): Record<string, string> {
   // （サビが 12小節＋4小節 のように分かれる場合。夏の日の午後）
   const chorusLen = avg(cg.idx.map(bars));
   const tails = new Set(melodies.filter(([g, x]) => g !== chorus && x.idx.every((i) => i > 0 && secs[i - 1].group === chorus) && avg(x.idx.map(bars)) < chorusLen).map(([g]) => g));
-  for (const g of tails) for (const i of groups.get(g)!.idx) name(i, 'サビ');
+  for (const g of tails) for (const i of sung.get(g)!.idx) name(i, 'サビ');
   // Aメロ：イントロの後、最初に出てくる繰り返しのパート。Bメロ：Aメロとサビの間によく出てくる繰り返しのパート
   const others = melodies.filter(([g]) => g !== chorus && !tails.has(g)).sort((a, b) => a[1].idx[0] - b[1].idx[0]);
   const verse = others.find(([, g]) => g.idx[0] < cg.idx[0]) ?? null;
@@ -505,14 +520,27 @@ export function suggestNames(song: Song): Record<string, string> {
       if (ci == null) continue;
       for (let i = vi + 1; i < ci; i++) {
         const g = secs[i].group;
-        if (g && g !== chorus && g !== verse[0] && !introGroups.has(g) && (groups.get(g)?.idx.length ?? 0) >= 2) between.set(g, (between.get(g) ?? 0) + 1);
+        if (g && g !== chorus && g !== verse[0] && !introGroups.has(g) && (sung.get(g)?.idx.length ?? 0) >= 2) between.set(g, (between.get(g) ?? 0) + 1);
       }
     }
     const pre = [...between.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (pre) for (const i of groups.get(pre[0])!.idx) if (!out[secs[i].id]) name(i, 'Bメロ');
+    if (pre) for (const i of sung.get(pre[0])!.idx) if (!out[secs[i].id]) name(i, 'Bメロ');
   }
   // 間奏：曲の途中の、繰り返さないパート
   for (let i = firstRepeat; i <= lastChorus; i++) if (!out[secs[i].id] && once(i)) name(i, '間奏');
+  // 歌のない区間（イントロ前を除く）は、場所で イントロ・間奏・アウトロ にする。
+  // ギターソロや、サビの伴奏だけが鳴る回（イントロ・間奏）を、サビ・Aメロにしない
+  if (ref) {
+    const singing = secs.map((_, i) => i >= head && sing(i));
+    const first = singing.indexOf(true), last = singing.lastIndexOf(true);
+    if (first >= 0) for (let i = head; i < secs.length; i++) if (!sing(i)) name(i, i < first ? 'イントロ' : i > last ? 'アウトロ' : '間奏');
+    // 歌があるのに、繰り返さないためにイントロ・間奏などになった区間は、2回目のサビより前なら Aメロ、後なら Cメロ
+    const second = cg.idx[1] ?? Infinity;
+    for (let i = head; i < secs.length; i++) {
+      const n = out[secs[i].id];
+      if (sing(i) && (!n || n === 'イントロ' || n === '間奏' || n === 'アウトロ')) name(i, i < second ? 'Aメロ' : 'Cメロ');
+    }
+  }
   return out;
 }
 
@@ -623,7 +651,7 @@ export type AnalysisResult = {
   beats: number[];
   firstDownbeat: number | null;
   beatsUncertain: boolean;
-  segments: { start: number; end: number; group: string; energy?: number }[];
+  segments: { start: number; end: number; group: string; energy?: number; vocal?: number }[];
   leadingSilence?: number; // 曲頭の無音（秒）。0 なら無音なし
   trailingSilence?: number; // 曲末の無音（秒）。0 なら無音なし
   chords?: ChordChange[]; // 推定したコードの変わり目（音源ファイルの秒）。N は和音なし
@@ -638,7 +666,7 @@ function songTimes(a: Pick<AnalysisSnapshot, 'duration' | 'segments' | 'leadingS
   const last = segs[segs.length - 1];
   const cut = last.end - (a.trailingSilence ?? 0);
   const end = (a.trailingSilence ?? 0) > 0 && cut - Math.max(last.start, lead) > MIN_SECTION ? cut : last.end;
-  const sections = segs.map((g, i) => newSection(round3((i === 0 ? lead : g.start) - lead), round3((i === segs.length - 1 ? end : g.end) - lead), { group: g.group, energy: g.energy }));
+  const sections = segs.map((g, i) => newSection(round3((i === 0 ? lead : g.start) - lead), round3((i === segs.length - 1 ? end : g.end) - lead), { group: g.group, energy: g.energy, vocal: g.vocal }));
   return { lead, duration: sections[sections.length - 1].end, sections };
 }
 
@@ -675,7 +703,7 @@ const chordsOf = (r: AnalysisResult, off: number): ChordChange[] | null =>
 
 const snapshotOf = (r: AnalysisResult): AnalysisSnapshot => ({
   duration: r.duration, bpm: r.bpm, firstDownbeat: r.firstDownbeat, beatsUncertain: r.beatsUncertain,
-  segments: r.segments.slice(0, LIMITS.sections).map(({ start, end, group, energy }) => ({ start, end, group, energy })),
+  segments: r.segments.slice(0, LIMITS.sections).map(({ start, end, group, energy, vocal }) => ({ start, end, group, energy, vocal })),
   leadingSilence: r.leadingSilence ?? 0,
   trailingSilence: r.trailingSilence ?? 0,
 });

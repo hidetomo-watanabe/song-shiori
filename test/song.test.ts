@@ -516,6 +516,21 @@ describe('区間名の候補：イントロの素材', () => {
     expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ前', 'イントロ前', 'イントロ', 'Aメロ', 'サビ', 'Aメロ', 'サビ', 'アウトロ']);
   });
 
+  it('歌の割合があれば、歌のない回をサビ・Aメロにせず、歌のある1回だけの区間を Aメロ・Cメロにする', () => {
+    // サビの伴奏だけが鳴る間奏（C の2回目・歌なし）と、2回目のサビの後に1回だけ出てくる歌（N）がある
+    const plan: [string, number, number, number][] = [
+      ['X', 8, -22, 0], ['A', 16, -20, 0.2], ['C', 16, -15, 0.3], ['C', 16, -15, 0.01], ['A', 16, -20, 0.2], ['C', 16, -15, 0.3],
+      ['N', 8, -18, 0.25], ['C', 16, -15, 0.3], ['Z', 8, -23, 0]];
+    let t = 0;
+    const sections = plan.map(([g, bars, e, v]) => { const s = newSection(t, t + bars * 2, { group: g, energy: e, vocal: v }); t += bars * 2; return s; });
+    const song = normalize({ ...emptySong(t), bpmEst: 120, firstDownbeat: 0, sections });
+    const names = suggestNames(song);
+    expect(song.sections.map((s) => names[s.id])).toEqual(['イントロ', 'Aメロ', 'サビ', '間奏', 'Aメロ', 'サビ', 'Cメロ', 'サビ', 'アウトロ']);
+    // 歌の割合がなければ（以前の解析）、今までどおり繰り返しで決める
+    const old = normalize({ ...song, sections: song.sections.map(({ vocal: _, ...s }) => s) });
+    expect(suggestNames(old)[old.sections[3].id]).toBe('サビ');
+  });
+
   it('いつもサビの直後にだけ出てくる短いパートは、サビの続きにする', () => {
     // サビが C（12小節）＋ T（4小節）に分かれている。T を Aメロ・Bメロの候補にしない
     const plan: [string, number, number][] = [

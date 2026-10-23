@@ -4,9 +4,12 @@
 //   3. 低音の立ち上がりと和音の変化から小節頭を推定
 //   4. 小節ごとの特徴量の自己類似行列から、区切り（新規性の山）と繰り返しを推定
 //   5. 拍ごとのクロマを和音の型と照らし合わせ、コードを推定
+//   6. 歌の割合（vocal.ts で学習済みモデルから求めたもの。渡されたときだけ）を区間ごとにまとめる
 import type { AnalysisResult } from '../../../shared/song';
+import { fft } from './fft.ts';
+import { vocalShare, type VocalCurve } from './vocal.ts';
 
-export const ANALYSIS_VERSION = 'proto-0.7'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない
+export const ANALYSIS_VERSION = 'proto-0.8'; // 0.2：区切りを4小節の格子から選ぶ、0.3：16小節を超えるパートを分ける、0.4：繰り返しの並びで区切りを補う、0.5：コードを推定、0.6：繰り返しで区切りを動かすのは区切りらしさが劣らないときだけ、0.7：区間の長さがそろわない曲では格子を使わない、0.8：区間ごとの歌の割合
 export const ANALYSIS_SR = 22050;
 
 const N_FFT = 2048;
@@ -14,30 +17,6 @@ const HOP = 512;
 const N_MEL = 40;
 
 type Progress = (ratio: number, stage: string) => void;
-
-function fft(re: Float64Array, im: Float64Array, cos: Float64Array, sin: Float64Array) {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
-    }
-  }
-  for (let len = 2; len <= n; len <<= 1) {
-    const half = len >> 1, step = n / len;
-    for (let i = 0; i < n; i += len) {
-      for (let k = 0; k < half; k++) {
-        const a = i + k, b = a + half, wr = cos[k * step], wi = sin[k * step];
-        const tr = re[b] * wr - im[b] * wi, ti = re[b] * wi + im[b] * wr;
-        re[b] = re[a] - tr; im[b] = im[a] - ti;
-        re[a] += tr; im[a] += ti;
-      }
-    }
-  }
-}
 
 function melFilters(sr: number) {
   const bins = N_FFT / 2 + 1;
@@ -565,7 +544,7 @@ function findSilence(f: Features, frameTime: (t: number) => number, duration: nu
 // opts.phrase：区切りを何小節ごとの格子から選ぶか（既定 4。0 なら格子を使わず、新規性の山から選ぶ従来の方式）
 export function analyze(
   y: Float32Array, sr: number, progress: Progress = () => {},
-  opts: { bpm?: number; phrase?: number; phraseThreshold?: number; minGap?: number; repetition?: RepetitionOptions | false } = {},
+  opts: { bpm?: number; phrase?: number; phraseThreshold?: number; minGap?: number; repetition?: RepetitionOptions | false; vocals?: VocalCurve } = {},
 ): AnalysisResult {
   const duration = y.length / sr;
   const f = extract(y, sr, progress);
@@ -650,7 +629,10 @@ export function analyze(
   const segments = ranges.map((r, i) => {
     const start = i === 0 ? 0 : frameTime(bounds[r[0]]);
     const end = i === ranges.length - 1 ? duration : frameTime(bounds[r[1]]);
-    return { start, end, group: labels[i], energy: energyDb(Math.max(start, leadingSilence), Math.min(end, duration - trailingSilence)) };
+    const a = Math.max(start, leadingSilence), b = Math.min(end, duration - trailingSilence);
+    // 歌の割合（歌の推定ができたときだけ）
+    const v = opts.vocals ? vocalShare(opts.vocals, a, b) : undefined;
+    return { start, end, group: labels[i], energy: energyDb(a, b), ...(v != null ? { vocal: Math.round(v * 1000) / 1000 } : {}) };
   });
   progress(0.95, 'コードを推定しています');
   const chords = estimateChords(y, sr, beats, beatsUncertain, duration);
