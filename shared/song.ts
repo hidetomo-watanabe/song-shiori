@@ -314,13 +314,15 @@ export function moveBoundary(song: Song, i: number, t: number): Song {
   return update(song, next);
 }
 
-// 位置 t で区間を2つに分ける。後半は名前・繰り返し・メモを持たない新しい区間になる
+// 位置 t で区間を2つに分ける。後半は繰り返し・メモを持たない新しい区間になる。
+// 名前は前半と同じにする（手で付けた名前か、繰り返しに付けた名前があるとき。「パートB」のような仮の名前は引き継がない）
 export function splitAt(song: Song, t: number): Song {
   const i = song.sections.findIndex((s) => t > s.start + MIN_SECTION && t < s.end - MIN_SECTION);
   if (i < 0) return song;
   const cur = song.sections[i];
   const total = cur.barsManual ?? cur.barsEst;
-  const second = newSection(t, cur.end, { edited: true, energy: cur.energy });
+  const name = !cur.nameAuto ? cur.name.trim() : cur.group ? song.groupNames?.[cur.group] ?? '' : '';
+  const second = newSection(t, cur.end, { edited: true, energy: cur.energy, ...(name ? { name, nameAuto: false } : {}) });
   const pair = (partner: string) => (total != null ? { partner, total, start: cur.start, end: cur.end } : null);
   second.split = pair(cur.id);
   // 小節数を手で推定と違う数に直した区間（区間のテンポが曲と違う）は、手の小節数を分けて、それぞれのテンポを保つ

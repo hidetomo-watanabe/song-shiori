@@ -74,6 +74,22 @@ describe('編集ルール', () => {
     invariant(s);
   });
 
+  it('分割した後半は、前半に付けた名前を引き継ぐ（仮の名前「パートB」などは引き継がない）', () => {
+    let s = sample(); // A, B, C, B
+    s = patchSection(s, s.sections[1].id, { name: 'サビ' }); // 繰り返し B の名前になる
+    s = splitAt(s, 32);
+    expect(s.sections.slice(1, 3).map((x) => x.name)).toEqual(['サビ', 'サビ']);
+    expect(s.sections[2]).toMatchObject({ nameAuto: false, group: null });
+    // 繰り返しの名前で付いている「サビ（2回目）」は、回数を除いた名前にする
+    expect(s.sections[4].name).toBe('サビ（2回目）');
+    s = splitAt(s, 80);
+    expect(s.sections.slice(4, 6).map((x) => x.name)).toEqual(['サビ（2回目）', 'サビ']);
+    // 仮の名前は引き継がない
+    s = splitAt(s, 8);
+    expect(s.sections.slice(0, 2).map((x) => x.name)).toEqual(['パートA', 'パート']);
+    invariant(s);
+  });
+
   it('削除は直前の区間と結合し、直前の区間の名前などを引き継ぐ', () => {
     const base = sample();
     const s0 = patchSection(base, base.sections[1].id, { name: 'Aメロ', memo: '抑えめ' });
