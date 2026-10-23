@@ -23,6 +23,8 @@ export const fmtDay = (ms: number) => new Date(ms).toLocaleDateString('ja-JP');
 
 // 繰り返しの色番号（色だけに頼らず、画面では「繰り返しA」なども併記する）
 export const groupTone = (g: string | null) => (g ? (g.charCodeAt(0) - 65 + (g.length - 1) * 3) % 10 : -1);
+// 再生位置がある区間の行に付けるクラス
+export const nowClass = (isCurrent: boolean, playing: boolean) => (isCurrent ? (playing ? ' now playing' : ' now') : '');
 
 // 拍子の表記。1小節の拍の数から「4/4」「6/8」のように表す（6・7拍は8分音符を1拍として数える）
 export const TIME_SIGNATURES = [4, 3, 2, 5, 6, 7];

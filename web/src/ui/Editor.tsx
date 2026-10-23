@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
@@ -8,21 +8,27 @@ import { runAnalysis, toAnalysisSamples, type AnalysisJob } from '../analysis/ru
 import { api, ApiError, randomHex, track, type MemoInfo, type Role } from '../api';
 import * as L from '../storage/local';
 import { BpmLookup } from './BpmLookup';
+import { bpmHints, pickNetBpm } from './bpmHints';
+import { ChordChartInput } from './ChordChartInput';
 import { CreatedDialog } from './CreatedDialog';
 import { ExportText } from './ExportText';
+import { FoldedSection } from './FoldedSection';
 import { ImportText } from './ImportText';
 import { KeyForm } from './KeyForm';
+import { KeySelect } from './KeySelect';
 import { Progress } from './Progress';
+import { SectionChords } from './SectionChords';
 import { SeekBar } from './SeekBar';
 import { SongLookup } from './SongLookup';
 import { TapTempo } from './TapTempo';
 import { Manage } from './Manage';
 import { ShareButtons } from './ShareButtons';
+import { SplitForm, type SplitState } from './SplitForm';
 import { TimeInput } from './TimeInput';
 import { Timeline } from './Timeline';
 import { useSongHistory, type EditOptions } from './useSongHistory';
 import { YouTubeAlign } from './YouTubeAlign';
-import { errorText, fmt, go, groupTone, handoff, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
+import { errorText, fmt, go, groupTone, handoff, nowClass, shareMessage, TIME_SIGNATURES, timeSignature, viewUrl } from './util';
 
 type Mode = { kind: 'draft'; manual: boolean; importText?: boolean } | { kind: 'saved'; id: string };
 
@@ -39,48 +45,6 @@ const metronome = new Metronome(() => player.context(), () => {
   return m.playing ? { t: m.currentTime, end: m.duration, loop: m.loop } : null;
 });
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-
-// 区間のコード進行。推定（または繰り返しの1回目）を表示し、書き換えるとこの区間の手入力になる
-function SectionChords({ song, s, onChange }: { song: Song; s: Section; onChange: (v: string | null, coalesce?: boolean) => void }) {
-  const c = M.sectionChords(song, s);
-  // 長いコード進行や狭い画面では折り返すので、中身に合わせて高さを変える
-  const box = useRef<HTMLTextAreaElement>(null);
-  const fit = () => {
-    const el = box.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight + 2}px`;
-  };
-  useLayoutEffect(fit);
-  // 開いた直後や画面の幅が変わったときは、行の配置が決まってから幅が変わるので、幅が変わるたびに合わせ直す
-  useEffect(() => {
-    const el = box.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    // 監視を始めた直後の1回目でも合わせる（開いた直後の幅の変化は、監視を始める前に起きていることがある）
-    let width = -1;
-    const ro = new ResizeObserver(() => { if (el.clientWidth !== width) { width = el.clientWidth; fit(); } });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <div class="sec-chords">
-      <span class="sub">コード</span>
-      {/* 改行は入れない（1行のコード進行として扱う） */}
-      <textarea ref={box} class="chords" value={c?.text ?? ''} maxLength={M.LIMITS.chordText} aria-label="コード進行" rows={1}
-        placeholder={song.chords ? '（推定なし）例：| Am | G | F | E7 |' : '例：| Am | G | F | E7 |'}
-        onInput={(e) => onChange((e.currentTarget as HTMLTextAreaElement).value.replace(/\s*\n\s*/g, ' '), true)} />
-      {/* 印とボタンは欄の下の行に置く（欄の横に置くと、欄の高さで折り返しが変わり、幅と高さが交互に変わり続けるため） */}
-      {(c && c.source !== 'manual') || M.chordsDifferFromFirst(song, s) || s.chords != null ? (
-        <div class="chords-meta">
-          {c && c.source !== 'manual' && <span class="tag">{c.source === 'repeat' ? '1回目と同じ' : '推定（閲覧ページには出ません）'}</span>}
-          {c?.source === 'estimate' && <button class="tiny" title="聴いて確かめた推定を、この区間のコード進行として使います（閲覧ページに出ます）" onClick={() => onChange(c.text)}>このまま使う</button>}
-          {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
-          {s.chords != null && <button class="tiny" onClick={() => onChange(null)}>手入力をやめる</button>}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 export function Editor({ mode }: { mode: Mode }) {
   const id = mode.kind === 'saved' ? mode.id : null;
@@ -122,9 +86,10 @@ export function Editor({ mode }: { mode: Mode }) {
   loopIdRef.current = loopId;
   const [selected, setSelected] = useState<string | null>(null);
   const [snap, setSnap] = useState<'bar' | 'beat' | 'off'>('bar'); // 境界を合わせる先
-  const [splitForm, setSplitForm] = useState<{ id: string; bars: string; error: string } | null>(null);
+  const [splitForm, setSplitForm] = useState<SplitState | null>(null);
   const [follow, setFollow] = useState(true); // 再生中の区間に自動でスクロールする
   const rows = useRef(new Map<string, HTMLLIElement>());
+  const rowRef = (id: string) => (el: HTMLLIElement | null) => { if (el) rows.current.set(id, el); else rows.current.delete(id); };
 
   // 解析
   const [progress, setProgress] = useState<{ ratio: number; stage: string } | null>(null);
@@ -139,20 +104,12 @@ export function Editor({ mode }: { mode: Mode }) {
   const [slowDismissed, setSlowDismissed] = useState(false);
   const [netHits, setNetHits] = useState<{ bpm: number; artist: string }[]>([]); // ネット上の BPM の候補（よく一致するものが先）
   const netCandidates = useMemo(() => netHits.map((c) => c.bpm), [netHits]);
-  // 参考にするネット上の BPM。推定とほぼ同じ候補、次に推定の倍・半分の候補、なければいちばん上の候補を使う
-  // （情報源によって倍の値や別の録音の値が先に来ることがあり、それで正しい推定を作り直さないため）
-  const netBpm = useMemo(() => {
-    const est = song?.bpmEst;
-    const by = (f: (x: ReturnType<typeof M.octaveByReference>) => boolean) => (est != null ? netCandidates.find((b) => f(M.octaveByReference(est, b))) : undefined);
-    return by((x) => x === 1) ?? by((x) => x != null) ?? netCandidates[0] ?? null;
-  }, [netCandidates, song?.bpmEst]);
+  const netBpm = useMemo(() => pickNetBpm(song?.bpmEst, netCandidates), [netCandidates, song?.bpmEst]);
   const [netDismissed, setNetDismissed] = useState<number | null>(null); // 「推定のままにする」を選んだときの推定
   const autoFixed = useRef(''); // ネットの BPM を参考に自動で作り直した組み合わせ（繰り返さないため）
   // 参考にするネット上の BPM が、入力したアーティストの曲の値か。違えば（アーティスト未入力でカバーの値が出るなど）自動では作り直さない
   const netTrusted = netBpm != null && netHits.some((c) => c.bpm === netBpm && sameArtistOf(c.artist));
   function sameArtistOf(artist: string) { return M.sameArtist(artist, songRef.current?.artist ?? ''); }
-  const [chartText, setChartText] = useState<string | null>(null); // コード譜の URL の入力中の文字（正しい URL になるまで構成データに入れない）
-  const chartError = chartText != null && !!chartText.trim() && !M.chordChartUrl(chartText);
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
   const [clickVolume, setClickVolume] = useState(() => L.getMetronomeVolume() ?? DEFAULT_VOLUME); // このブラウザに覚えておく
   metronome.volume = clickVolume;
@@ -281,7 +238,7 @@ export function Editor({ mode }: { mode: Mode }) {
   useEffect(() => {
     if (!loopId || !song) return;
     const s = song.sections.find((x) => x.id === loopId);
-    if (!s) { setLoopId(null); media().setLoop(null); return; }
+    if (!s) { clearLoop(); return; }
     if (media().loop?.start !== s.start || media().loop?.end !== s.end) media().setLoop({ start: s.start, end: s.end });
   }, [song, loopId]);
 
@@ -457,10 +414,14 @@ export function Editor({ mode }: { mode: Mode }) {
     else media().play();
     syncNow();
   }
+  function clearLoop() {
+    setLoopId(null);
+    media().setLoop(null);
+  }
   // シークバー・タイムラインから再生位置を動かす。ループ中に範囲の外へ動かしたらループを解除する
   function seekTo(t: number) {
     const l = media().loop;
-    if (l && (t < l.start || t >= l.end)) { setLoopId(null); media().setLoop(null); }
+    if (l && (t < l.start || t >= l.end)) clearLoop();
     media().seek(t);
     setNow(t);
   }
@@ -479,7 +440,7 @@ export function Editor({ mode }: { mode: Mode }) {
     syncNow();
   }
   function toggleLoop(s: Section) {
-    if (loopId === s.id) { setLoopId(null); media().setLoop(null); return; }
+    if (loopId === s.id) { clearLoop(); return; }
     setLoopId(s.id);
     const from = resumeAt(s);
     media().setLoop({ start: s.start, end: s.end });
@@ -615,19 +576,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const hintFor = (s: Section) => (s.nameAuto && suggested[s.id] && !(s.group && song.groupNames?.[s.group] === suggested[s.id]) ? suggested[s.id] : null);
   const hintCount = song.sections.filter((s) => hintFor(s)).length;
   const totalBars = song.sections.reduce((p, s) => p + (s.barsManual ?? s.barsEst ?? 0), 0);
-  // 手入力・ネット上の BPM が自動生成時の推定と違うとき（倍・半分の誤認など）は、そのBPMでやり直せるようにする
-  // 推定が遅め（90未満）なら、2倍のテンポかもしれないと知らせる（半分のテンポへの誤認がよくあるため）
-  // ネット上の BPM を参考に、推定の倍・半分の取り違えを判定する
-  const netFactor = song.analysis && song.bpmManual == null && song.bpmEst != null && netBpm != null ? M.octaveByReference(song.bpmEst, netBpm) : null;
-  const octaveFix = netFactor === 2 || netFactor === 0.5 ? Math.round(song.bpmEst! * netFactor * 10) / 10 : null;
-  // ネット上の BPM と推定が、倍・半分でもなく大きく違うとき（拍の取り違え。別の録音・別の曲の値のこともある）
-  // どれが正しいか分からないので、違う値の候補を並べて選んでもらう
-  const netFixes = netFactor === null && netBpm != null && song.analysis && song.bpmManual == null && song.bpmEst != null && netDismissed !== song.bpmEst
-    ? netCandidates.filter((b, i) => netCandidates.findIndex((x) => M.octaveByReference(x, b, 0.03) === 1) === i).slice(0, 3) : [];
-  const netFix = netFixes.length > 0;
-  const slowBpm = song.analysis && song.bpmManual == null && song.bpmEst != null && song.bpmEst < 90 && !song.beatsUncertain && netFactor !== 1 && !octaveFix && !netFix
-    ? Math.round(song.bpmEst * 20) / 10 : null;
-  const redoBpm = song.analysis && song.bpmManual != null && (song.bpmEst == null || Math.abs(song.bpmManual / song.bpmEst - 1) > 0.03) ? song.bpmManual : null;
+  const { netFactor, octaveFix, netFixes, slowBpm, redoBpm } = bpmHints(song, netCandidates, netBpm, netDismissed);
 
   return (
     <main class="page editor">
@@ -669,28 +618,7 @@ export function Editor({ mode }: { mode: Mode }) {
         </div>
         <SongLookup title={song.title} artist={song.artist} duration={hasAudio ? media().duration : null}
           onPick={(t) => edit((s) => ({ ...s, title: t.title, artist: t.artist }))} />
-        {/* コード譜は U-FRET などで探して、正しい曲のページの URL を貼ってもらい、閲覧ページにリンクとして出す。
-            内容は取り込まない（U-FRET の規約で閲覧以外の利用はできないため） */}
-        <div class="chart-row">
-          <label class="inline">コード譜
-            <input type="url" inputMode="url" value={chartText ?? song.chordChartUrl ?? ''} maxLength={M.LIMITS.url}
-              placeholder="U-FRET などのコード譜のページの URL" aria-invalid={chartError || undefined}
-              onInput={(e) => {
-                const v = (e.currentTarget as HTMLInputElement).value;
-                setChartText(v);
-                const u = M.chordChartUrl(v);
-                if (u || !v.trim()) edit((s) => ({ ...s, chordChartUrl: u }), { coalesce: 'chart-url' });
-              }}
-              onBlur={() => { if (!chartError) setChartText(null); }} />
-          </label>
-          {song.title.trim() && (
-            <a class="button small" target="_blank" rel="noopener" title="U-FRET で曲名・アーティスト名を検索します（新しいタブ）。見つけたページの URL を左の欄に貼ってください"
-              href={`https://www.ufret.jp/search.php?${new URLSearchParams({ key: `${song.title} ${song.artist}`.trim() })}`}>U-FRET で探す</a>
-          )}
-          {song.chordChartUrl && <a class="button small" target="_blank" rel="noopener noreferrer" href={song.chordChartUrl}>開く</a>}
-          {chartError ? <span class="error">https:// で始まる URL を貼ってください</span>
-            : <span class="sub">閲覧ページにリンクとして出ます。見つからないときは U-FRET で曲名の表記（の／ノなど）を変えて探してください。</span>}
-        </div>
+        <ChordChartInput song={song} onChange={(u) => edit((s) => ({ ...s, chordChartUrl: u }), { coalesce: 'chart-url' })} />
       </section>
 
       <section class="card player">
@@ -698,7 +626,7 @@ export function Editor({ mode }: { mode: Mode }) {
           <button class="primary play" onClick={togglePlay} disabled={!hasAudio}>{playing ? '一時停止' : '再生'}</button>
           <span class="time">{fmt(now)} / {fmt(hasAudio ? media().duration : song.duration)}</span>
           {currentSection && <span class={`now-tag tone-${groupTone(currentSection.group)}`}><span class="chip" aria-hidden="true" />{playing ? '再生中' : '再生位置'}：{currentSection.name}</span>}
-          {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={() => { setLoopId(null); media().setLoop(null); }}>解除</button></span>}
+          {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={clearLoop}>解除</button></span>}
           <span class="spacer" />
           <label class={`button file small${hasAudio ? '' : ' primary'}`}>
             {player.buffer ? '音源を変更' : '音源ファイルを選ぶ'}
@@ -820,23 +748,7 @@ export function Editor({ mode }: { mode: Mode }) {
             </span>
           </label>
         </div>
-        {/* 演奏するキー。コード進行は原曲のキーで入れ、閲覧ページでは演奏するキーに移調して表示する */}
-        <div class="key-row">
-          <label>原曲のキー
-            <select value={song.originalKey ?? ''} onChange={(e) => { const v = (e.currentTarget as HTMLSelectElement).value; edit((s) => ({ ...s, originalKey: v || null })); }}>
-              <option value="">未設定</option>
-              {M.KEYS.map((k) => <option key={k} value={k}>{M.keyLabel(k)}</option>)}
-            </select>
-          </label>
-          <label>演奏するキー
-            <select value={song.transpose ?? 0} onChange={(e) => { const v = Number((e.currentTarget as HTMLSelectElement).value); edit((s) => ({ ...s, transpose: v || undefined })); }}>
-              {Array.from({ length: 13 }, (_, i) => i - 6).map((t) => (
-                <option key={t} value={t}>{t === 0 ? '原曲どおり' : `${t > 0 ? '+' : ''}${t}`}{t !== 0 && song.originalKey ? `（${M.keyLabel(M.transposeKey(song.originalKey, t) ?? '')}）` : ''}</option>
-              ))}
-            </select>
-          </label>
-          {(song.transpose ?? 0) !== 0 && <span class="sub">コード進行は原曲のキーで入力してください。閲覧ページでは演奏するキーに直して表示します。</span>}
-        </div>
+        <KeySelect song={song} onChange={(patch) => edit((s) => ({ ...s, ...patch }))} />
         {ticking && tempoBpm && <p class="sub">{!metronome.beats?.length ? 'BPM の間隔で鳴らしています（拍の位置が分からないため、曲の拍には合わせられません）。'
           : hasAudio ? '再生している間は、曲の拍（小節の線と同じ位置）に合わせて鳴らします。ずれて聞こえるときは、BPM や「最初の小節頭」を直してください。'
           : 'BPM の間隔で鳴らしています。音源ファイルか YouTube の動画で再生すると、曲の拍に合わせて鳴らします。'}</p>}
@@ -849,7 +761,7 @@ export function Editor({ mode }: { mode: Mode }) {
               : <span class="sub">音源ファイルを選ぶと {octaveFix} で作り直せます。</span>}
           </div>
         )}
-        {netFix && (
+        {netFixes.length > 0 && (
           <div class="redo-bpm">
             <p>ネット上の BPM（{netFixes.join('・')}）と、推定 {song.bpmEst} が大きく違います。拍を取り違えているかもしれません。
               下の「ネット上のBPM」で曲名・録音が合っている値を選んで作り直してください。</p>
@@ -936,32 +848,10 @@ export function Editor({ mode }: { mode: Mode }) {
         {!song.sections.length && <p class="sub">区間がありません。「末尾に区間を追加」から作るか、音源を選んでください。</p>}
         <ol class="section-list">
           {song.sections.map((s, i) => selected !== s.id ? (
-            // 選んでいない区間は1行にたたみ、構成全体を見渡せるようにする。押すと開いて編集できる
-            <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
-              class={`section folded tone-${groupTone(s.group)}${s.cut ? ' cut' : ''}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
-              <div class="sec-summary">
-                <span class="sec-no">{i + 1}</span>
-                <span class="chip" aria-hidden="true" />
-                <button class="sec-open" aria-expanded="false" aria-label={`区間${i + 1}「${s.name}」を開いて編集`}>{s.name || '（名前なし）'}</button>
-                {s.barsNeedsCheck && <span class="tag warn">要確認</span>}
-                {M.chordsDifferFromFirst(song, s) && <span class="tag warn">1回目と違う</span>}
-                {s.cut && <span class="tag">カット</span>}
-                {s.arrange?.trim() && <span class="tag warn" title={s.arrange}>原曲と違う</span>}
-                <span class="sec-range">{fmt(s.start, 0)}〜{fmt(s.end, 0)}</span>
-                <span class="sec-bars">{s.barsManual ?? s.barsEst ?? '-'}<span class="sub">小節</span></span>
-                {hasAudio && (playing && current === s.id
-                  ? <button class="small row-play on" onClick={(e) => { e.stopPropagation(); togglePlay(); }}>停止</button>
-                  : <button class="small row-play" onClick={(e) => { e.stopPropagation(); playSection(s, false); }}>再生</button>)}
-              </div>
-              {(() => {
-                // コード進行（手入力・推定）とメモを1行で添える
-                const c = M.sectionChords(song, s), memo = s.memo.trim();
-                return c || memo ? <div class="sec-peek">{c && <span class={`chords${c.source === 'estimate' ? ' est' : ''}`} title={c.source === 'estimate' ? '推定（閲覧ページには出ません）' : undefined}>{c.text}</span>}{memo && <span>{memo}</span>}</div> : null;
-              })()}
-            </li>
+            <FoldedSection key={s.id} song={song} s={s} i={i} isCurrent={current === s.id} playing={playing} hasAudio={hasAudio}
+              rowRef={rowRef(s.id)} onOpen={() => setSelected(s.id)} onPlay={() => playSection(s, false)} onStop={togglePlay} />
           ) : (
-            <li key={s.id} ref={(el) => { if (el) rows.current.set(s.id, el); else rows.current.delete(s.id); }}
-              class={`section tone-${groupTone(s.group)}${current === s.id ? (playing ? ' now playing' : ' now') : ''}`} onClick={() => setSelected(s.id)}>
+            <li key={s.id} ref={rowRef(s.id)} class={`section tone-${groupTone(s.group)}${nowClass(current === s.id, playing)}`} onClick={() => setSelected(s.id)}>
               {current === s.id && <div class="now-label">{playing ? '▶ 再生中' : '■ 再生位置'}・{fmt(now)}</div>}
               <div class="sec-main">
                 {/* 区間番号。「音源とのずれを合わせる」で区間を選ぶときの目印にする */}
@@ -1034,17 +924,8 @@ export function Editor({ mode }: { mode: Mode }) {
               <input class="memo" value={s.memo} maxLength={2000} placeholder="メモ（入り・キメ・終わり方など）" aria-label="メモ"
                 onInput={(e) => edit((x) => M.patchSection(x, s.id, { memo: (e.currentTarget as HTMLInputElement).value }), { coalesce: `memo-${s.id}` })} />
               {splitForm?.id === s.id && (
-                <form class="split-form" onSubmit={(e) => { e.preventDefault(); submitSplit(s); }}>
-                  <label class="inline">先頭から
-                    <input type="number" inputMode="numeric" min={1} value={splitForm.bars} autoFocus
-                      onInput={(e) => setSplitForm({ ...splitForm, bars: (e.currentTarget as HTMLInputElement).value, error: '' })} />
-                    小節で分割
-                  </label>
-                  <span class="sub">（この区間は {s.barsManual ?? s.barsEst} 小節。分けた位置は小節の頭に合わせます）</span>
-                  <button class="small primary" type="submit">分割する</button>
-                  <button class="small" type="button" onClick={() => setSplitForm(null)}>キャンセル</button>
-                  {splitForm.error && <p class="error">{splitForm.error}</p>}
-                </form>
+                <SplitForm s={s} form={splitForm} onBars={(bars) => setSplitForm({ ...splitForm, bars, error: '' })}
+                  onSubmit={() => submitSplit(s)} onCancel={() => setSplitForm(null)} />
               )}
             </li>
           ))}
