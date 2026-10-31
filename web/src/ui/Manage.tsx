@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { deriveEditKey } from '../../../shared/keys';
 import { api, randomHex, type MemoInfo } from '../api';
+import { operatorAuth } from '../storage/mykey';
 import { CopyRow } from './CopyRow';
 import { ShareButtons } from './ShareButtons';
 import { editUrl, errorText, fmtDay, memberMessage, shareMessage, toast, viewUrl } from './util';
@@ -27,7 +28,10 @@ export function Manage({ id, title, artist, meta, adminKey, onMeta, onKey, onDel
     if (meta.editKeyGen) void deriveEditKey(adminKey, meta.editKeyGen).then((k) => { if (live) setEditLink(editUrl(id, k)); });
     return () => { live = false; };
   }, [adminKey, meta.editKeyGen]);
-  const [confirm, setConfirm] = useState<'' | 'rekey' | 'editkey' | 'stopedit' | 'unshare' | 'reshare' | 'delete'>('');
+  const [confirm, setConfirm] = useState<'' | 'rekey' | 'editkey' | 'stopedit' | 'unshare' | 'reshare' | 'delete' | 'free'>('');
+  // 運営者のマイキーがあるときだけ、無料・有料の切り替えを出す
+  const [operator, setOperator] = useState<string | null>(null);
+  useEffect(() => { let live = true; void operatorAuth().then((a) => { if (live) setOperator(a); }); return () => { live = false; }; }, []);
 
   const run = async (fn: () => Promise<void>) => {
     setError('');
@@ -126,7 +130,18 @@ export function Manage({ id, title, artist, meta, adminKey, onMeta, onKey, onDel
 
       <div class="manage-row">
         <h3>保持期限</h3>
-        <p>{fmtDay(meta.expiresAt)} まで（最後の保存から180日。保存すると延び、閲覧だけでは延びません）</p>
+        {meta.paid
+          ? <p>期限なし（有料）</p>
+          : <p>{fmtDay(meta.expiresAt)} まで（最後の保存から180日。保存すると延び、閲覧だけでは延びません）</p>}
+        {operator && (meta.paid ? (
+          confirm === 'free' ? (
+            <div class="actions">
+              <span>無料に戻すと、今日から180日で消えます（保存すれば延びます）。古い版は次の保存で直近の10版だけになります。</span>
+              <button class="danger" onClick={() => run(async () => onMeta(await api.plan(id, adminKey, operator, false)))}>無料に戻す</button>
+              <button onClick={() => setConfirm('')}>キャンセル</button>
+            </div>
+          ) : <button onClick={() => setConfirm('free')}>無料に戻す（運営者）</button>
+        ) : <button onClick={() => run(async () => onMeta(await api.plan(id, adminKey, operator, true)))}>有料にする（運営者）</button>)}
       </div>
 
       <div class="manage-row">

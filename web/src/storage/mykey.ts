@@ -43,6 +43,14 @@ export async function deleteMyKey() {
   L.setMyKey(null);
 }
 
+// このブラウザのマイキーが運営者のものなら、照合用キーを返す（無料・有料の切り替えに使う）。違えば・調べられなければ null
+export async function operatorAuth(): Promise<string | null> {
+  const my = L.getMyKey();
+  if (!my || !isMyKey(my)) return null;
+  const auth = await accountAuth(my);
+  try { return (await api.operator(auth)).operator ? auth : null; } catch { return null; }
+}
+
 async function syncOnce(): Promise<number | null> {
   const my = L.getMyKey();
   if (!my || !isMyKey(my)) return null;

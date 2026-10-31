@@ -8,13 +8,13 @@ export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly body: any = null) { super(message); }
 }
 
-async function call<T>(method: string, path: string, body?: unknown, token?: string | null): Promise<T> {
+async function call<T>(method: string, path: string, body?: unknown, token?: string | null, extra: Record<string, string> = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(BASE + path, {
       method,
       cache: 'no-store',
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra },
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -31,16 +31,16 @@ export const randomHex = (bytes: number) =>
 // role：admin は管理キー（作成者。すべての操作）、edit は編集キー（メンバー。構成の編集と保存だけ）
 export type Role = 'admin' | 'edit';
 // editKeyGen：管理キーで開いたときだけ返る編集キーの世代（管理キーから編集リンクを作る）。導出する形より前の編集キーなら null
-export type MemoInfo = { id: string; viewId: string | null; version: number; updatedAt: number; expiresAt: number; editKey: boolean; editKeyGen?: number | null };
+export type MemoInfo = { id: string; viewId: string | null; version: number; updatedAt: number; expiresAt: number; editKey: boolean; paid: boolean; editKeyGen?: number | null };
 export type Created = MemoInfo & { role: Role };
 export type EditData = MemoInfo & { song: Song; role: Role };
 export type ViewData = {
-  version: number; updatedAt: number; expiresAt: number; song: Song;
+  version: number; updatedAt: number; expiresAt: number; paid: boolean; song: Song;
   base: { version: number; song: Song } | null; notify: boolean; notes: { version: number; note: string }[];
 };
 
 // 一覧の曲メモの今の状態。gone：削除済み・期限切れ。曲名などは正しいキーがあるときだけ返る
-export type MemoStatus = { id: string; gone?: true; title?: string; updatedAt?: number; expiresAt?: number; viewId?: string | null };
+export type MemoStatus = { id: string; gone?: true; title?: string; updatedAt?: number; expiresAt?: number; paid?: boolean; viewId?: string | null };
 
 export type BpmCandidate = { source: 'GetSongBPM' | 'Deezer'; title: string; artist: string; bpm: number; url: string | null };
 export type VideoCandidate = { id: string; title: string; channel: string; seconds: number };
@@ -60,6 +60,9 @@ export const api = {
   reshare: (id: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/share`, {}, key),
   unshare: (id: string, key: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/share`, undefined, key),
   remove: (id: string, key: string) => call<null>('DELETE', `/api/memos/${id}`, undefined, key),
+  // 無料・有料の切り替え（運営者だけ）。管理キーと、運営者のマイキーの照合用キー（X-Account）が要る
+  plan: (id: string, key: string, auth: string, paid: boolean) => call<MemoInfo>('POST', `/api/memos/${id}/plan`, { paid }, key, { 'X-Account': auth }),
+  operator: (auth: string) => call<{ operator: boolean }>('GET', '/api/operator', undefined, auth),
   status: (items: { id: string; key: string | null }[]) => call<{ items: MemoStatus[] }>('POST', '/api/memos/status', { items }),
   // マイキー：暗号化したキーの一覧（auth はマイキーから導出した照合用キー）
   account: (auth: string) => call<{ data: string; revision: number }>('GET', '/api/account', undefined, auth),

@@ -50,7 +50,7 @@ export function MineList({ empty, onSync }: { empty?: string; onSync?: (count: n
     <ul class="mine">
       {mine.map((m) => {
         const st = status.get(m.id);
-        const soon = st?.expiresAt != null && st.expiresAt - Date.now() < SOON_DAYS * 864e5;
+        const soon = !st?.paid && st?.expiresAt != null && st.expiresAt - Date.now() < SOON_DAYS * 864e5;
         return (
           <li key={m.id}>
             {st?.gone ? (

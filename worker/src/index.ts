@@ -4,13 +4,15 @@ import { validateSong, type Song } from '../../shared/song';
 import { lookupBpm, norm } from './bpm';
 import { searchYoutube } from './youtube';
 
-type Env = { DB: D1Database; ALLOWED_ORIGINS: string; SALT?: string; GETSONGBPM_KEY?: string; YOUTUBE_API_KEY?: string };
+type Env = { DB: D1Database; ALLOWED_ORIGINS: string; SALT?: string; GETSONGBPM_KEY?: string; YOUTUBE_API_KEY?: string; OPERATORS?: string };
 
 const DAY = 864e5;
 const KEEP_DAYS = 180; // 構成メモの保持期間
 const ACCOUNT_KEEP_DAYS = 365; // マイキーの一覧の保持期間（最後の同期から）
 const ACCOUNT_MAX = 50000;
 const KEEP_VERSIONS = 10;
+// 有料の曲メモ（要件書 11.1）の期限。消えないよう、ずっと先の日付（9999-12-31）を入れる
+const NO_EXPIRY = 253402214400000;
 const EVENT_DAYS = 90;
 const MAX_BODY = 512 * 1024;
 const EVENT_KINDS = new Set(['analysis_ok', 'analysis_fail', 'manual_start', 'loop_play', 'view_after_update', 'bpm_lookup_applied', 'youtube_set', 'youtube_view_play']);
@@ -76,7 +78,7 @@ const pacificDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/L
 
 type MemoRow = {
   id: string; view_id: string | null; key_hash: string; key_gen: number;
-  edit_key_hash: string | null; edit_key_gen: number; version: number; updated_at: number; expires_at: number;
+  edit_key_hash: string | null; edit_key_gen: number; version: number; updated_at: number; expires_at: number; paid: number;
 };
 // admin：管理キー（作成者）。すべての操作ができる。edit：編集キー（メンバー）。構成の編集と保存だけ
 type Role = 'admin' | 'edit';
@@ -108,7 +110,7 @@ async function authorize(req: Request, env: Env, id: string, need: Role = 'edit'
 
 const editHashOf = async (adminKey: string, gen: number) => digest(await deriveEditKey(adminKey, gen));
 
-const info = (m: MemoRow) => ({ id: m.id, viewId: m.view_id, version: m.version, updatedAt: m.updated_at, expiresAt: m.expires_at, editKey: !!m.edit_key_hash });
+const info = (m: MemoRow) => ({ id: m.id, viewId: m.view_id, version: m.version, updatedAt: m.updated_at, expiresAt: m.expires_at, editKey: !!m.edit_key_hash, paid: !!m.paid });
 // 管理キーで開いたときは、編集キーの世代も返す（画面で管理キーから編集リンクを作るため）。
 // 導出する形より前に作った編集キー（ランダムな値）なら null（作り直すまで編集リンクは出せない）
 const adminInfo = async (m: MemoRow, adminKey: string) => ({
@@ -142,7 +144,7 @@ async function createMemo(req: Request, env: Env) {
   await limit(req, env, 'create', 30);
   const now = Date.now();
   const editHash = await editHashOf(key, 1);
-  const memo: MemoRow = { id: random(12), view_id: random(16), key_hash: keyHash, key_gen: 1, edit_key_hash: editHash, edit_key_gen: 1, version: 1, updated_at: now, expires_at: now + KEEP_DAYS * DAY };
+  const memo: MemoRow = { id: random(12), view_id: random(16), key_hash: keyHash, key_gen: 1, edit_key_hash: editHash, edit_key_gen: 1, version: 1, updated_at: now, expires_at: now + KEEP_DAYS * DAY, paid: 0 };
   await env.DB.batch([
     env.DB.prepare('INSERT INTO memos (id, view_id, key_hash, key_gen, edit_key_hash, edit_key_gen, create_request, version, title, created_at, updated_at, expires_at) VALUES (?, ?, ?, 1, ?, 1, ?, 1, ?, ?, ?, ?)')
       .bind(memo.id, memo.view_id, keyHash, editHash, requestId, data.title, now, now, memo.expires_at),
@@ -175,7 +177,7 @@ async function viewMemo(req: Request, env: Env, viewId: string) {
   // 読む間に保存が重なり、比べる版が古い版として消えていたら、差分なしで返す
   const baseSong = baseVersion ? dataOf(baseVersion) : null;
   return json({
-    version: memo.version, updatedAt: memo.updated_at, expiresAt: memo.expires_at,
+    version: memo.version, updatedAt: memo.updated_at, expiresAt: memo.expires_at, paid: !!memo.paid,
     song: dataOf(latest.version),
     base: baseVersion && baseSong ? { version: baseVersion, song: baseSong } : null,
     notify,
@@ -194,20 +196,23 @@ async function saveMemo(req: Request, env: Env, memo: MemoRow & { role: Role; ke
   }
   const now = Date.now();
   const next = memo.version + 1;
+  // 有料なら期限は延ばさず（期限なしのまま）、古い版も消さない
+  const expires = memo.paid ? NO_EXPIRY : now + KEEP_DAYS * DAY;
+  const keepFrom = memo.paid ? 0 : next - KEEP_VERSIONS;
   try {
     const [upd] = await env.DB.batch([
       env.DB.prepare('UPDATE memos SET version = ?, title = ?, updated_at = ?, expires_at = ? WHERE id = ? AND version = ?')
-        .bind(next, data.title, now, now + KEEP_DAYS * DAY, memo.id, baseVersion),
+        .bind(next, data.title, now, expires, memo.id, baseVersion),
       env.DB.prepare('INSERT INTO memo_versions (memo_id, version, saved_at, data, note, notify) SELECT id, version, ?, ?, ?, ? FROM memos WHERE id = ? AND version = ? AND updated_at = ?')
         .bind(now, JSON.stringify(data), note ?? '', notify === false ? 0 : 1, memo.id, next, now),
-      env.DB.prepare('DELETE FROM memo_versions WHERE memo_id = ? AND version <= ?').bind(memo.id, next - KEEP_VERSIONS),
+      env.DB.prepare('DELETE FROM memo_versions WHERE memo_id = ? AND version <= ?').bind(memo.id, keepFrom),
     ]);
     if (!upd.meta.changes) throw new Error('conflict');
   } catch {
     const cur = await findMemo(env, memo.id);
     throw new HttpError(409, '他の端末で更新されています', { version: cur.version, updatedAt: cur.updated_at });
   }
-  return json(await infoFor({ ...memo, version: next, updated_at: now, expires_at: now + KEEP_DAYS * DAY }));
+  return json(await infoFor({ ...memo, version: next, updated_at: now, expires_at: expires }));
 }
 
 async function deleteMemo(env: Env, id: string) {
@@ -302,9 +307,17 @@ async function memoStatus(req: Request, env: Env) {
     const memo = byId.get(id);
     if (!memo || memo.expires_at < now) return { id, gone: true };
     if (!(await roleOf(memo, typeof key === 'string' ? key : null))) return { id };
-    return { id, title: memo.title, updatedAt: memo.updated_at, expiresAt: memo.expires_at, viewId: memo.view_id };
+    return { id, title: memo.title, updatedAt: memo.updated_at, expiresAt: memo.expires_at, paid: !!memo.paid, viewId: memo.view_id };
   }));
   return json({ items: result.filter(Boolean) });
+}
+
+// 運営者：シークレット OPERATORS に、運営者のマイキーの照合用キーの SHA-256（accounts.id と同じ値）をカンマ区切りで入れる。
+// 課金を作るまでは、運営者だけが曲メモの無料・有料を切り替えられる（曲メモの管理キーと両方が要る）
+async function isOperator(env: Env, auth: string | null) {
+  if (!auth || !HEX(48).test(auth) || !env.OPERATORS) return false;
+  const id = await digest(auth);
+  return env.OPERATORS.split(',').map((s) => s.trim()).includes(id);
 }
 
 // マイキー（端末間でキーの一覧を揃える。ライブのしおりと同じ）。#/mine から使う
@@ -357,6 +370,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (path === '/api/youtube' && m === 'GET') return youtubeSearch(req, env);
   if (path === '/api/memos/status' && m === 'POST') return memoStatus(req, env);
   if (path === '/api/account') return account(req, env);
+  if (path === '/api/operator' && m === 'GET') {
+    await limit(req, env, 'status', 120);
+    return json({ operator: await isOperator(env, bearer(req)) });
+  }
   let match = path.match(/^\/api\/view\/([^/]+)$/);
   if (match && m === 'GET') return viewMemo(req, env, match[1]);
   // 閲覧ページから編集を始める：閲覧識別子と、編集キーまたは管理キー（リンクを持っていない人がキーを入れたとき）
@@ -370,11 +387,11 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json({ id: memo.id, role });
   }
 
-  match = path.match(/^\/api\/memos\/([^/]+)(\/keys|\/edit-key|\/share|\/extend)?$/);
+  match = path.match(/^\/api\/memos\/([^/]+)(\/keys|\/edit-key|\/share|\/extend|\/plan)?$/);
   if (!match) throw new HttpError(404, '見つかりません');
   const [, id, sub] = match;
 
-  // 構成の取得と保存は編集キーでもできる。それ以外（削除・キーや共有の管理・期限の延長）は管理キーだけ
+  // 構成の取得と保存は編集キーでもできる。それ以外（削除・キーや共有の管理・期限の延長・無料と有料の切り替え）は管理キーだけ
   const memo = await authorize(req, env, id, !sub && (m === 'GET' || m === 'PUT') ? 'edit' : 'admin');
   if (!sub && m === 'GET') {
     const song = await readVersion(env, id, memo.version);
@@ -404,6 +421,15 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
   // 保持期限の延長は有料の機能にする（要件書 11.1）。課金を作るまでは断り、無料は保存したときだけ期限が延びる
   if (sub === '/extend' && m === 'POST') throw new HttpError(403, '保持期限は保存すると、その日から180日に延びます');
+  // 無料・有料の切り替え。有料にすると期限なし、無料に戻すとその日から180日（要件書 11.1）
+  if (sub === '/plan' && m === 'POST') {
+    if (!(await isOperator(env, req.headers.get('X-Account')))) throw new HttpError(403, '切り替えは運営者のマイキーでのみできます');
+    const { paid } = await body<{ paid?: unknown }>(req);
+    if (typeof paid !== 'boolean') throw new HttpError(400, '形式が正しくありません');
+    const expires = paid ? NO_EXPIRY : Date.now() + KEEP_DAYS * DAY;
+    await env.DB.prepare('UPDATE memos SET paid = ?, expires_at = ? WHERE id = ?').bind(paid ? 1 : 0, expires, id).run();
+    return json(await adminInfo({ ...memo, paid: paid ? 1 : 0, expires_at: expires }, memo.key));
+  }
   throw new HttpError(404, '見つかりません');
 }
 
@@ -416,7 +442,7 @@ export default {
     if (req.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: { ...headers, 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Max-Age': '86400' },
+        headers: { ...headers, 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Account', 'Access-Control-Max-Age': '86400' },
       });
     }
     try {

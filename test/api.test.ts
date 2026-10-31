@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DatabaseSync } from 'node:sqlite';
 import worker from '../worker/src/index';
-import { deriveEditKey } from '../shared/keys';
+import { deriveEditKey, sha256 } from '../shared/keys';
 import { emptySong, newSection, normalize } from '../shared/song';
 import { fakeD1 } from './d1';
 
@@ -167,6 +167,58 @@ describe('曲メモ', () => {
     expect((await call('DELETE', `/api/memos/${id}`, undefined, { token: key })).status).toBe(204);
     expect((await call('GET', `/api/memos/${id}`, undefined, { token: key })).status).toBe(404);
     expect(db.prepare('SELECT count(*) n FROM memo_versions WHERE memo_id = ?').get(id)).toEqual({ n: 0 });
+  });
+});
+
+describe('無料・有料の切り替え', () => {
+  it('運営者のマイキーと管理キーの両方があるときだけ切り替えられ、有料は期限なし・古い版も残す', async () => {
+    const my = hex(24);
+    const auth = (await sha256(`${my}:account`)).slice(0, 48);
+    env.OPERATORS = `${'0'.repeat(64)}, ${await sha256(auth)}`;
+    const { key, id, viewId } = await create();
+    const plan = (paid: boolean, token: string, account?: string) => worker.fetch(new Request(`https://api.example/api/memos/${id}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${token}`, ...(account ? { 'X-Account': account } : {}) },
+      body: JSON.stringify({ paid }),
+    }), env);
+
+    expect((await call('GET', '/api/operator', undefined, { token: auth })).data).toEqual({ operator: true });
+    expect((await call('GET', '/api/operator', undefined, { token: hex(24) })).data).toEqual({ operator: false });
+    // 運営者でない・マイキーなし・編集キーでは切り替えられない
+    expect((await plan(true, key, hex(24))).status).toBe(403);
+    expect((await plan(true, key)).status).toBe(403);
+    expect((await plan(true, await deriveEditKey(key, 1), auth)).status).toBe(403);
+
+    const on = await plan(true, key, auth);
+    expect(on.status).toBe(200);
+    const onData = await on.json() as any;
+    expect(onData.paid).toBe(true);
+    expect(onData.expiresAt).toBeGreaterThan(Date.now() + 1000 * 365 * DAY);
+    // 有料の間は、保存しても期限なしのまま、10版を超えても古い版を消さない
+    for (let v = 1; v <= 11; v++) {
+      const sv = await call('PUT', `/api/memos/${id}`, { baseVersion: v, song: v % 2 ? renamed : song }, { token: key });
+      expect(sv.data.expiresAt).toBe(onData.expiresAt);
+    }
+    expect(db.prepare('SELECT count(*) n FROM memo_versions WHERE memo_id = ?').get(id)).toEqual({ n: 12 });
+    expect((await call('GET', `/api/view/${viewId}`)).data.paid).toBe(true);
+
+    // 無料に戻すと今日から180日。古い版は次の保存で直近の10版になる
+    const off = await plan(false, key, auth);
+    const offData = await off.json() as any;
+    expect(offData.paid).toBe(false);
+    expect(offData.expiresAt).toBeGreaterThan(Date.now() + 179 * DAY);
+    expect(offData.expiresAt).toBeLessThan(Date.now() + 181 * DAY);
+    await call('PUT', `/api/memos/${id}`, { baseVersion: 12, song }, { token: key });
+    expect(db.prepare('SELECT count(*) n FROM memo_versions WHERE memo_id = ?').get(id)).toEqual({ n: 10 });
+  });
+
+  it('OPERATORS が未設定なら誰も切り替えられない', async () => {
+    const { key, id } = await create();
+    expect((await call('GET', '/api/operator', undefined, { token: hex(24) })).data).toEqual({ operator: false });
+    const res = await worker.fetch(new Request(`https://api.example/api/memos/${id}/plan`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN, Authorization: `Bearer ${key}`, 'X-Account': hex(24) }, body: JSON.stringify({ paid: true }),
+    }), env);
+    expect(res.status).toBe(403);
   });
 });
 

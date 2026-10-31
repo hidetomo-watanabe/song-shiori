@@ -234,7 +234,7 @@ export function View({ viewId }: { viewId: string }) {
       <ExportText song={song} />
       <div class="view-foot">
         <StartEdit viewId={viewId} title={song.title} />
-        <p class="sub">この構成メモは {fmtDay(data.expiresAt)} まで保管されます。</p>
+        <p class="sub">{data.paid ? 'この構成メモは期限なしで保管されます。' : `この構成メモは ${fmtDay(data.expiresAt)} まで保管されます。`}</p>
       </div>
       {practice && (
         <Practice song={song} bpm={bpm} showChords={showChords} onClose={() => setPractice(false)}
