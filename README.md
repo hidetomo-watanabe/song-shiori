@@ -22,8 +22,8 @@ npm run dev                # 画面（http://localhost:5173）。/api は API �
 ## 確認用のコマンド
 
 ```bash
-npm test                                   # 編集ルール・差分計算のテスト
-node scripts/api-smoke.ts                  # API の主要操作をローカルで確認（dev:api の起動が必要）
+npm test                                   # 編集ルール・差分計算・API のテスト（API は Node の SQLite で D1 の代わりをする）
+node scripts/api-smoke.ts                  # API の主要操作を、ローカルの本物の Workers・D1 で確認（dev:api の起動が必要）
 node scripts/analyze-raw.ts <file.f32>     # 22050Hz モノラル float32 の生データを解析して表示
 node scripts/evaluate.ts [フォルダ]        # 検証音源フォルダの全曲を解析し、正解ファイル（曲名.txt）と比べる（音源の読み込みに Python の librosa が必要）
 ```
