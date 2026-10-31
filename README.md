@@ -17,7 +17,6 @@ npm install
 npm run db:migrate:local   # 初回のみ：ローカルの D1 を作る
 npm run dev:api            # API（http://127.0.0.1:8787）
 npm run dev                # 画面（http://localhost:5173）。/api は API へ中継される
-API_PROXY=https://song-shiori-api.whathides.workers.dev npm run dev  # /api を本番の API へ中継する（ネット上の BPM の確認など）
 ```
 
 ## 確認用のコマンド
@@ -41,7 +40,7 @@ node scripts/evaluate.ts [フォルダ]        # 検証音源フォルダの全�
 - シークレット：`SALT`（設定済み）、`GETSONGBPM_KEY`（https://getsongbpm.com/api で無料登録。未設定なら Deezer のみで検索）
   - 設定は `npx wrangler secret put GETSONGBPM_KEY`。ローカルでは `.dev.vars` に書く
 - シークレット：`YOUTUBE_API_KEY`（Google Cloud で YouTube Data API v3 を有効にして作る API キー。「曲を検索」で YouTube の動画を探す。未設定なら iTunes の結果だけを出す）
-  - 設定は `npx wrangler secret put YOUTUBE_API_KEY`。検索1回で 100 ユニット（無料枠は1日 10,000）を使うので、結果は7日間キャッシュし、IP ごとに1時間 30 回までにしている
+  - 設定は `npx wrangler secret put YOUTUBE_API_KEY`。検索1回で 100 ユニット（無料枠は1日 10,000）を使うので、結果は7日間キャッシュし、IP ごとに1時間 30 回、サービス全体で1日 90 回（太平洋時間の0時で戻る）までにしている。Google が枠切れを返したら、その日は問い合わせない
 - GitHub のリポジトリ変数 `API_BASE` に API の URL を設定する（画面のビルドで使う）
 - `web/public/CNAME` が独自ドメイン（song-shiori.whathides.co.jp）。DNS に `song-shiori` → `hidetomo-watanabe.github.io` の CNAME が必要
 - BPM 検索結果は Cache API で7日間キャッシュする（情報源が変わったら別の結果として扱う）

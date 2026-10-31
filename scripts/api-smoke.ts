@@ -3,11 +3,12 @@ import { deriveEditKey } from '../shared/keys.ts';
 import { emptySong, newSection, normalize } from '../shared/song.ts';
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:8787';
+const ORIGIN = 'http://localhost:5173'; // .dev.vars の ALLOWED_ORIGINS にある画面のドメイン
 const hex = (n: number) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
 async function call(method: string, path: string, body?: unknown, token?: string) {
   const res = await fetch(BASE + path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { 'Content-Type': 'application/json', Origin: ORIGIN, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   return { status: res.status, data: res.status === 204 ? null : await res.json() };
@@ -128,5 +129,9 @@ check('マイキー：更新', (await ac('PUT', { data: 'REVG', revision: 1 })).
 check('マイキー：別のキーでは読めない', (await ac('GET', undefined, hex(24))).status === 404);
 check('マイキー：削除', (await ac('DELETE')).data?.deleted === true);
 check('マイキー：削除後は410で作り直さない', (await ac('GET')).status === 410 && (await ac('PUT', { data: 'QUJD', revision: 0 })).status === 410);
+
+const noOrigin = await fetch(`${BASE}/api/bpm?title=x`);
+const otherOrigin = await fetch(`${BASE}/api/bpm?title=x`, { headers: { Origin: 'https://example.com' } });
+check('許可していないサイト・Origin なしは拒否', noOrigin.status === 403 && otherOrigin.status === 403, { noOrigin: noOrigin.status, otherOrigin: otherOrigin.status });
 
 process.exit(failed ? 1 : 0);

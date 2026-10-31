@@ -17,6 +17,9 @@ const EVENT_KINDS = new Set(['analysis_ok', 'analysis_fail', 'manual_start', 'lo
 const BPM_CACHE_SECONDS = 7 * 86400;
 const BPM_LOOKUP_VERSION = 2; // 2：曲名がそのまま一致する候補を先にする
 const YOUTUBE_CACHE_SECONDS = 7 * 86400;
+// YouTube の無料枠（1日 10,000 ユニット、検索1回で約 101）を使い切らないよう、サービス全体で1日の回数を絞る。
+// 枠は太平洋時間の0時に戻るので、日付も太平洋時間で数える
+const YOUTUBE_DAILY_MAX = 90;
 
 const HEX = (n: number) => new RegExp(`^[a-f0-9]{${n}}$`);
 
@@ -53,16 +56,23 @@ async function body<T>(req: Request): Promise<T> {
 
 const bearer = (req: Request) => req.headers.get('Authorization')?.replace(/^Bearer /, '') ?? null;
 
+// 回数を1つ数えて、数えたあとの回数を返す
+async function countUp(env: Env, bucket: string, expiresAt: number) {
+  const row = await env.DB.prepare(
+    'INSERT INTO rate_limits (bucket, count, expires_at) VALUES (?, 1, ?) ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count',
+  ).bind(bucket, expiresAt).first<{ count: number }>();
+  return row?.count ?? 0;
+}
+
 // IP 単位の緩やかな回数制限（1時間ごと）
 async function limit(req: Request, env: Env, kind: string, max: number) {
   const ip = req.headers.get('CF-Connecting-IP') ?? 'local';
   const hour = Math.floor(Date.now() / 36e5);
   const bucket = `${kind}:${hour}:${(await digest(`${env.SALT ?? 'song-shiori'}:${ip}`)).slice(0, 32)}`;
-  const row = await env.DB.prepare(
-    'INSERT INTO rate_limits (bucket, count, expires_at) VALUES (?, 1, ?) ON CONFLICT(bucket) DO UPDATE SET count = count + 1 RETURNING count',
-  ).bind(bucket, (hour + 2) * 36e5).first<{ count: number }>();
-  if ((row?.count ?? 0) > max) throw new HttpError(429, '短時間に操作が集中しています。しばらくしてから再試行してください');
+  if ((await countUp(env, bucket, (hour + 2) * 36e5)) > max) throw new HttpError(429, '短時間に操作が集中しています。しばらくしてから再試行してください');
 }
+
+const pacificDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
 
 type MemoRow = {
   id: string; view_id: string | null; key_hash: string; key_gen: number;
@@ -252,12 +262,22 @@ async function youtubeSearch(req: Request, env: Env) {
   if (hit) return json(await hit.json());
   // 検索1回で無料枠を多く使うので、BPM より回数を絞る
   await limit(req, env, 'youtube', 30);
+  // 今日の分を使い切ったら（サービス全体の回数か、Google の枠切れ）、枠が戻るまで Google に問い合わせない。
+  // 画面は、キーが未設定のときと同じく iTunes の結果だけを出す
+  const day = pacificDay();
+  const keep = Date.now() + 2 * DAY;
+  const used = await env.DB.prepare('SELECT 1 FROM rate_limits WHERE bucket = ?').bind(`youtube-quota:${day}`).first();
+  if (used || (await countUp(env, `youtube-day:${day}`, keep)) > YOUTUBE_DAILY_MAX) return json({ videos: [], available: false });
   try {
     const body = { videos: await searchYoutube(title, artist, env.YOUTUBE_API_KEY), available: true };
     await cache.put(cacheKey, new Response(JSON.stringify(body), { headers: { 'Cache-Control': `max-age=${YOUTUBE_CACHE_SECONDS}` } }));
     return json(body);
   } catch (e) {
     console.warn('youtube search', e);
+    if (e instanceof Error && /quotaExceeded|dailyLimitExceeded/.test(e.message)) {
+      await countUp(env, `youtube-quota:${day}`, keep);
+      return json({ videos: [], available: false });
+    }
     throw new HttpError(502, 'YouTube を検索できませんでした');
   }
 }
@@ -393,6 +413,9 @@ async function route(req: Request, env: Env): Promise<Response> {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const headers = cors(req, env);
+    // 画面（許可したドメイン）以外からは受け付けない。ほかのサイトに埋め込まれて、外部の検索の枠を使われないように。
+    // Origin はスクリプトなら偽れるので、守りの本体はキーと回数制限
+    if (!headers['Access-Control-Allow-Origin']) return json({ error: 'このサイトからは使えません' }, 403);
     if (req.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
