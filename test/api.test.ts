@@ -229,7 +229,9 @@ describe('トップの一覧の状態', () => {
       { id: a.id, key: a.key }, { id: a.id, key: a.key }, { id: b.id, key: hex(24) }, { id: 'x' }, { id: '0'.repeat(24) },
     ] });
     expect(st.data.items).toHaveLength(4);
-    expect(st.data.items[0]).toMatchObject({ id: a.id, title: 'テスト', viewId: a.viewId });
+    expect(st.data.items[0]).toMatchObject({ id: a.id, role: 'admin', paid: false, title: 'テスト', viewId: a.viewId });
+    const ed = await call('POST', '/api/memos/status', { items: [{ id: a.id, key: await deriveEditKey(a.key, 1) }] });
+    expect(ed.data.items[0]).toMatchObject({ id: a.id, role: 'edit' });
     expect(st.data.items[1]).toMatchObject({ id: a.id, title: 'テスト' });
     expect(st.data.items[2]).toEqual({ id: b.id });
     expect(st.data.items[3]).toEqual({ id: '0'.repeat(24), gone: true });

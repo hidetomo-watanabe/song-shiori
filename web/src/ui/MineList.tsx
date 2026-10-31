@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type MemoStatus } from '../api';
 import * as L from '../storage/local';
-import { syncKeys } from '../storage/mykey';
-import { fmtDate, fmtDay } from './util';
+import { operatorAuth, syncKeys } from '../storage/mykey';
+import { errorText, fmtDate, fmtDay, toast } from './util';
 
 const SOON_DAYS = 30; // 削除予定日を出す、期限までの日数
 
@@ -16,6 +16,8 @@ export function MineList({ empty, onSync }: { empty?: string; onSync?: (count: n
   };
   const [mine, setMine] = useState(entries);
   const [status, setStatus] = useState(new Map<string, MemoStatus>());
+  // 運営者のマイキーなら、管理キーのある曲メモを一覧から無料・有料に切り替えられる
+  const [operator, setOperator] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -25,6 +27,7 @@ export function MineList({ empty, onSync }: { empty?: string; onSync?: (count: n
         try { count = await syncKeys(); } catch (e) { error = e instanceof Error ? e.message : '同期できませんでした'; }
         onSync?.(count, error);
         setMine(entries());
+        void operatorAuth().then(setOperator);
       }
       const list = ids();
       if (!list.length) return;
@@ -45,6 +48,16 @@ export function MineList({ empty, onSync }: { empty?: string; onSync?: (count: n
     setMine(entries());
   }
 
+  async function setPaid(m: L.MineEntry, paid: boolean) {
+    const key = L.getKey(m.id);
+    if (!operator || !key) return;
+    if (!paid && !window.confirm(`「${m.title || '曲名未入力'}」を無料に戻します。今日から180日で消えます（保存すれば延びます）。古い版は次の保存で直近の10版だけになります。よろしいですか？`)) return;
+    try {
+      const info = await api.plan(m.id, key, operator, paid);
+      setStatus((s) => new Map(s).set(m.id, { ...s.get(m.id)!, paid: info.paid, expiresAt: info.expiresAt }));
+    } catch (e) { toast(errorText(e, '切り替えられませんでした')); }
+  }
+
   if (!mine.length) return empty ? <p class="sub">{empty}</p> : null;
   return (
     <ul class="mine">
@@ -60,6 +73,10 @@ export function MineList({ empty, onSync }: { empty?: string; onSync?: (count: n
               </div>
             ) : (
               <a href={`#/e/${m.id}`}>{m.title || '曲名未入力'}</a>
+            )}
+            {st?.paid && <span class="tag">有料</span>}
+            {operator && st?.role === 'admin' && (
+              <button class="small ghost" onClick={() => setPaid(m, !st.paid)}>{st.paid ? '無料に戻す' : '有料にする'}</button>
             )}
             {!st?.gone && <span class="sub">{soon ? `${fmtDay(st!.expiresAt!)} に削除予定` : m.updatedAt ? fmtDate(m.updatedAt) : ''}</span>}
             <button class="small ghost" onClick={() => forget(m, !!st?.gone)}>一覧から外す</button>

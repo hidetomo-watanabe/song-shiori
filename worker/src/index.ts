@@ -288,7 +288,7 @@ async function youtubeSearch(req: Request, env: Env) {
 }
 
 // トップの「このブラウザで編集した曲メモ」の今の状態。
-// 正しいキーがあれば曲名・更新日時・期限・閲覧識別子を返し、なければ有無だけを返す（有無は ID だけでも他の API で分かる）
+// 正しいキーがあれば役割・曲名・更新日時・期限・有料かどうか・閲覧識別子を返し、なければ有無だけを返す（有無は ID だけでも他の API で分かる）
 const STATUS_MAX = 50;
 async function memoStatus(req: Request, env: Env) {
   const { items } = await body<{ items?: { id?: unknown; key?: unknown }[] }>(req);
@@ -306,8 +306,9 @@ async function memoStatus(req: Request, env: Env) {
     if (typeof id !== 'string' || !HEX(24).test(id)) return null;
     const memo = byId.get(id);
     if (!memo || memo.expires_at < now) return { id, gone: true };
-    if (!(await roleOf(memo, typeof key === 'string' ? key : null))) return { id };
-    return { id, title: memo.title, updatedAt: memo.updated_at, expiresAt: memo.expires_at, paid: !!memo.paid, viewId: memo.view_id };
+    const role = await roleOf(memo, typeof key === 'string' ? key : null);
+    if (!role) return { id };
+    return { id, role, title: memo.title, updatedAt: memo.updated_at, expiresAt: memo.expires_at, paid: !!memo.paid, viewId: memo.view_id };
   }));
   return json({ items: result.filter(Boolean) });
 }

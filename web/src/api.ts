@@ -40,7 +40,7 @@ export type ViewData = {
 };
 
 // 一覧の曲メモの今の状態。gone：削除済み・期限切れ。曲名などは正しいキーがあるときだけ返る
-export type MemoStatus = { id: string; gone?: true; title?: string; updatedAt?: number; expiresAt?: number; paid?: boolean; viewId?: string | null };
+export type MemoStatus = { id: string; gone?: true; role?: Role; title?: string; updatedAt?: number; expiresAt?: number; paid?: boolean; viewId?: string | null };
 
 export type BpmCandidate = { source: 'GetSongBPM' | 'Deezer'; title: string; artist: string; bpm: number; url: string | null };
 export type VideoCandidate = { id: string; title: string; channel: string; seconds: number };
