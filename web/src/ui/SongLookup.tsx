@@ -61,9 +61,13 @@ export function SongLookup({ title, artist, duration, onPick, onPickVideo }: Pro
     const t = it.status === 'fulfilled' ? it.value : [];
     setVideos(v);
     setResults(t);
+    // YouTube の無料枠は太平洋時間の0時（日本時間の16〜17時ごろ）に戻る
+    const limited = yt.status === 'fulfilled' && yt.value.limited
+      ? 'YouTube の動画の検索は、今日の上限に達しました（日本時間の16〜17時ごろにまた使えます）。動画の URL を貼り付ければ、そのまま使えます。'
+      : '';
     if (yt.status === 'rejected' && it.status === 'rejected') setStatus('検索できませんでした。時間をおいて試してください。');
-    else if (!v.length && !t.length) setStatus('見つかりませんでした。入力した曲名・アーティストのままで続けられます。');
-    else setStatus('');
+    else if (!v.length && !t.length) setStatus(`${limited}${limited ? 'iTunes でも' : ''}見つかりませんでした。入力した曲名・アーティストのままで続けられます。`);
+    else setStatus(limited);
   }
 
   const lengthTag = (s: number) => (duration && s && Math.abs(duration - s) > 5 ? <span class="tag">音源と長さが違います</span> : null);

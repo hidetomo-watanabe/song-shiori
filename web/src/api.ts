@@ -69,9 +69,9 @@ export const api = {
   // 曲名・アーティスト名でネット上の BPM 情報を調べる（音源は送らない）
   bpm: (title: string, artist: string) =>
     call<{ candidates: BpmCandidate[]; sources: string[] }>('GET', `/api/bpm?${new URLSearchParams({ title, artist })}`),
-  // 曲名・アーティスト名で YouTube の動画を探す（音源は送らない）。available：サーバーで YouTube の検索が使えるか
+  // 曲名・アーティスト名で YouTube の動画を探す（音源は送らない）。available：サーバーで YouTube の検索が使えるか。limited：今日の上限に達して使えない
   youtube: (title: string, artist: string) =>
-    call<{ videos: VideoCandidate[]; available: boolean }>('GET', `/api/youtube?${new URLSearchParams({ title, artist })}`),
+    call<{ videos: VideoCandidate[]; available: boolean; limited?: boolean }>('GET', `/api/youtube?${new URLSearchParams({ title, artist })}`),
 };
 
 // 利用イベント（内容を含まない）。失敗しても無視する

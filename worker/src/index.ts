@@ -263,11 +263,11 @@ async function youtubeSearch(req: Request, env: Env) {
   // 検索1回で無料枠を多く使うので、BPM より回数を絞る
   await limit(req, env, 'youtube', 30);
   // 今日の分を使い切ったら（サービス全体の回数か、Google の枠切れ）、枠が戻るまで Google に問い合わせない。
-  // 画面は、キーが未設定のときと同じく iTunes の結果だけを出す
+  // 画面は iTunes の結果だけを出し、今日の上限に達したこと（limited）を知らせる
   const day = pacificDay();
   const keep = Date.now() + 2 * DAY;
   const used = await env.DB.prepare('SELECT 1 FROM rate_limits WHERE bucket = ?').bind(`youtube-quota:${day}`).first();
-  if (used || (await countUp(env, `youtube-day:${day}`, keep)) > YOUTUBE_DAILY_MAX) return json({ videos: [], available: false });
+  if (used || (await countUp(env, `youtube-day:${day}`, keep)) > YOUTUBE_DAILY_MAX) return json({ videos: [], available: false, limited: true });
   try {
     const body = { videos: await searchYoutube(title, artist, env.YOUTUBE_API_KEY), available: true };
     await cache.put(cacheKey, new Response(JSON.stringify(body), { headers: { 'Cache-Control': `max-age=${YOUTUBE_CACHE_SECONDS}` } }));
@@ -276,7 +276,7 @@ async function youtubeSearch(req: Request, env: Env) {
     console.warn('youtube search', e);
     if (e instanceof Error && /quotaExceeded|dailyLimitExceeded/.test(e.message)) {
       await countUp(env, `youtube-quota:${day}`, keep);
-      return json({ videos: [], available: false });
+      return json({ videos: [], available: false, limited: true });
     }
     throw new HttpError(502, 'YouTube を検索できませんでした');
   }
