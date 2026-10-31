@@ -132,7 +132,7 @@ export function Manage({ id, title, artist, meta, adminKey, onMeta, onKey, onDel
         <h3>保持期限</h3>
         {meta.paid
           ? <p>期限なし（有料）</p>
-          : <p>{fmtDay(meta.expiresAt)} まで（最後の保存から180日。保存すると延び、閲覧だけでは延びません）</p>}
+          : <p>{fmtDay(meta.expiresAt)} まで（最後の保存から180日。直して保存すると延び、閲覧や変更のない保存では延びません）</p>}
         {operator && (meta.paid ? (
           confirm === 'free' ? (
             <div class="actions">

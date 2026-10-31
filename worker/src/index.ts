@@ -194,6 +194,10 @@ async function saveMemo(req: Request, env: Env, memo: MemoRow & { role: Role; ke
   if (baseVersion !== memo.version) {
     throw new HttpError(409, '他の端末で更新されています', { version: memo.version, updatedAt: memo.updated_at });
   }
+  // 中身が最新の版と同じなら、版を作らず期限も延ばさない（変えずに保存するだけで期限を延ばせないように。延長は有料の機能、要件書 11.1）
+  const text = JSON.stringify(data);
+  const latest = await env.DB.prepare('SELECT data FROM memo_versions WHERE memo_id = ? AND version = ?').bind(memo.id, memo.version).first<{ data: string }>();
+  if (latest?.data === text) return json(await infoFor(memo));
   const now = Date.now();
   const next = memo.version + 1;
   // 有料なら期限は延ばさず（期限なしのまま）、古い版も消さない
@@ -204,7 +208,7 @@ async function saveMemo(req: Request, env: Env, memo: MemoRow & { role: Role; ke
       env.DB.prepare('UPDATE memos SET version = ?, title = ?, updated_at = ?, expires_at = ? WHERE id = ? AND version = ?')
         .bind(next, data.title, now, expires, memo.id, baseVersion),
       env.DB.prepare('INSERT INTO memo_versions (memo_id, version, saved_at, data, note, notify) SELECT id, version, ?, ?, ?, ? FROM memos WHERE id = ? AND version = ? AND updated_at = ?')
-        .bind(now, JSON.stringify(data), note ?? '', notify === false ? 0 : 1, memo.id, next, now),
+        .bind(now, text, note ?? '', notify === false ? 0 : 1, memo.id, next, now),
       env.DB.prepare('DELETE FROM memo_versions WHERE memo_id = ? AND version <= ?').bind(memo.id, keepFrom),
     ]);
     if (!upd.meta.changes) throw new Error('conflict');

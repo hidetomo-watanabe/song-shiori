@@ -99,7 +99,7 @@ describe('曲メモ', () => {
     v = await call('GET', `/api/view/${viewId}?since=2`);
     expect(v.data).toMatchObject({ base: null, notify: false });
 
-    await call('PUT', `/api/memos/${id}`, { baseVersion: 2, song: renamed, notify: false }, { token: key });
+    await call('PUT', `/api/memos/${id}`, { baseVersion: 2, song, notify: false }, { token: key });
     v = await call('GET', `/api/view/${viewId}?since=2`);
     expect(v.data).toMatchObject({ version: 3, base: null, notify: false });
   });
@@ -167,6 +167,22 @@ describe('曲メモ', () => {
     expect((await call('DELETE', `/api/memos/${id}`, undefined, { token: key })).status).toBe(204);
     expect((await call('GET', `/api/memos/${id}`, undefined, { token: key })).status).toBe(404);
     expect(db.prepare('SELECT count(*) n FROM memo_versions WHERE memo_id = ?').get(id)).toEqual({ n: 0 });
+  });
+});
+
+describe('中身が同じ保存', () => {
+  it('版を作らず、期限も延ばさない', async () => {
+    const { key, id } = await create();
+    db.prepare('UPDATE memos SET expires_at = ? WHERE id = ?').run(Date.now() + DAY, id);
+    const same = await call('PUT', `/api/memos/${id}`, { baseVersion: 1, song }, { token: key });
+    expect(same.status).toBe(200);
+    expect(same.data.version).toBe(1);
+    expect(same.data.expiresAt).toBeLessThan(Date.now() + 2 * DAY);
+    expect(db.prepare('SELECT count(*) n FROM memo_versions WHERE memo_id = ?').get(id)).toEqual({ n: 1 });
+    // 中身が変われば、版を作って期限を延ばす
+    const changed = await call('PUT', `/api/memos/${id}`, { baseVersion: 1, song: renamed }, { token: key });
+    expect(changed.data.version).toBe(2);
+    expect(changed.data.expiresAt).toBeGreaterThan(Date.now() + 179 * DAY);
   });
 });
 
