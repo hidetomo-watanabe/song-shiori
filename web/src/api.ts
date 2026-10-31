@@ -59,7 +59,6 @@ export const api = {
   stopEdit: (id: string, key: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/edit-key`, undefined, key),
   reshare: (id: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/share`, {}, key),
   unshare: (id: string, key: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/share`, undefined, key),
-  extend: (id: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/extend`, {}, key),
   remove: (id: string, key: string) => call<null>('DELETE', `/api/memos/${id}`, undefined, key),
   status: (items: { id: string; key: string | null }[]) => call<{ items: MemoStatus[] }>('POST', '/api/memos/status', { items }),
   // マイキー：暗号化したキーの一覧（auth はマイキーから導出した照合用キー）

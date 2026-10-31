@@ -99,7 +99,7 @@ const un = await call('DELETE', `/api/memos/${id}/share`, undefined, admin);
 check('共有の無効化', un.status === 200 && un.data.viewId === null && (await call('GET', `/api/view/${rs.data.viewId}`)).status === 404, un);
 
 const ext = await call('POST', `/api/memos/${id}/extend`, {}, admin);
-check('保持期限の更新', ext.status === 200 && ext.data.expiresAt > Date.now() + 179 * 864e5, ext);
+check('保持期限の延長は断る（有料の機能）', ext.status === 403, ext);
 const ev = await call('POST', '/api/events', { kind: 'analysis_ok', anon: 'x', durationMs: 800, audioSec: 273 });
 check('利用イベント', ev.status === 204, ev);
 // トップの一覧：正しいキーがあれば曲名と期限、なければ有無だけ

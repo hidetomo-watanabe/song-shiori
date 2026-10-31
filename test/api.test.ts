@@ -160,8 +160,9 @@ describe('曲メモ', () => {
     expect((await call('GET', `/api/view/${rs.data.viewId}`)).status).toBe(404);
 
     db.prepare('UPDATE memos SET expires_at = ? WHERE id = ?').run(Date.now() + DAY, id);
-    const ext = await call('POST', `/api/memos/${id}/extend`, {}, { token: key });
-    expect(ext.data.expiresAt).toBeGreaterThan(Date.now() + 179 * DAY);
+    // 保持期限の延長は有料の機能にするので、管理キーでも断り、期限は変えない
+    expect((await call('POST', `/api/memos/${id}/extend`, {}, { token: key })).status).toBe(403);
+    expect((await call('GET', `/api/memos/${id}`, undefined, { token: key })).data.expiresAt).toBeLessThan(Date.now() + 2 * DAY);
 
     expect((await call('DELETE', `/api/memos/${id}`, undefined, { token: key })).status).toBe(204);
     expect((await call('GET', `/api/memos/${id}`, undefined, { token: key })).status).toBe(404);

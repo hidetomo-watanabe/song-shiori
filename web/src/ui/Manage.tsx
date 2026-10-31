@@ -126,8 +126,7 @@ export function Manage({ id, title, artist, meta, adminKey, onMeta, onKey, onDel
 
       <div class="manage-row">
         <h3>保持期限</h3>
-        <p>{fmtDay(meta.expiresAt)} まで（最後の保存から180日。閲覧だけでは延びません）</p>
-        <button onClick={() => run(async () => onMeta(await api.extend(id, adminKey)))}>今日から180日に延長</button>
+        <p>{fmtDay(meta.expiresAt)} まで（最後の保存から180日。保存すると延び、閲覧だけでは延びません）</p>
       </div>
 
       <div class="manage-row">

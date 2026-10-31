@@ -402,11 +402,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     await env.DB.prepare('UPDATE memos SET view_id = ? WHERE id = ?').bind(viewId, id).run();
     return json(await adminInfo({ ...memo, view_id: viewId }, memo.key));
   }
-  if (sub === '/extend' && m === 'POST') {
-    const expires = Date.now() + KEEP_DAYS * DAY;
-    await env.DB.prepare('UPDATE memos SET expires_at = ? WHERE id = ?').bind(expires, id).run();
-    return json(await adminInfo({ ...memo, expires_at: expires }, memo.key));
-  }
+  // 保持期限の延長は有料の機能にする（要件書 11.1）。課金を作るまでは断り、無料は保存したときだけ期限が延びる
+  if (sub === '/extend' && m === 'POST') throw new HttpError(403, '保持期限は保存すると、その日から180日に延びます');
   throw new HttpError(404, '見つかりません');
 }
 
