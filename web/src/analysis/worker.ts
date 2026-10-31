@@ -11,13 +11,33 @@ export type WorkerMessage =
   | { type: 'done'; result: ReturnType<typeof analyze>; ms: number; vocals?: VocalCurve }
   | { type: 'error'; message: string };
 
+// 歌のモデル（約20MB）は、公開先（GitHub Pages）のキャッシュの期間が短いので、Cache API で端末に置いておく。
+// モデルを差し替えたら数字を上げる（古いものは消す）
+const MODEL_CACHE = 'song-shiori-model-1';
+async function fetchModel(url: string): Promise<Uint8Array> {
+  // Cache API が使えない環境（プライベートブラウズなど）では毎回読み込む
+  const cache = await (async () => {
+    try {
+      for (const name of await caches.keys()) if (name.startsWith('song-shiori-model-') && name !== MODEL_CACHE) await caches.delete(name);
+      return await caches.open(MODEL_CACHE);
+    } catch { return null; }
+  })();
+  const hit = await cache?.match(url).catch(() => undefined);
+  if (hit) return new Uint8Array(await hit.arrayBuffer());
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`モデルを読み込めませんでした（${res.status}）`);
+  const buf = await res.clone().arrayBuffer();
+  await cache?.put(url, res).catch(() => { /* 置けなくても今回は使える */ });
+  return new Uint8Array(buf);
+}
+
 // 歌のモデル（onnxruntime-web）は、歌の割合を推定するときだけ読み込む。
 // 公開先（GitHub Pages）では複数スレッドに必要なヘッダーを付けられないので、1スレッドで動かす
 async function loadModel(url: string): Promise<VocalModel> {
   const ort = await import('onnxruntime-web/wasm');
   ort.env.wasm.numThreads = 1;
   ort.env.wasm.wasmPaths = { wasm: wasmUrl };
-  const session = await ort.InferenceSession.create(url);
+  const session = await ort.InferenceSession.create(await fetchModel(url));
   return async (x) => (await session.run({ x: new ort.Tensor('float32', x, [2, 1, 512, 1024]) })).y.data as Float32Array;
 }
 

@@ -147,8 +147,9 @@ async function viewMemo(req: Request, env: Env, viewId: string) {
   if (!HEX(32).test(viewId)) throw new HttpError(404, NOT_FOUND);
   const memo = await env.DB.prepare('SELECT * FROM memos WHERE view_id = ?').bind(viewId).first<MemoRow>();
   if (!memo || memo.expires_at < Date.now()) throw new HttpError(404, NOT_FOUND);
-  const { results } = await env.DB.prepare('SELECT version, data, note, notify FROM memo_versions WHERE memo_id = ? ORDER BY version')
-    .bind(memo.id).all<{ version: number; data: string; note: string; notify: number }>();
+  // 構成データは大きいので、版の一覧は data なしで読み、最新版と比べる版の data だけを後で読む
+  const { results } = await env.DB.prepare('SELECT version, note, notify FROM memo_versions WHERE memo_id = ? ORDER BY version')
+    .bind(memo.id).all<{ version: number; note: string; notify: number }>();
   const latest = results[results.length - 1];
   const sinceParam = Number(new URL(req.url).searchParams.get('since'));
   const since = Number.isInteger(sinceParam) && sinceParam > 0 ? sinceParam : null;
@@ -157,10 +158,16 @@ async function viewMemo(req: Request, env: Env, viewId: string) {
   if (base && base.version >= latest.version) base = undefined;
   const after = base ? results.filter((r) => r.version > base!.version) : [];
   const notify = after.some((r) => r.notify === 1);
+  const baseVersion = base && notify ? base.version : null;
+  const { results: rows } = await env.DB.prepare('SELECT version, data FROM memo_versions WHERE memo_id = ? AND version IN (?, ?)')
+    .bind(memo.id, latest.version, baseVersion ?? latest.version).all<{ version: number; data: string }>();
+  const dataOf = (v: number) => { const r = rows.find((r) => r.version === v); return r ? (JSON.parse(r.data) as Song) : null; };
+  // 読む間に保存が重なり、比べる版が古い版として消えていたら、差分なしで返す
+  const baseSong = baseVersion ? dataOf(baseVersion) : null;
   return json({
     version: memo.version, updatedAt: memo.updated_at, expiresAt: memo.expires_at,
-    song: JSON.parse(latest.data),
-    base: base && notify ? { version: base.version, song: JSON.parse(base.data) } : null,
+    song: dataOf(latest.version),
+    base: baseVersion && baseSong ? { version: baseVersion, song: baseSong } : null,
     notify,
     notes: after.filter((r) => r.notify === 1 && r.note).map((r) => ({ version: r.version, note: r.note })),
   });
@@ -263,10 +270,16 @@ async function memoStatus(req: Request, env: Env) {
   if (!Array.isArray(items) || items.length > STATUS_MAX) throw new HttpError(400, '形式が正しくありません');
   await limit(req, env, 'status', 120);
   const now = Date.now();
+  // 曲メモはまとめて1回で読む
+  const ids = [...new Set(items.map((item) => item?.id).filter((id): id is string => typeof id === 'string' && HEX(24).test(id)))];
+  const { results: memos } = ids.length
+    ? await env.DB.prepare(`SELECT * FROM memos WHERE id IN (${ids.map(() => '?').join(', ')})`).bind(...ids).all<MemoRow & { title: string }>()
+    : { results: [] };
+  const byId = new Map(memos.map((m) => [m.id, m]));
   const result = await Promise.all(items.map(async (item) => {
     const { id, key } = item ?? {};
     if (typeof id !== 'string' || !HEX(24).test(id)) return null;
-    const memo = await env.DB.prepare('SELECT * FROM memos WHERE id = ?').bind(id).first<MemoRow & { title: string }>();
+    const memo = byId.get(id);
     if (!memo || memo.expires_at < now) return { id, gone: true };
     if (!(await roleOf(memo, typeof key === 'string' ? key : null))) return { id };
     return { id, title: memo.title, updatedAt: memo.updated_at, expiresAt: memo.expires_at, viewId: memo.view_id };
@@ -400,9 +413,9 @@ export default {
   // 期限切れのメモ・マイキーの一覧・利用イベント・回数制限を削除する
   async scheduled(_: ScheduledController, env: Env) {
     const now = Date.now();
-    const { results } = await env.DB.prepare('SELECT id FROM memos WHERE expires_at < ?').bind(now).all<{ id: string }>();
-    for (const r of results) await deleteMemo(env, r.id);
     await env.DB.batch([
+      env.DB.prepare('DELETE FROM memo_versions WHERE memo_id IN (SELECT id FROM memos WHERE expires_at < ?)').bind(now),
+      env.DB.prepare('DELETE FROM memos WHERE expires_at < ?').bind(now),
       env.DB.prepare('DELETE FROM accounts WHERE expires_at < ?').bind(now),
       env.DB.prepare('DELETE FROM usage_events WHERE at < ?').bind(now - EVENT_DAYS * DAY),
       env.DB.prepare('DELETE FROM rate_limits WHERE expires_at < ?').bind(now),
