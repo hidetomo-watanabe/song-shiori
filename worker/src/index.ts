@@ -425,7 +425,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return json(await adminInfo({ ...memo, view_id: viewId }, memo.key));
   }
   // 保持期限の延長は有料の機能にする（要件書 11.1）。課金を作るまでは断り、無料は保存したときだけ期限が延びる
-  if (sub === '/extend' && m === 'POST') throw new HttpError(403, '保持期限は保存すると、その日から180日に延びます');
+  if (sub === '/extend' && m === 'POST') throw new HttpError(403, '保持期限は直して保存すると、その日から180日に延びます');
   // 無料・有料の切り替え。有料にすると期限なし、無料に戻すとその日から180日（要件書 11.1）
   if (sub === '/plan' && m === 'POST') {
     if (!(await isOperator(env, req.headers.get('X-Account')))) throw new HttpError(403, '切り替えは運営者のマイキーでのみできます');

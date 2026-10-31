@@ -74,11 +74,12 @@ export function MineList({ empty, onSync }: { empty?: string; onSync?: (count: n
             ) : (
               <a href={`#/e/${m.id}`}>{m.title || '曲名未入力'}</a>
             )}
+            {st?.role === 'admin' && <span class="tag" title="管理リンクを持っています（共有や削除の管理ができます）">管理</span>}
             {st?.paid && <span class="tag">有料</span>}
             {operator && st?.role === 'admin' && (
               <button class="small ghost" onClick={() => setPaid(m, !st.paid)}>{st.paid ? '無料に戻す' : '有料にする'}</button>
             )}
-            {!st?.gone && <span class="sub">{soon ? `${fmtDay(st!.expiresAt!)} に削除予定` : m.updatedAt ? fmtDate(m.updatedAt) : ''}</span>}
+            {!st?.gone && <span class="sub">{soon ? `${fmtDay(st!.expiresAt!)} に削除予定（直して保存すると延びます）` : m.updatedAt ? fmtDate(m.updatedAt) : ''}</span>}
             <button class="small ghost" onClick={() => forget(m, !!st?.gone)}>一覧から外す</button>
           </li>
         );

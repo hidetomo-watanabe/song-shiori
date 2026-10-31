@@ -147,10 +147,13 @@ label.check input { min-height: 0; flex: none; }
 @media (max-width: 480px) { .alt-start { grid-template-columns: 1fr; } }
 .or { display: flex; align-items: center; gap: 12px; margin: 18px 0 10px; color: var(--sub); font-size: 13px; }
 .or::before, .or::after { content: ''; flex: 1; border-top: 1px solid var(--line); }
+/* 上に固定したバーに隠れないよう、飛んだときに少し下で止める */
+.manage { scroll-margin-top: 72px; }
 .mine { list-style: none; padding: 0; margin: 0; }
-.mine li { display: flex; gap: 12px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+.mine li { display: flex; flex-wrap: wrap; column-gap: 12px; row-gap: 0; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
 .mine li:first-child { border-top: 0; }
-.mine li a { flex: 1; min-width: 0; padding: 8px 0; font-weight: 600; text-decoration: none; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mine li > button { margin-left: auto; } /* 次の行に回っても右に置く */
+.mine li a { flex: 1 1 10em; min-width: 0; padding: 8px 0; font-weight: 600; text-decoration: none; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mine li a:hover { color: var(--accent); }
 .mine-gone { flex: 1; min-width: 0; padding: 6px 0; display: flex; flex-direction: column; }
 .mine-gone b { color: var(--sub); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

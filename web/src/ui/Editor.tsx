@@ -612,6 +612,10 @@ export function Editor({ mode }: { mode: Mode }) {
         <span class="state">{id ? (meta ? `最終保存 ${new Date(meta.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '') : '下書き（この端末にだけ保存）'}</span>
         <button class="small" onClick={undo} disabled={!h.canUndo} title="元に戻す（Ctrl/⌘+Z）">元に戻す</button>
         <button class="small" onClick={redo} disabled={!h.canRedo} title="やり直す（Ctrl/⌘+Shift+Z）">やり直す</button>
+        {/* 共有と管理はページの一番下にあるので、管理リンクで開いているときは上からそこへ飛べるようにする */}
+        {id && meta && role === 'admin' && (
+          <button class="small new-link" onClick={() => document.getElementById('manage')?.scrollIntoView({ behavior: 'smooth' })}>共有と管理</button>
+        )}
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます（音源から作る・手動で作る・テキストから作る）">＋ 新しく作る</a>
       </header>
 

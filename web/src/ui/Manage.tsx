@@ -42,7 +42,7 @@ export function Manage({ id, title, artist, meta, adminKey, onMeta, onKey, onDel
   const url = meta.viewId ? viewUrl(meta.viewId) : null;
 
   return (
-    <section class="card manage">
+    <section class="card manage" id="manage">
       <h2>共有と管理</h2>
       <div class="manage-row">
         <h3>閲覧URL</h3>
