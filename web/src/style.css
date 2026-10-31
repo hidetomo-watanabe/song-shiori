@@ -135,6 +135,7 @@ label.check input { min-height: 0; flex: none; }
 .hero { padding: 28px 0 8px; }
 .hero .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .hero .brand img { width: 44px; height: 44px; border-radius: 11px; }
+.hero .brand .mine-link { margin-left: auto; }
 .hero h1 { margin: 0; font-size: 28px; }
 .hero p { color: var(--sub); font-size: 15px; }
 .start .agree { margin: 12px 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--raised); }

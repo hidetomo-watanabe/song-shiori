@@ -114,6 +114,7 @@ export function View({ viewId }: { viewId: string }) {
       <nav class="bar">
         <a href="#/" class="home"><img src="./favicon.svg" alt="" />曲のしおり</a>
         <span class="state" />
+        <a class="button small new-link" href="#/mine">作ったもの</a>
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます">＋ 新しく作る</a>
       </nav>
       <header class="view-head">

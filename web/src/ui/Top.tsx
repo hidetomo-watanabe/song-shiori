@@ -46,6 +46,8 @@ export function Top() {
         <div class="brand">
           <img src="./favicon.svg" alt="" />
           <h1>曲のしおり</h1>
+          {/* 作ったもの・マイキーへの入口は、どのページも上のバーに1つだけ置く */}
+          <a class="button small mine-link" href="#/mine">作ったもの</a>
         </div>
         <p>音源から曲の構成（区切り・繰り返し・小節数）を下書きして、聴きながら直し、バンドメンバーと共有できます。構成の勘違いをなくすための構成表です。</p>
       </header>
@@ -91,9 +93,10 @@ export function Top() {
         <section class="card">
           <h2>{getMyKey() ? 'このブラウザと同じマイキーの端末で編集した曲メモ' : 'このブラウザで編集した曲メモ'}</h2>
           <MineList empty="まだありません。" />
-          <p class="sub"><a href="#/mine">{getMyKey() ? 'マイキー' : '別の端末と揃える（マイキー）'}</a></p>
         </section>
       )}
+      {/* 初めての端末では一覧が出ないので、別の端末の曲メモを取り込めることだけ知らせる */}
+      {!hasMine && <p class="sub center">別の端末で作った曲メモは、上の「作ったもの」からマイキーで取り込めます。</p>}
     </main>
   );
 }

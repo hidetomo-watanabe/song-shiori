@@ -616,6 +616,7 @@ export function Editor({ mode }: { mode: Mode }) {
         {id && meta && role === 'admin' && (
           <button class="small new-link" onClick={() => document.getElementById('manage')?.scrollIntoView({ behavior: 'smooth' })}>共有と管理</button>
         )}
+        <a class="button small new-link" href="#/mine" title="作った曲メモの一覧とマイキー">作ったもの</a>
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます（音源から作る・手動で作る・テキストから作る）">＋ 新しく作る</a>
       </header>
 
