@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import * as M from '../../../shared/song';
+import { deriveEditKey } from '../../../shared/keys';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
 import { DEFAULT_VOLUME, Metronome } from '../audio/metronome';
@@ -60,9 +61,9 @@ export function Editor({ mode }: { mode: Mode }) {
   // 保存済みメモの情報と権限
   const [meta, setMeta] = useState<MemoInfo | null>(null);
   const base = useRef<number | null>(null); // 編集の元になった版番号
-  const createInfo = useRef<{ requestId: string; key: string; editKey?: string } | null>(null);
+  const createInfo = useRef<{ requestId: string; key: string } | null>(null);
   const [role, setRole] = useState<Role | null>(null); // admin：管理キー、edit：編集キー
-  const [session, setSessionState] = useState<string | null>(id ? L.getSession(id) : null);
+  const [key, setKeyState] = useState<string | null>(id ? L.getKey(id) : null); // このブラウザにあるリンクのキー
   const [needKey, setNeedKey] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [restore, setRestore] = useState<L.DraftRecord | null>(null);
@@ -160,29 +161,30 @@ export function Editor({ mode }: { mode: Mode }) {
         }
         return;
       }
-      await loadSaved(session);
+      await loadSaved(key);
     })();
     return () => { job.current?.cancel(); player.pause(); player.loop = null; yt?.destroy(); yt = null; metronome.stop(); };
   }, []);
 
-  async function loadSaved(token: string | null) {
+  async function loadSaved(k: string | null) {
     if (!id) return;
-    if (!token) { setNeedKey(true); return; }
+    if (!k) { setNeedKey(true); return; }
     try {
-      const d = await api.get(id, token);
+      const d = await api.get(id, k);
       setMeta(d);
       setRole(d.role);
       base.current = d.version;
       init(d.song);
       setDirty(false);
       setNeedKey(false);
-      L.rememberMine({ id, title: d.song.title, updatedAt: d.updatedAt });
+      L.rememberMine({ id, title: d.song.title, updatedAt: d.updatedAt, viewId: d.viewId });
       const pending = await L.loadDraft(draftKey);
       if (pending) setRestore(pending);
     } catch (e) {
+      // キーが作り直された・編集が止められたときは、このブラウザのキーを消して入れ直してもらう
       if (e instanceof ApiError && e.status === 401) {
-        L.setSession(id, null, false);
-        setSessionState(null);
+        L.setKey(id, null);
+        setKeyState(null);
         setNeedKey(true);
       } else setLoadError(errorText(e, '読み込めませんでした'));
     }
@@ -520,19 +522,18 @@ export function Editor({ mode }: { mode: Mode }) {
     try {
       if (!id) {
         createInfo.current ??= { requestId: randomHex(16), key: randomHex(24) };
-        createInfo.current.editKey ??= randomHex(24);
         await L.saveDraft('draft', { song: s, updatedAt: Date.now(), create: createInfo.current });
-        const c = await api.create(createInfo.current.requestId, createInfo.current.key, createInfo.current.editKey, s);
-        L.setSession(c.id, c.session, true);
-        L.setKeys(c.id, { admin: createInfo.current.key, edit: createInfo.current.editKey });
-        L.rememberMine({ id: c.id, title: s.title, updatedAt: c.updatedAt });
+        const c = await api.create(createInfo.current.requestId, createInfo.current.key, s);
+        L.setKey(c.id, createInfo.current.key);
+        L.rememberMine({ id: c.id, title: s.title, updatedAt: c.updatedAt, viewId: c.viewId });
         await L.removeDraft('draft');
-        handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key, editKey: createInfo.current.editKey, title: s.title, artist: s.artist };
+        const editKey = await deriveEditKey(createInfo.current.key, c.editKeyGen ?? 1);
+        handoff.created = { id: c.id, viewId: c.viewId!, key: createInfo.current.key, editKey, title: s.title, artist: s.artist };
         go(`#/e/${c.id}`, true);
         return;
       }
       const baseVersion = force && conflict ? conflict.version : base.current!;
-      const r = await api.save(id, session!, baseVersion, s, note.trim(), notify);
+      const r = await api.save(id, key!, baseVersion, s, note.trim(), notify);
       setMeta(r);
       base.current = r.version;
       setConflict(null);
@@ -541,15 +542,16 @@ export function Editor({ mode }: { mode: Mode }) {
       setNotify(true);
       setSaveState('saved');
       await L.removeDraft(draftKey);
-      L.rememberMine({ id, title: s.title, updatedAt: r.updatedAt });
+      L.rememberMine({ id, title: s.title, updatedAt: r.updatedAt, viewId: r.viewId });
     } catch (e) {
       setSaveState('error');
       if (e instanceof ApiError && e.status === 409 && id) {
         setConflict({ version: e.body?.version });
         setSaveError('他の端末で更新されています。最新の内容を読み込むか、この内容で上書きするかを選んでください。');
-      } else if (e instanceof ApiError && e.status === 401) {
-        setSaveError('編集の有効期限が切れたか、キーが再発行されました。キーを入力すると、変更を保持したまま保存できます。');
-        setSessionState(null);
+      } else if (e instanceof ApiError && e.status === 401 && id) {
+        setSaveError('リンクが作り直されたか、編集が止められました。新しいリンクを貼り付けると、変更を保持したまま保存できます。');
+        L.setKey(id, null);
+        setKeyState(null);
         setNeedKey(true);
       } else setSaveError(`${errorText(e, '保存できませんでした')}。変更はこの端末に残っています。`);
     }
@@ -560,20 +562,19 @@ export function Editor({ mode }: { mode: Mode }) {
     setConflict(null);
     setSaveState('idle');
     setSaveError('');
-    await loadSaved(session);
+    await loadSaved(key);
   }
 
-  async function submitKey(key: string, remember: boolean) {
+  // 貼り付けられたリンクかキーを確かめて、このブラウザに保存する
+  async function submitKey(k: string) {
     if (!id) return;
     try {
-      const k = key.trim().toLowerCase();
-      const { session: s, role: r } = await api.session(id, k);
-      L.setSession(id, s, remember);
-      if (remember) L.setKeys(id, r === 'admin' ? { admin: k } : { edit: k });
-      setSessionState(s);
-      setRole(r);
-      if (songRef.current && dirty) { setNeedKey(false); setSaveState('idle'); setSaveError(''); return; }
-      await loadSaved(s);
+      const d = await api.get(id, k);
+      L.setKey(id, k);
+      setKeyState(k);
+      setRole(d.role);
+      if (songRef.current && dirty) { setMeta(d); setNeedKey(false); setSaveState('idle'); setSaveError(''); return; }
+      await loadSaved(k);
     } catch (e) {
       return errorText(e, '確認できませんでした');
     }
@@ -614,18 +615,7 @@ export function Editor({ mode }: { mode: Mode }) {
         <a class="button small new-link" href="#/" target="_blank" rel="noopener" title="新しいタブで開きます（音源から作る・手動で作る・テキストから作る）">＋ 新しく作る</a>
       </header>
 
-      {created && (
-        <CreatedDialog
-          info={created}
-          onRemember={(r) => {
-            if (!session || !id) return;
-            L.setSession(id, session, r);
-            // 記憶しない場合は、発行したキーもこのブラウザに残さない
-            if (r) L.setKeys(id, { admin: created.key, edit: created.editKey }); else L.forgetKeys(id);
-          }}
-          onClose={() => { handoff.created = null; setCreated(null); }}
-        />
-      )}
+      {created && <CreatedDialog info={created} onClose={() => { handoff.created = null; setCreated(null); }} />}
 
       {restore && (
         <section class="card notice">
@@ -991,18 +981,18 @@ export function Editor({ mode }: { mode: Mode }) {
           onInput={(e) => edit((s) => ({ ...s, memo: (e.currentTarget as HTMLTextAreaElement).value }), { coalesce: 'memo' })} />
       </section>
 
-      {id && meta && session && role === 'edit' && (
+      {id && meta && key && role === 'edit' && (
         <section class="card">
-          <p class="sub">編集キーで編集しています。構成の編集と保存ができます。削除や共有の管理は、管理キーを持つ人（作成者）だけができます。</p>
+          <p class="sub">編集リンクで編集しています。構成の編集と保存ができます。削除や共有の管理は、管理リンクを持つ人（作成者）だけができます。</p>
           {/* 見てもらうだけのときは、曲名と閲覧 URL を送る（編集キーは入れない）。共有が無効なときは出さない */}
           {meta.viewId && <ShareButtons text={() => shareMessage(song.title, song.artist, viewUrl(meta.viewId!))} />}
         </section>
       )}
-      {id && meta && session && role === 'admin' && (
-        <Manage id={id} title={song.title} artist={song.artist} meta={meta} session={session}
+      {id && meta && key && role === 'admin' && (
+        <Manage id={id} title={song.title} artist={song.artist} meta={meta} adminKey={key}
           onMeta={setMeta}
-          onSession={(s) => { L.setSession(id, s, L.remembersSession(id)); setSessionState(s); }}
-          onDeleted={async () => { await L.removeDraft(draftKey); L.forgetMine(id); L.forgetKeys(id); go('#/', true); }} />
+          onKey={(k) => { L.setKey(id, k); setKeyState(k); }}
+          onDeleted={async () => { await L.removeDraft(draftKey); L.forgetMine(id); L.setKey(id, null); go('#/', true); }} />
       )}
 
       {needKey && song && <KeyForm inline onSubmit={submitKey} />}

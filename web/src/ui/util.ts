@@ -40,15 +40,19 @@ export async function copy(text: string): Promise<boolean> {
 }
 
 export const viewUrl = (viewId: string) => `${location.origin}${location.pathname}#/v/${viewId}`;
+// 編集リンク・管理リンク（ライブのしおりと同じく、キーをリンクに入れて渡す）。開くとキーをこのブラウザに保存し、アドレスバーから消す
+export const editUrl = (id: string, key: string) => `${location.origin}${location.pathname}#/e/${id}?k=${key}`;
+// 貼り付けられたリンクかキーから、キーを取り出す。読めなければ null
+export const keyFromInput = (s: string) => s.trim().toLowerCase().match(/^(?:.*[?&]k=)?([a-f0-9]{48})$/)?.[1] ?? null;
 
 // 共有の文。LINE などのリンクの表示は曲によらず同じ（閲覧ページの URL は # 以降がサーバーに届かないため）なので、
 // どの曲の構成表か分かるよう、文のほうに曲名を入れる。1行目を曲名にして、LINE の通知やトークの一覧でも分かるようにする
 // ライブのしおりと同じく、名前・詳細・リンクを1行ずつ並べる（ライブのしおりは イベント名・日時・会場・リンク）
 export const shareTitle = (title: string) => title || '曲の構成表';
 export const shareMessage = (title: string, artist: string, url: string) => [shareTitle(title), artist, url].filter(Boolean).join('\n');
-// メンバーに送る文：閲覧 URL と編集キー（管理キーは入れない）
-export const memberMessage = (title: string, artist: string, url: string, editKey: string) =>
-  `${shareMessage(title, artist, url)}\n\n直すときは、ページの下の「編集する」で次の編集キーを入れてください。\n編集キー：${editKey}`;
+// メンバーに送る文：閲覧 URL と編集リンク（管理リンクは入れない）
+export const memberMessage = (title: string, artist: string, url: string | null, edit: string) =>
+  url ? `${shareMessage(title, artist, url)}\n\n直すときは、こちらの編集リンクから開いてください。\n${edit}` : shareMessage(title, artist, edit);
 
 // コピー・共有の結果は、押したボタンから離れた場所だと気づきにくいため、画面下の通知（トースト）で出す（ライブのしおりと同じ）
 export function toast(message: string) {
@@ -80,7 +84,7 @@ export async function copyWithToast(text: string, done: string) {
   toast((await copy(text)) ? done : 'コピーできませんでした。長押しして選び、コピーしてください。');
 }
 
-// 作成直後の情報（保存直後のダイアログで控えてもらうキー）
+// 作成直後の情報（保存直後のダイアログで出すリンク）
 export type Created = { id: string; viewId: string; key: string; editKey: string; title: string; artist: string };
-// 画面間の受け渡し（選択したファイル、作成直後の秘密キー）
+// 画面間の受け渡し（選択したファイル、作成直後のリンクのキー）
 export const handoff: { file: File | null; created: Created | null } = { file: null, created: null };

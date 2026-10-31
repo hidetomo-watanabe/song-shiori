@@ -1,4 +1,4 @@
-// API の呼び出し。秘密キーと編集セッションは Authorization ヘッダーで送る
+// API の呼び出し。リンクのキー（管理キー・編集キー）とマイキーの照合用キーは Authorization ヘッダーで送る
 import type { Song } from '../../shared/song';
 import { anonId } from './storage/local';
 
@@ -30,38 +30,42 @@ export const randomHex = (bytes: number) =>
 
 // role：admin は管理キー（作成者。すべての操作）、edit は編集キー（メンバー。構成の編集と保存だけ）
 export type Role = 'admin' | 'edit';
-export type MemoInfo = { id: string; viewId: string | null; version: number; updatedAt: number; expiresAt: number; editKey: boolean };
-export type Created = MemoInfo & { session: string; role: Role };
+// editKeyGen：管理キーで開いたときだけ返る編集キーの世代（管理キーから編集リンクを作る）。導出する形より前の編集キーなら null
+export type MemoInfo = { id: string; viewId: string | null; version: number; updatedAt: number; expiresAt: number; editKey: boolean; editKeyGen?: number | null };
+export type Created = MemoInfo & { role: Role };
 export type EditData = MemoInfo & { song: Song; role: Role };
 export type ViewData = {
   version: number; updatedAt: number; expiresAt: number; song: Song;
   base: { version: number; song: Song } | null; notify: boolean; notes: { version: number; note: string }[];
 };
 
-// 一覧の曲メモの今の状態。gone：削除済み・期限切れ。曲名などは有効な編集セッションがあるときだけ返る
-export type MemoStatus = { id: string; gone?: true; title?: string; updatedAt?: number; expiresAt?: number };
+// 一覧の曲メモの今の状態。gone：削除済み・期限切れ。曲名などは正しいキーがあるときだけ返る
+export type MemoStatus = { id: string; gone?: true; title?: string; updatedAt?: number; expiresAt?: number; viewId?: string | null };
 
 export type BpmCandidate = { source: 'GetSongBPM' | 'Deezer'; title: string; artist: string; bpm: number; url: string | null };
 export type VideoCandidate = { id: string; title: string; channel: string; seconds: number };
 
 export const api = {
-  // キー（管理キー・編集キー）は端末で作り、サーバーにはハッシュだけを保存する。再送しても同じ曲メモになる
-  create: (requestId: string, key: string, editKey: string, song: Song) => call<Created>('POST', '/api/memos', { requestId, key, editKey, song }),
+  // 管理キーは端末で作り、サーバーにはハッシュだけを保存する（編集キーは管理キーから導出）。再送しても同じ曲メモになる
+  create: (requestId: string, key: string, song: Song) => call<Created>('POST', '/api/memos', { requestId, key, song }),
   view: (viewId: string, since: number | null) => call<ViewData>('GET', `/api/view/${viewId}${since ? `?since=${since}` : ''}`),
-  session: (id: string, key: string) => call<{ session: string; role: Role }>('POST', `/api/memos/${id}/session`, {}, key),
-  // 閲覧ページから編集を始める（閲覧識別子と、編集キーまたは管理キー）
-  viewSession: (viewId: string, key: string) => call<{ id: string; session: string; role: Role }>('POST', `/api/view/${viewId}/session`, {}, key),
-  get: (id: string, s: string) => call<EditData>('GET', `/api/memos/${id}`, undefined, s),
-  save: (id: string, s: string, baseVersion: number, song: Song, note: string, notify: boolean) =>
-    call<MemoInfo>('PUT', `/api/memos/${id}`, { baseVersion, song, note, notify }, s),
-  rekey: (id: string, s: string, key: string) => call<{ session: string }>('POST', `/api/memos/${id}/keys`, { key }, s),
-  editKey: (id: string, s: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/edit-key`, { key }, s),
-  stopEdit: (id: string, s: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/edit-key`, undefined, s),
-  reshare: (id: string, s: string) => call<MemoInfo>('POST', `/api/memos/${id}/share`, {}, s),
-  unshare: (id: string, s: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/share`, undefined, s),
-  extend: (id: string, s: string) => call<MemoInfo>('POST', `/api/memos/${id}/extend`, {}, s),
-  remove: (id: string, s: string) => call<null>('DELETE', `/api/memos/${id}`, undefined, s),
-  status: (items: { id: string; session: string | null }[]) => call<{ items: MemoStatus[] }>('POST', '/api/memos/status', { items }),
+  // 閲覧ページでキーを入れて編集を始める（閲覧識別子と、編集キーまたは管理キー）
+  open: (viewId: string, key: string) => call<{ id: string; role: Role }>('POST', `/api/view/${viewId}/open`, {}, key),
+  get: (id: string, key: string) => call<EditData>('GET', `/api/memos/${id}`, undefined, key),
+  save: (id: string, key: string, baseVersion: number, song: Song, note: string, notify: boolean) =>
+    call<MemoInfo>('PUT', `/api/memos/${id}`, { baseVersion, song, note, notify }, key),
+  rekey: (id: string, key: string, next: string) => call<MemoInfo>('POST', `/api/memos/${id}/keys`, { key: next }, key),
+  editKey: (id: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/edit-key`, {}, key),
+  stopEdit: (id: string, key: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/edit-key`, undefined, key),
+  reshare: (id: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/share`, {}, key),
+  unshare: (id: string, key: string) => call<MemoInfo>('DELETE', `/api/memos/${id}/share`, undefined, key),
+  extend: (id: string, key: string) => call<MemoInfo>('POST', `/api/memos/${id}/extend`, {}, key),
+  remove: (id: string, key: string) => call<null>('DELETE', `/api/memos/${id}`, undefined, key),
+  status: (items: { id: string; key: string | null }[]) => call<{ items: MemoStatus[] }>('POST', '/api/memos/status', { items }),
+  // マイキー：暗号化したキーの一覧（auth はマイキーから導出した照合用キー）
+  account: (auth: string) => call<{ data: string; revision: number }>('GET', '/api/account', undefined, auth),
+  putAccount: (auth: string, data: string, revision: number) => call<{ revision: number }>('PUT', '/api/account', { data, revision }, auth),
+  deleteAccount: (auth: string) => call<{ deleted: true }>('DELETE', '/api/account', undefined, auth),
   // 曲名・アーティスト名でネット上の BPM 情報を調べる（音源は送らない）
   bpm: (title: string, artist: string) =>
     call<{ candidates: BpmCandidate[]; sources: string[] }>('GET', `/api/bpm?${new URLSearchParams({ title, artist })}`),
