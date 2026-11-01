@@ -4,16 +4,29 @@ import type { Song } from '../../../shared/song';
 
 type Props = { song: Song; duration?: number; onImport: (song: Song) => void; onClose: () => void };
 
-// テキスト（構成表の書き出し）を貼り付けるか .txt を選んで、構成を置き換える
+// テキスト（構成表の書き出し）を貼り付けるか、.txt を選ぶ・落として、構成を置き換える
 export function ImportText({ song, duration, onImport, onClose }: Props) {
   const [text, setText] = useState('');
+  const [over, setOver] = useState(false);
   const [result, setResult] = useState<Imported | null>(null);
   const read = (t: string) => { setText(t); setResult(t.trim() ? songFromText(t, song, duration) : null); };
   const parts = result?.song.sections ?? [];
   const ok = !!result && parts.length > 0 && result.song !== song;
+  const hasFile = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
+  // ファイルを落としたときは中身を読む。ブラウザがファイルをタブで開いて編集画面から離れないよう、標準の動きは止める
+  const onDrop = async (e: DragEvent) => {
+    if (!hasFile(e)) return;
+    e.preventDefault();
+    setOver(false);
+    const f = e.dataTransfer!.files[0];
+    if (f) read(await f.text());
+  };
   return (
-    <div class="import">
-      <p class="sub">「テキストをコピー」「テキストで保存」で書き出した構成表を、貼り付けるかファイルで選んでください。</p>
+    <div class={`import${over ? ' drop-over' : ''}`}
+      onDragOver={(e) => { if (hasFile(e)) { e.preventDefault(); e.dataTransfer!.dropEffect = 'copy'; setOver(true); } }}
+      onDragLeave={(e) => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node | null)) setOver(false); }}
+      onDrop={onDrop}>
+      <p class="sub">「テキストをコピー」「テキストで保存」で書き出した構成表を、貼り付けるか、ファイルを選ぶかここに落としてください。</p>
       <textarea rows={6} value={text} placeholder={'0:00.0 （無音）\n0:01.5 イントロ 8小節\n0:17.0 Aメロ 16小節'} onInput={(e) => read((e.currentTarget as HTMLTextAreaElement).value)} />
       <div class="import-row">
         <label class="button file small">

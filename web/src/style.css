@@ -207,6 +207,7 @@ label.inline input { width: 72px; }
 .text-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .text-tools .export { margin-top: 0; }
 .import { border: 1px dashed var(--accent); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; display: grid; gap: 8px; }
+.import.drop-over { border-style: solid; background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .import-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .import-preview p { margin: 4px 0; }
 .export { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
