@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, pickupBeats, setPickup, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, transposeKey, transposeChords, keySummary, type Song,
+  applySuggestedNames, barPositionIn, pickupBeats, setPickup, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, countInPlan, transposeKey, transposeChords, keySummary, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -271,6 +271,23 @@ describe('編集ルール', () => {
     expect(usesDetectedBeats(half)).toBe(true);
     expect(barLines(half)!.filter((t) => t >= 1).slice(0, 3)).toEqual([beats[0], beats[8], beats[16]]);
     expect(usesDetectedBeats(setTempo(s, { bpmManual: 120 }))).toBe(false);
+  });
+
+  it('再生の前のカウント：再生を始める位置の手前に、その位置の拍の間隔で小節ぶん数える', () => {
+    const s = sample(); // 120BPM・4/4（1拍0.5秒）
+    const c = countInPlan(s, 16, 1)!;
+    expect(c.map((x) => x.t)).toEqual([14, 14.5, 15, 15.5]);
+    expect(c.map((x) => x.head)).toEqual([true, false, false, false]);
+    expect(countInPlan(s, 16, 2)).toHaveLength(8);
+    expect(countInPlan(s, 16, 0)).toBeNull();
+    expect(countInPlan({ ...s, bpmEst: null }, 16, 1)).toBeNull();
+    // 曲の頭から再生して弱起（最初の小節頭が 1秒）があるときは、最初の小節頭に向けて数える（最後の2拍は曲の頭の後ろ）
+    const p = normalize({ ...s, firstDownbeat: 1 });
+    expect(countInPlan(p, 0, 1)!.map((x) => x.t)).toEqual([-1, -0.5, 0, 0.5]);
+    // テンポが揺れる曲では、再生を始める位置の後の拍の間隔を使う
+    const beats = Array.from({ length: 40 }, (_, i) => i * 0.5 + (i > 20 ? (i - 20) * 0.1 : 0));
+    const d = normalize({ ...s, beats, firstDownbeat: 0 });
+    expect(countInPlan(d, beats[24], 1)![3].t).toBeCloseTo(beats[24] - 0.6);
   });
 
   it('等間隔の線では、演奏のテンポの揺れによるずれを区間の頭で合わせ直す（区間の中は小節数で等分）', () => {

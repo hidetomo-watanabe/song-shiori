@@ -18,6 +18,8 @@ export class Metronome {
   private last = -Infinity; // 最後に鳴らした時刻（AudioContext の時刻）
   private next = 0; // 止まっているとき：次の拍を鳴らす時刻
   private count = 0; // 止まっているとき：鳴らし始めてから何拍目か
+  private holdUntil = 0; // 再生の前のカウントを鳴らしている間（AudioContext の時刻）は、メトロノームの拍を予約しない
+  private counted: OscillatorNode[] = []; // 予約したカウントの音（取り消すため）
   bpm = 120;
   beatsPerBar = 4;
   beats: Beat[] | null = null;
@@ -45,8 +47,31 @@ export class Metronome {
     this.timer = 0;
   }
 
+  // 再生の前のカウントを予約する。clicks は曲の時刻のカウントの位置、from は再生を始める曲の時刻。
+  // メトロノームを鳴らしていなくても鳴らす。戻り値は曲を from から鳴らし始める時刻（AudioContext の時刻）と、そこまでの秒数。
+  // 利用者の操作（タップ）から呼ぶこと
+  countIn(clicks: Beat[], from: number): { at: number; wait: number } {
+    this.cancelCount();
+    const ctx = this.context();
+    void ctx.resume();
+    const now = ctx.currentTime;
+    const at = now + 0.2 + Math.max(0, from - clicks[0].t);
+    for (const c of clicks) this.click(at + c.t - from, c.head, this.counted);
+    this.holdUntil = at;
+    return { at, wait: at - now };
+  }
+
+  // 予約したカウントを取り消す（カウントの途中で止めたとき）
+  cancelCount() {
+    for (const o of this.counted) { try { o.stop(); } catch { /* 鳴り終わっている */ } }
+    this.counted = [];
+    this.holdUntil = 0;
+    this.last = -Infinity;
+  }
+
   private schedule() {
     const now = this.context().currentTime;
+    if (now < this.holdUntil) return;
     const pos = this.beats?.length ? this.clock() : null;
     if (pos) this.scheduleSynced(now, pos);
     else this.scheduleFree(now);
@@ -84,7 +109,7 @@ export class Metronome {
   }
 
   // 短い「カッ」という音。小節の頭は高く強めにする
-  private click(at: number, accent: boolean) {
+  private click(at: number, accent: boolean, keep?: OscillatorNode[]) {
     if (at < this.last + GAP) return;
     this.last = at;
     const ctx = this.context();
@@ -96,5 +121,6 @@ export class Metronome {
     osc.connect(gain).connect(ctx.destination);
     osc.start(at);
     osc.stop(at + 0.06);
+    keep?.push(osc);
   }
 }

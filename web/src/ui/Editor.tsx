@@ -4,6 +4,7 @@ import { deriveEditKey } from '../../../shared/keys';
 import type { AnalysisResult, Section, Song } from '../../../shared/song';
 import { checkFile, MAX_SECONDS, Player } from '../audio/player';
 import { DEFAULT_VOLUME, Metronome } from '../audio/metronome';
+import { CountIn } from '../audio/countIn';
 import { YouTubePlayer, type Playback } from '../audio/youtube';
 import { runAnalysis, toAnalysisSamples, toVocalInput, type AnalysisJob } from '../analysis/run';
 import type { VocalCurve } from '../analysis/vocal';
@@ -48,6 +49,8 @@ const metronome = new Metronome(() => player.context(), () => {
   const m = media();
   return m.playing ? { t: m.currentTime, end: m.duration, loop: m.loop } : null;
 });
+// 再生の前のカウント。メトロノームと同じ音・同じ時計で鳴らす
+const countIn = new CountIn(metronome);
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export function Editor({ mode }: { mode: Mode }) {
@@ -119,6 +122,7 @@ export function Editor({ mode }: { mode: Mode }) {
   const [ticking, setTicking] = useState(false); // メトロノームを鳴らしているか
   const [clickVolume, setClickVolume] = useState(() => L.getMetronomeVolume() ?? DEFAULT_VOLUME); // このブラウザに覚えておく
   metronome.volume = clickVolume;
+  const [countBars, setCountBars] = useState(L.getCountIn); // 再生の前に鳴らすカウントの小節数（0 は鳴らさない）。このブラウザに覚えておく
 
   // 保存
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -163,7 +167,7 @@ export function Editor({ mode }: { mode: Mode }) {
       }
       await loadSaved(key);
     })();
-    return () => { job.current?.cancel(); player.pause(); player.loop = null; yt?.destroy(); yt = null; metronome.stop(); };
+    return () => { job.current?.cancel(); player.pause(); player.loop = null; yt?.destroy(); yt = null; countIn.cancel(); metronome.stop(); };
   }, []);
 
   async function loadSaved(k: string | null) {
@@ -243,6 +247,7 @@ export function Editor({ mode }: { mode: Mode }) {
 
   // 音源ファイルと YouTube の動画のどちらで再生するかを切り替える。切り替える前の再生は止める
   function setUseVideo(on: boolean) {
+    countIn.cancel();
     media().setLoop(null);
     media().pause();
     setLoopId(null);
@@ -254,7 +259,7 @@ export function Editor({ mode }: { mode: Mode }) {
 
   // 再生位置の表示
   useEffect(() => {
-    const t = setInterval(() => { setNow(media().currentTime); setPlaying(media().playing); }, 100);
+    const t = setInterval(() => { setNow(media().currentTime); setPlaying(media().playing || countIn.waiting); }, 100);
     return () => clearInterval(t);
   }, []);
 
@@ -434,12 +439,17 @@ export function Editor({ mode }: { mode: Mode }) {
   // 再生・移動の操作をしたら、表示上の再生位置もすぐに合わせる
   function syncNow() {
     setNow(media().currentTime);
-    setPlaying(media().playing);
+    setPlaying(media().playing || countIn.waiting);
   }
 
+  // 再生を始める。カウントを選んでいれば、先にカウントを鳴らす
+  function startPlay(from?: number) {
+    const s = songRef.current;
+    countIn.play(media(), from, (t) => (s && countBars ? M.countInPlan(s, t, countBars) : null), syncNow);
+  }
   function togglePlay() {
-    if (media().playing) media().pause();
-    else media().play();
+    if (media().playing || countIn.waiting) { countIn.cancel(); media().pause(); }
+    else startPlay();
     syncNow();
   }
   function clearLoop() {
@@ -450,6 +460,7 @@ export function Editor({ mode }: { mode: Mode }) {
   function seekTo(t: number) {
     const l = media().loop;
     if (l && (t < l.start || t >= l.end)) clearLoop();
+    countIn.cancel();
     media().seek(t);
     setNow(t);
   }
@@ -463,7 +474,7 @@ export function Editor({ mode }: { mode: Mode }) {
   // select：再生した区間を選ぶ（開く）か。たたんだ行の再生ボタンからは開かない
   function playSection(s: Section, select = true) {
     if (loopId) { setLoopId(s.id); media().loop = { start: s.start, end: s.end }; }
-    media().play(resumeAt(s) ?? s.start);
+    startPlay(resumeAt(s) ?? s.start);
     if (select) setSelected(s.id);
     syncNow();
   }
@@ -472,7 +483,7 @@ export function Editor({ mode }: { mode: Mode }) {
     setLoopId(s.id);
     const from = resumeAt(s);
     media().setLoop({ start: s.start, end: s.end });
-    if (!media().playing) media().play(from ?? s.start);
+    if (!media().playing && !countIn.waiting) startPlay(from ?? s.start);
     syncNow();
     track('loop_play');
   }
@@ -647,6 +658,14 @@ export function Editor({ mode }: { mode: Mode }) {
           <button class="primary play" onClick={togglePlay} disabled={!hasAudio}>{playing ? '一時停止' : '再生'}</button>
           <span class="time">{fmt(now)} / {fmt(hasAudio ? media().duration : song.duration)}</span>
           {currentSection && <span class={`now-tag tone-${groupTone(currentSection.group)}`}><span class="chip" aria-hidden="true" />{playing ? '再生中' : '再生位置'}：{currentSection.name}</span>}
+          {hasAudio && tempoBpm && (
+            <label class="count-in" title="再生を始める前に、メトロノームの音でカウントを鳴らします（ループで頭に戻るたびには鳴らしません）">
+              <span class="sub">カウント</span>
+              <select value={countBars} onChange={(e) => { const v = Number((e.currentTarget as HTMLSelectElement).value); setCountBars(v); L.setCountIn(v); }}>
+                <option value={0}>なし</option><option value={1}>1小節</option><option value={2}>2小節</option>
+              </select>
+            </label>
+          )}
           {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={clearLoop}>解除</button></span>}
           <span class="spacer" />
           <label class={`button file small${hasAudio ? '' : ' primary'}`}>
@@ -668,6 +687,7 @@ export function Editor({ mode }: { mode: Mode }) {
               onClick={() => void analyzeBuffer(player.buffer!, 'chords', M.bpmOf(song) ?? undefined)}>コードだけ推定する</button>
           )}
         </div>
+        {countBars > 0 && tempoBpm && hasAudio && media() !== player && <p class="sub">YouTube の動画では、カウントの後に少し遅れて始まることがあります。</p>}
         {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && !useVideo && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
         {!hasAudio && !videoId && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
         {videoId ? (

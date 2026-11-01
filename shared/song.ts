@@ -268,6 +268,25 @@ export function barLines(s: Song): number[] | null {
 // メトロノームを曲の拍に合わせて鳴らす位置（曲の頭からの秒）。0 秒より前の拍は除く
 export const beatClicks = (s: Song) => beatsWithBars(s)?.filter((b) => b.t >= 0) ?? null;
 
+// 再生の前のカウント（bars 小節ぶん）を鳴らす位置。曲の時刻で、t から再生するときの t より前（弱起ではその後ろにも入る）。
+// 拍の間隔は、t の後の拍の間隔（小節の線と同じ拍）を使い、カウントの最後の拍の次の拍で曲が始まるようにする。
+// 曲の頭から再生して最初の小節頭の前に拍がある（弱起）ときは、最初の小節頭に向けて数える。BPM がなければ null
+export function countInPlan(song: Song, t: number, bars: number): { t: number; head: boolean }[] | null {
+  const bpm = bpmOf(song);
+  if (!(bars > 0) || !bpm) return null;
+  const n = Math.max(1, song.beatsPerBar), count = Math.round(bars) * n;
+  const grid = beatTimes(song);
+  let beat = 60 / bpm;
+  if (grid && grid.length >= 2) {
+    let i = grid.findIndex((b) => b > t + 0.05);
+    if (i < 0) i = grid.length - 1;
+    beat = grid[Math.max(1, i)] - grid[Math.max(1, i) - 1];
+  }
+  const first = song.sections[0], down = song.firstDownbeat;
+  const to = first && t <= first.start + 0.05 && down != null && down > t + 0.05 && down - t < n * beat - 0.05 ? down : t;
+  return Array.from({ length: count }, (_, j) => ({ t: round3(to - (count - j) * beat), head: j % n === 0 }));
+}
+
 // 位置 t が何小節目にあたるか（小数）。線の間は直線で補い、前後は端の間隔で延長する
 function indexAt(lines: number[], t: number): number {
   const last = lines.length - 1;

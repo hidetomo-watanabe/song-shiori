@@ -168,6 +168,8 @@ label.check input { min-height: 0; flex: none; }
 .player-row, .tempo-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
 .player-row { align-items: center; }
 .player-row .spacer { flex: 1; }
+.count-in { display: inline-flex; align-items: center; gap: 4px; }
+.count-in select { width: auto; }
 .play { min-width: 104px; justify-content: center; }
 .time { font-variant-numeric: tabular-nums; }
 .player-row > .time { font-size: 15px; font-weight: 600; }

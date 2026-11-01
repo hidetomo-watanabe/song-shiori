@@ -75,7 +75,7 @@ export class Player {
   // 音源ファイルの上の再生位置
   private get fileTime(): number {
     if (!this.playing || !this.ctx) return this.pos;
-    const elapsed = this.ctx.currentTime - this.startedAt;
+    const elapsed = Math.max(0, this.ctx.currentTime - this.startedAt); // 鳴らし始める時刻を予約したときは、それまで動かない
     if (this.looping) {
       const { start, end } = this.looping;
       return start + ((this.pos - start + elapsed) % (end - start));
@@ -88,11 +88,13 @@ export class Player {
     return Math.max(0, this.fileTime - this.offset);
   }
 
-  // 利用者の操作（タップ）から呼ぶこと。iPhone ではそれ以外の契機で音が出ない
-  play(from?: number) {
+  // 利用者の操作（タップ）から呼ぶこと。iPhone ではそれ以外の契機で音が出ない。
+  // when（AudioContext の時刻）を渡すと、その時刻に鳴らし始める（再生の前のカウントのあと）
+  play(from?: number, when?: number) {
     if (!this.buffer) return;
     const ctx = this.context();
     void ctx.resume();
+    const start = Math.max(ctx.currentTime, when ?? 0);
     let at = Math.max(0, Math.min(from != null ? from + this.offset : this.fileTime, this.fileDuration - 0.01));
     this.stopSource();
     const src = ctx.createBufferSource();
@@ -105,10 +107,10 @@ export class Player {
       src.loop = true;
       src.loopStart = 0;
       src.loopEnd = src.buffer.duration;
-      src.start(0, at - loop.start);
+      src.start(start, at - loop.start);
     } else {
       src.buffer = this.buffer;
-      src.start(0, at);
+      src.start(start, at);
     }
     this.looping = loop ? { ...loop } : null;
     src.onended = () => {
@@ -119,7 +121,7 @@ export class Player {
       this.onEnded();
     };
     this.src = src;
-    this.startedAt = ctx.currentTime;
+    this.startedAt = start;
     this.pos = at;
     this.playing = true;
   }

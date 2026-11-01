@@ -60,6 +60,13 @@ export const getMetronomeVolume = () => {
 };
 export const setMetronomeVolume = (v: number) => set('ks-metronome-volume', String(v));
 
+// 再生の前に鳴らすカウントの小節数（0・1・2）。保存していなければ 0（鳴らさない）
+export const getCountIn = () => {
+  const v = Number(get('ks-count-in'));
+  return v === 1 || v === 2 ? v : 0;
+};
+export const setCountIn = (v: number) => set('ks-count-in', v ? String(v) : null);
+
 export const getSeen = (viewId: string) => Number(get(`ks-seen-${viewId}`)) || null;
 export const setSeen = (viewId: string, version: number) => set(`ks-seen-${viewId}`, String(version));
 

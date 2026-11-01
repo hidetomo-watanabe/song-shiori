@@ -1,17 +1,24 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, pickupBeats, sectionBpm, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keyLabel, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, countInPlan, pickupBeats, sectionBpm, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keyLabel, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
+import { DEFAULT_VOLUME, Metronome } from '../audio/metronome';
+import { CountIn } from '../audio/countIn';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
-import { getSeen, setSeen } from '../storage/local';
+import { getCountIn, getMetronomeVolume, getSeen, setCountIn, setSeen } from '../storage/local';
 import { errorText, fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
 import { ShareButtons } from './ShareButtons';
 import { Practice } from './Practice';
 
 // 共有閲覧ページ：構成表とメモの表示のみ（再生機能なし）。前に見た版からの変更を示す
+// 再生の前のカウント。閲覧ページは YouTube の動画だけで再生するので、カウントの音だけのために AudioContext を作る（押したときに作る）
+let clickContext: AudioContext | null = null;
+const viewMetronome = new Metronome(() => (clickContext ??= new AudioContext()), () => null);
+const countIn = new CountIn(viewMetronome);
+
 export function View({ viewId }: { viewId: string }) {
   const [data, setData] = useState<ViewData | null>(null);
   const [seenBefore, setSeenBefore] = useState<number | null>(null);
@@ -45,6 +52,7 @@ export function View({ viewId }: { viewId: string }) {
   const [ytError, setYtError] = useState('');
   const [now, setNow] = useState(0); // 再生位置（構成表の時刻）
   const [playing, setPlaying] = useState(false);
+  const [countBars, setCountBars] = useState(getCountIn); // 再生の前に鳴らすカウントの小節数（編集画面と同じ設定）
   const [started, setStarted] = useState(false); // 一度でも再生したか。再生前はどの区間も示さない
   useEffect(() => {
     if (ytState !== 'loading' || !data?.song.youtube || !ytHost.current) return;
@@ -65,10 +73,10 @@ export function View({ viewId }: { viewId: string }) {
     if (!yt) return;
     const t = setInterval(() => {
       setNow(yt.currentTime);
-      setPlaying(yt.playing);
+      setPlaying(yt.playing || countIn.waiting);
       if (yt.playing) setStarted(true);
     }, 200);
-    return () => { clearInterval(t); yt.destroy(); };
+    return () => { clearInterval(t); countIn.cancel(); yt.destroy(); };
   }, [yt]);
 
   // タブ・ブックマークの名前を曲名にする
@@ -99,6 +107,15 @@ export function View({ viewId }: { viewId: string }) {
   // 原曲と違うところ（カット・違う点のメモ）の数
   const arranged = song.sections.filter((s) => s.cut || s.arrange?.trim()).length;
   const bpm = bpmOf(song);
+  // 再生を始める。カウントを選んでいれば、先にカウントを鳴らす
+  const startPlay = (from?: number) => {
+    if (!yt) return;
+    viewMetronome.volume = getMetronomeVolume() ?? DEFAULT_VOLUME;
+    setStarted(true);
+    countIn.play(yt, from, (t) => (countBars ? countInPlan(song, t, countBars) : null), () => setPlaying(true));
+    setPlaying(true);
+  };
+  const seek = (t: number) => { countIn.cancel(); yt?.seek(t); setNow(t); setStarted(true); };
   // 同じ繰り返しの1回目の区間名。名前が違うのに同じ演奏の区間（大サビなど）に「〇〇と同じ」と添える
   const firstName = new Map<string, { id: string; name: string }>();
   for (const s of song.sections) if (s.group && !firstName.has(s.group)) firstName.set(s.group, { id: s.id, name: s.name });
@@ -170,10 +187,18 @@ export function View({ viewId }: { viewId: string }) {
                 <>
                   <div class="view-player">
                     <button class={`small${playing ? ' on' : ''}`} aria-label={playing ? '一時停止' : '再生'}
-                      onClick={() => { if (yt.playing) yt.pause(); else yt.play(); setPlaying(yt.playing); }}>{playing ? '■ 停止' : '▶ 再生'}</button>
-                    <SeekBar now={now} duration={yt.duration} onSeek={(t) => { yt.seek(t); setNow(t); setStarted(true); }} />
+                      onClick={() => { if (yt.playing || countIn.waiting) { countIn.cancel(); yt.pause(); setPlaying(false); } else startPlay(); }}>{playing ? '■ 停止' : '▶ 再生'}</button>
+                    <SeekBar now={now} duration={yt.duration} onSeek={seek} />
+                    {bpm && (
+                      <label class="count-in" title="再生を始める前に、カウントを鳴らします">
+                        <span class="sub">カウント</span>
+                        <select value={countBars} onChange={(e) => { const v = Number((e.currentTarget as HTMLSelectElement).value); setCountBars(v); setCountIn(v); }}>
+                          <option value={0}>なし</option><option value={1}>1小節</option><option value={2}>2小節</option>
+                        </select>
+                      </label>
+                    )}
                   </div>
-                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。</p>
+                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。{countBars > 0 && bpm ? '動画では、カウントの後に少し遅れて始まることがあります。' : ''}</p>
                 </>
               )}
             </>
@@ -190,10 +215,10 @@ export function View({ viewId }: { viewId: string }) {
               const changes = diff?.sections[s.id] ?? [];
               return (
                 <tr key={s.id} class={`tone-${groupTone(s.group)}${changes.length ? ' changed' : ''}${s.cut ? ' cut' : ''}${current?.id === s.id ? ' now' : ''}`}
-                  onClick={yt ? () => yt.play(s.start) : undefined}>
+                  onClick={yt ? () => startPlay(s.start) : undefined}>
                   {/* 終わりは次の区間の始まりと同じなので、1つの列にまとめる */}
                   <td data-label="時刻">
-                    {yt && <button class="tiny ghost row-go" aria-label={`${s.name}から再生`} onClick={(e) => { e.stopPropagation(); yt.play(s.start); }}>▶</button>}
+                    {yt && <button class="tiny ghost row-go" aria-label={`${s.name}から再生`} onClick={(e) => { e.stopPropagation(); startPlay(s.start); }}>▶</button>}
                     {fmt(s.start, 0)}〜{fmt(s.end, 0)}
                   </td>
                   <td data-label="セクション">
@@ -207,7 +232,7 @@ export function View({ viewId }: { viewId: string }) {
                       // 区間の中の再生位置。行を押したときの「区間の頭から再生」にならないよう、操作を行へ伝えない
                       <div class="row-seek" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
                         <SeekBar compact range={{ start: s.start, end: s.end }} now={started ? now : -1} label={`${s.name}の再生位置`}
-                          onSeek={(t) => { yt.seek(t); setNow(t); setStarted(true); }} />
+                          onSeek={seek} />
                       </div>
                     )}
                   </td>
