@@ -61,10 +61,10 @@ export const getMetronomeVolume = () => {
 };
 export const setMetronomeVolume = (v: number) => set('ks-metronome-volume', String(v));
 
-// 再生の前のカウントの設定（0・1・2 小節、intro：イントロ前の間だけメトロノーム）。保存していなければ 0（鳴らさない）
+// 再生の前のカウントの設定（0・1・2 小節、first：最初の区間から再生するときだけ1小節）。保存していなければ 0（鳴らさない）
 export const getCountIn = (): CountMode => {
   const v = get('ks-count-in');
-  return v === 'intro' ? 'intro' : v === '1' ? 1 : v === '2' ? 2 : 0;
+  return v === 'first' ? 'first' : v === '1' ? 1 : v === '2' ? 2 : 0;
 };
 export const setCountIn = (v: CountMode) => set('ks-count-in', v ? String(v) : null);
 

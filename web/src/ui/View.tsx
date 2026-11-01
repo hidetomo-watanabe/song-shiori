@@ -190,9 +190,9 @@ export function View({ viewId }: { viewId: string }) {
                     <button class={`small${playing ? ' on' : ''}`} aria-label={playing ? '一時停止' : '再生'}
                       onClick={() => { if (yt.playing || countIn.waiting) { countIn.cancel(); yt.pause(); setPlaying(false); } else startPlay(); }}>{playing ? '■ 停止' : '▶ 再生'}</button>
                     <SeekBar now={now} duration={yt.duration} onSeek={seek} />
-                    {bpm && <CountInSelect song={song} value={countBars} onChange={setCountBars} />}
+                    {bpm && <CountInSelect value={countBars} onChange={setCountBars} />}
                   </div>
-                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。{bpm ? countInNote(song, countBars) ?? '' : ''}</p>
+                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。{bpm ? countInNote(countBars) ?? '' : ''}</p>
                 </>
               )}
             </>

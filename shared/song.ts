@@ -269,18 +269,14 @@ export function barLines(s: Song): number[] | null {
 export const beatClicks = (s: Song) => beatsWithBars(s)?.filter((b) => b.t >= 0) ?? null;
 
 // 再生の前のカウントの設定：0 は鳴らさない、1・2 は再生の前にその小節数だけ数える、
-// intro はイントロ前の区間から再生するときだけ、再生の前に1小節数える（途中の区間からの再生では数えない）
-export type CountMode = 0 | 1 | 2 | 'intro';
-
-// イントロ前の区間（無音・名前が「イントロ前」で始まる区間）。なければ null
-export const introSection = (song: Song) =>
-  song.sections.find((x) => !x.silence && x.name.replace(/\s+/g, '').startsWith('イントロ前')) ?? null;
+// first は最初の区間から再生するときだけ、再生の前に1小節数える（途中の区間からの再生では数えない）
+export type CountMode = 0 | 1 | 2 | 'first';
 
 // 再生を t から始めるときに、再生の前に鳴らすカウントの位置（曲の時刻）。鳴らさなければ null
 export function countClicks(song: Song, t: number, mode: CountMode): { t: number; head: boolean }[] | null {
-  if (mode !== 'intro') return countInPlan(song, t, mode);
-  const sec = introSection(song);
-  return sec && t >= sec.start - 0.05 && t < sec.end - 0.05 ? countInPlan(song, t, 1) : null;
+  if (mode !== 'first') return countInPlan(song, t, mode);
+  const sec = song.sections.find((x) => !x.silence); // 以前の形式の、曲の頭の無音の区間は除く
+  return sec && t < sec.end - 0.05 ? countInPlan(song, t, 1) : null;
 }
 
 // 再生の前のカウント（bars 小節ぶん）を鳴らす位置。曲の時刻で、t から再生するときの t より前（弱起ではその後ろにも入る）。

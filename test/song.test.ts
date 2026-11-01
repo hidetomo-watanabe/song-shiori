@@ -290,13 +290,11 @@ describe('編集ルール', () => {
     expect(countInPlan(d, beats[24], 1)![3].t).toBeCloseTo(beats[24] - 0.6);
   });
 
-  it('「イントロ前だけ」：イントロ前の区間から再生するときだけ、再生の前に1小節数える', () => {
+  it('「最初の区間だけ」：最初の区間から再生するときだけ、再生の前に1小節数える', () => {
     const s = sample(); // 120BPM・4/4（1拍0.5秒）。最初の区間 0〜16秒
-    const named = patchSection(s, s.sections[0].id, { name: 'イントロ前' });
-    expect(countClicks(named, 0, 'intro')).toEqual(countInPlan(named, 0, 1));
-    expect(countClicks(named, 10, 'intro')).toEqual(countInPlan(named, 10, 1)); // イントロ前の途中から
-    expect(countClicks(named, 20, 'intro')).toBeNull(); // ほかの区間からは数えない
-    expect(countClicks(s, 0, 'intro')).toBeNull(); // イントロ前の区間がない曲
+    expect(countClicks(s, 0, 'first')).toEqual(countInPlan(s, 0, 1));
+    expect(countClicks(s, 10, 'first')).toEqual(countInPlan(s, 10, 1)); // 最初の区間の途中から
+    expect(countClicks(s, 20, 'first')).toBeNull(); // ほかの区間からは数えない
     expect(countClicks(s, 16, 1)).toEqual(countInPlan(s, 16, 1));
     expect(countClicks(s, 16, 0)).toBeNull();
   });

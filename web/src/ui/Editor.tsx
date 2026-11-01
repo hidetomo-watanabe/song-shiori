@@ -659,7 +659,7 @@ export function Editor({ mode }: { mode: Mode }) {
           <button class="primary play" onClick={togglePlay} disabled={!hasAudio}>{playing ? '一時停止' : '再生'}</button>
           <span class="time">{fmt(now)} / {fmt(hasAudio ? media().duration : song.duration)}</span>
           {currentSection && <span class={`now-tag tone-${groupTone(currentSection.group)}`}><span class="chip" aria-hidden="true" />{playing ? '再生中' : '再生位置'}：{currentSection.name}</span>}
-          {hasAudio && tempoBpm && <CountInSelect song={song} value={countBars} onChange={setCountBars} />}
+          {hasAudio && tempoBpm && <CountInSelect value={countBars} onChange={setCountBars} />}
           {loopId && <span class="tag">ループ中：{song.sections.find((s) => s.id === loopId)?.name}<button class="link" onClick={clearLoop}>解除</button></span>}
           <span class="spacer" />
           <label class={`button file small${hasAudio ? '' : ' primary'}`}>
@@ -681,7 +681,7 @@ export function Editor({ mode }: { mode: Mode }) {
               onClick={() => void analyzeBuffer(player.buffer!, 'chords', M.bpmOf(song) ?? undefined)}>コードだけ推定する</button>
           )}
         </div>
-        {tempoBpm && hasAudio && media() !== player && countInNote(song, countBars) && <p class="sub">YouTube の{countInNote(song, countBars)}</p>}
+        {tempoBpm && hasAudio && media() !== player && countInNote(countBars) && <p class="sub">YouTube の{countInNote(countBars)}</p>}
         {fileName && <p class="sub">音源：{fileName}（この端末内だけで使います）{videoId && !useVideo && '。YouTube の動画より音源ファイルを優先して再生します'}</p>}
         {!hasAudio && !videoId && <p class="sub">再生や自動生成のやり直しには、この端末にある音源ファイルを選んでください。音源は保存されないため、開き直したときは選び直します。</p>}
         {videoId ? (
