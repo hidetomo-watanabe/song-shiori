@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { CHANGE_LABEL, diffSongs, type SongDiff } from '../../../shared/diff';
-import { bpmOf, countInPlan, pickupBeats, sectionBpm, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keyLabel, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
+import { bpmOf, countClicks, pickupBeats, sectionBpm, chordChartSite, chordChartUrl, chordsDifferFromFirst, confirmedChords, keyLabel, keySummary, sectionAt, transposeChords, transposeKey, trimSilence, youtubeUrl } from '../../../shared/song';
 import { YouTubePlayer } from '../audio/youtube';
 import { DEFAULT_VOLUME, Metronome } from '../audio/metronome';
 import { CountIn } from '../audio/countIn';
+import { CountInSelect, countInNote } from './CountInSelect';
 import { api, track, type ViewData } from '../api';
 import { ExportText } from './ExportText';
 import { SeekBar } from './SeekBar';
 import { StartEdit } from './StartEdit';
-import { getCountIn, getMetronomeVolume, getSeen, setCountIn, setSeen } from '../storage/local';
+import { getCountIn, getMetronomeVolume, getSeen, setSeen } from '../storage/local';
 import { errorText, fmt, fmtDate, fmtDay, groupTone, shareMessage, timeSignature, viewUrl } from './util';
 import { ShareButtons } from './ShareButtons';
 import { Practice } from './Practice';
@@ -112,7 +113,7 @@ export function View({ viewId }: { viewId: string }) {
     if (!yt) return;
     viewMetronome.volume = getMetronomeVolume() ?? DEFAULT_VOLUME;
     setStarted(true);
-    countIn.play(yt, from, (t) => (countBars ? countInPlan(song, t, countBars) : null), () => setPlaying(true));
+    countIn.play(yt, from, (t) => countClicks(song, t, countBars), () => setPlaying(true));
     setPlaying(true);
   };
   const seek = (t: number) => { countIn.cancel(); yt?.seek(t); setNow(t); setStarted(true); };
@@ -189,16 +190,9 @@ export function View({ viewId }: { viewId: string }) {
                     <button class={`small${playing ? ' on' : ''}`} aria-label={playing ? '一時停止' : '再生'}
                       onClick={() => { if (yt.playing || countIn.waiting) { countIn.cancel(); yt.pause(); setPlaying(false); } else startPlay(); }}>{playing ? '■ 停止' : '▶ 再生'}</button>
                     <SeekBar now={now} duration={yt.duration} onSeek={seek} />
-                    {bpm && (
-                      <label class="count-in" title="再生を始める前に、カウントを鳴らします">
-                        <span class="sub">カウント</span>
-                        <select value={countBars} onChange={(e) => { const v = Number((e.currentTarget as HTMLSelectElement).value); setCountBars(v); setCountIn(v); }}>
-                          <option value={0}>なし</option><option value={1}>1小節</option><option value={2}>2小節</option>
-                        </select>
-                      </label>
-                    )}
+                    {bpm && <CountInSelect song={song} value={countBars} onChange={setCountBars} />}
                   </div>
-                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。{countBars > 0 && bpm ? '動画では、カウントの後に少し遅れて始まることがあります。' : ''}</p>
+                  <p class="sub">{current ? <><span class={`chip tone-${groupTone(current.group)}`} aria-hidden="true" />{current.name}・</> : null}表の区間を押すと、そこから再生します。{bpm ? countInNote(song, countBars) ?? '' : ''}</p>
                 </>
               )}
             </>

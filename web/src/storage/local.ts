@@ -1,3 +1,4 @@
+import type { CountMode } from '../../../shared/song';
 // ブラウザ内にだけ保存するデータ（要件定義書 8章）。保存できない環境でも動作を続ける
 import type { Song } from '../../../shared/song';
 
@@ -60,12 +61,12 @@ export const getMetronomeVolume = () => {
 };
 export const setMetronomeVolume = (v: number) => set('ks-metronome-volume', String(v));
 
-// 再生の前に鳴らすカウントの小節数（0・1・2）。保存していなければ 0（鳴らさない）
-export const getCountIn = () => {
-  const v = Number(get('ks-count-in'));
-  return v === 1 || v === 2 ? v : 0;
+// 再生の前のカウントの設定（0・1・2 小節、intro：イントロ前の間だけメトロノーム）。保存していなければ 0（鳴らさない）
+export const getCountIn = (): CountMode => {
+  const v = get('ks-count-in');
+  return v === 'intro' ? 'intro' : v === '1' ? 1 : v === '2' ? 2 : 0;
 };
-export const setCountIn = (v: number) => set('ks-count-in', v ? String(v) : null);
+export const setCountIn = (v: CountMode) => set('ks-count-in', v ? String(v) : null);
 
 export const getSeen = (viewId: string) => Number(get(`ks-seen-${viewId}`)) || null;
 export const setSeen = (viewId: string, version: number) => set(`ks-seen-${viewId}`, String(version));

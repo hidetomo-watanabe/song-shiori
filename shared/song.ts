@@ -268,6 +268,21 @@ export function barLines(s: Song): number[] | null {
 // メトロノームを曲の拍に合わせて鳴らす位置（曲の頭からの秒）。0 秒より前の拍は除く
 export const beatClicks = (s: Song) => beatsWithBars(s)?.filter((b) => b.t >= 0) ?? null;
 
+// 再生の前のカウントの設定：0 は鳴らさない、1・2 は再生の前にその小節数だけ数える、
+// intro はイントロ前の区間から再生するときだけ、再生の前に1小節数える（途中の区間からの再生では数えない）
+export type CountMode = 0 | 1 | 2 | 'intro';
+
+// イントロ前の区間（無音・名前が「イントロ前」で始まる区間）。なければ null
+export const introSection = (song: Song) =>
+  song.sections.find((x) => !x.silence && x.name.replace(/\s+/g, '').startsWith('イントロ前')) ?? null;
+
+// 再生を t から始めるときに、再生の前に鳴らすカウントの位置（曲の時刻）。鳴らさなければ null
+export function countClicks(song: Song, t: number, mode: CountMode): { t: number; head: boolean }[] | null {
+  if (mode !== 'intro') return countInPlan(song, t, mode);
+  const sec = introSection(song);
+  return sec && t >= sec.start - 0.05 && t < sec.end - 0.05 ? countInPlan(song, t, 1) : null;
+}
+
 // 再生の前のカウント（bars 小節ぶん）を鳴らす位置。曲の時刻で、t から再生するときの t より前（弱起ではその後ろにも入る）。
 // 拍の間隔は、t の後の拍の間隔（小節の線と同じ拍）を使い、カウントの最後の拍の次の拍で曲が始まるようにする。
 // 曲の頭から再生して最初の小節頭の前に拍がある（弱起）ときは、最初の小節頭に向けて数える。BPM がなければ null

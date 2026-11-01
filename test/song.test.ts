@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   adoptAnalysis, appendSection, deleteSection, emptySong, mergeWithNext, moveBoundary, newSection,
-  applySuggestedNames, barPositionIn, pickupBeats, setPickup, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, countInPlan, transposeKey, transposeChords, keySummary, type Song,
+  applySuggestedNames, barPositionIn, pickupBeats, setPickup, sectionBpm, normalize, suggestNames, octaveByReference, usesDetectedBeats, patchSection, regenerateFromAnalysis, snapToBar, resetToAnalysis, setGroup, setTempo, snapToBeat, songFromAnalysis, splitAt, validateSong, youtubeId, clampOffset, trimSilence, sectionAt, wholeSong, beatClicks, barLines, tapTempo, TAP_LATENCY, estimatedChords, sectionChords, adoptChords, confirmedChords, chordsDifferFromFirst, sameArtist, countInPlan, countClicks, transposeKey, transposeChords, keySummary, type Song,
 } from '../shared/song';
 import { diffSongs } from '../shared/diff';
 
@@ -288,6 +288,17 @@ describe('編集ルール', () => {
     const beats = Array.from({ length: 40 }, (_, i) => i * 0.5 + (i > 20 ? (i - 20) * 0.1 : 0));
     const d = normalize({ ...s, beats, firstDownbeat: 0 });
     expect(countInPlan(d, beats[24], 1)![3].t).toBeCloseTo(beats[24] - 0.6);
+  });
+
+  it('「イントロ前だけ」：イントロ前の区間から再生するときだけ、再生の前に1小節数える', () => {
+    const s = sample(); // 120BPM・4/4（1拍0.5秒）。最初の区間 0〜16秒
+    const named = patchSection(s, s.sections[0].id, { name: 'イントロ前' });
+    expect(countClicks(named, 0, 'intro')).toEqual(countInPlan(named, 0, 1));
+    expect(countClicks(named, 10, 'intro')).toEqual(countInPlan(named, 10, 1)); // イントロ前の途中から
+    expect(countClicks(named, 20, 'intro')).toBeNull(); // ほかの区間からは数えない
+    expect(countClicks(s, 0, 'intro')).toBeNull(); // イントロ前の区間がない曲
+    expect(countClicks(s, 16, 1)).toEqual(countInPlan(s, 16, 1));
+    expect(countClicks(s, 16, 0)).toBeNull();
   });
 
   it('等間隔の線では、演奏のテンポの揺れによるずれを区間の頭で合わせ直す（区間の中は小節数で等分）', () => {
