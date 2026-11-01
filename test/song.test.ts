@@ -251,6 +251,25 @@ describe('編集ルール', () => {
     expect(uniform.sections[2].barsEst).not.toBe(8);
   });
 
+  it('推定の倍・半分の BPM を手で入れても、解析で見つけた拍を等分・間引きして揺れに追従する（ゲット・アップ・ルーシー）', () => {
+    // 揺れのある拍（1拍 0.8秒前後）を推定 75 とし、正しい BPM は倍の 150
+    const beats: number[] = [];
+    for (let t = 1, i = 0; i < 80; i++) { beats.push(t); t += 0.8 + 0.03 * Math.sin(i / 5); }
+    const s = normalize({ ...emptySong(beats[79] + 1), bpmEst: 75, beats, firstDownbeat: 1,
+      sections: [newSection(0, beats[16]), newSection(beats[16], beats[48]), newSection(beats[48], beats[79] + 1)] });
+    const double = setTempo(s, { bpmManual: 150 });
+    expect(usesDetectedBeats(double)).toBe(true);
+    // 区間の頭が小節の線に乗ったまま（等間隔の線にしない）。小節は半分の長さになるので数は倍
+    expect(barLines(double)).toEqual(expect.arrayContaining([beats[16], beats[48]]));
+    expect(double.sections.slice(1).map((x) => x.barsEst)).toEqual([16, 16]);
+    expect(snapToBeat(double, (beats[20] + beats[21]) / 2 + 0.01)).toBeCloseTo((beats[20] + beats[21]) / 2);
+    // 半分：最初の小節頭の拍から2拍おき
+    const half = setTempo(s, { bpmManual: 37.5 });
+    expect(usesDetectedBeats(half)).toBe(true);
+    expect(barLines(half)!.filter((t) => t >= 1).slice(0, 3)).toEqual([beats[0], beats[8], beats[16]]);
+    expect(usesDetectedBeats(setTempo(s, { bpmManual: 120 }))).toBe(false);
+  });
+
   it('途中に2拍だけの小節があっても、区間ごとに小節を数えるので後ろの区間がずれない', () => {
     // 120BPM（1拍0.5秒）。0〜16秒が8小節、16〜17秒が2拍だけの小節、17〜33秒が8小節
     const beats = Array.from({ length: 70 }, (_, i) => i * 0.5);

@@ -150,10 +150,41 @@ export function trimSilence(song: Song): Song {
 export const clampOffset = (x: number) => Math.round(Math.max(-MAX_YOUTUBE_OFFSET, Math.min(MAX_YOUTUBE_OFFSET, x)) * 100) / 100;
 // 拍・小節が使えるか。解析で確定できなくても、BPM を手動で入れれば使える
 export const hasGrid = (s: Song) => bpmOf(s) != null && (s.bpmManual != null || !s.beatsUncertain);
-// 解析で見つけた拍の位置を小節の線に使えるか。BPM を推定と大きく違う値に手で直した場合は使わない（拍の列が合わないため）
+// 手で入れた BPM が推定の何倍か。2倍・3倍・4倍（推定が半分などを取り違えていた）と、その逆（½・⅓・¼）を 3% の幅で見る。
+// 正の数 k は解析の拍を k 等分、負の数 -k は k 拍おきに間引く。推定のままなら 1、ほかの値なら null
+function detectedBeatRatio(s: Song): number | null {
+  if (s.bpmManual == null) return 1;
+  if (s.bpmEst == null) return null;
+  const r = s.bpmManual / s.bpmEst;
+  for (let k = 1; k <= 4; k++) {
+    if (Math.abs(r / k - 1) <= 0.03) return k;
+    if (k > 1 && Math.abs(r * k - 1) <= 0.03) return -k;
+  }
+  return null;
+}
+
+// 解析で見つけた拍の位置を小節の線に使えるか。BPM を推定と大きく違う値（倍・半分などでない値）に手で直した場合は使わない（拍の列が合わないため）
 export const usesDetectedBeats = (s: Song) =>
-  !!s.beats && s.beats.length >= 8 && !s.beatsUncertain &&
-  (s.bpmManual == null || (s.bpmEst != null && Math.abs(s.bpmManual / s.bpmEst - 1) <= 0.03));
+  !!s.beats && s.beats.length >= 8 && !s.beatsUncertain && detectedBeatRatio(s) != null;
+
+// 解析で見つけた拍を、手で入れた BPM に合わせて等分・間引きした列。間引くときは最初の小節頭にいちばん近い拍を残す
+function detectedBeats(s: Song): number[] {
+  const src = s.beats!, k = detectedBeatRatio(s) ?? 1;
+  if (k > 1) {
+    const out: number[] = [];
+    for (let i = 0; i + 1 < src.length; i++) for (let j = 0; j < k; j++) out.push(src[i] + ((src[i + 1] - src[i]) * j) / k);
+    out.push(src[src.length - 1]);
+    return out;
+  }
+  if (k < -1) {
+    const step = -k, origin = s.firstDownbeat ?? src[0];
+    let near = 0;
+    for (let i = 1; i < src.length; i++) if (Math.abs(src[i] - origin) < Math.abs(src[near] - origin)) near = i;
+    const out = src.filter((_, i) => (i - near) % step === 0);
+    return out.length >= 2 ? out : src.slice();
+  }
+  return src.slice();
+}
 
 // 拍の位置の列（秒）。解析で見つけた拍が使えればそれを使い、テンポの揺れに追従する。
 // 使えなければ BPM と最初の小節頭から等間隔に作る。曲の前後は端の間隔で延長する
@@ -161,7 +192,7 @@ function beatGrid(s: Song): number[] | null {
   const end = Math.max(s.duration, s.sections[s.sections.length - 1]?.end ?? 0);
   let beats: number[];
   if (usesDetectedBeats(s)) {
-    beats = s.beats!.slice();
+    beats = detectedBeats(s);
   } else {
     const bpm = bpmOf(s);
     if (!bpm || !hasGrid(s)) return null;
