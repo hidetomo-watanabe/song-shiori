@@ -220,8 +220,23 @@ export function sectionBpm(s: Song, sec: Section): number | null {
   return Math.round(((sec.barsManual! * Math.max(1, s.beatsPerBar) * 60) / (sec.end - sec.start)) * 10) / 10;
 }
 
+// 小節の線を区間の頭から等分して引く区間と、その小節数。
+// ・小節数を手で推定と違う数に直した区間：手の小節数で等分（曲の途中でテンポが変わる区間）
+// ・解析の拍を使わず等間隔の線にするとき：2つ目以降の区間すべてを小節数（手の値、なければ推定）で等分する。
+//   実際の演奏は BPM どおりではなく少しずつ揺れるので、通しの等間隔の線は後ろほど区切りからずれる。
+//   区切り（耳で合わせた区間の頭）を正しい位置として、ずれをその区間の小節に少しずつ割り振る（帳尻を区間の頭で合わせる）。
+//   最初の区間は最初の小節頭と前の拍（弱起）で数えるので、通しの線のまま
+function evenSections(s: Song): { sec: Section; bars: number }[] {
+  const manual = manualTempoSections(s).map((sec) => ({ sec, bars: sec.barsManual! }));
+  if (usesDetectedBeats(s)) return manual;
+  const ids = new Set(manual.map((x) => x.sec.id));
+  const rest = s.sections.slice(1).filter((x) => !x.silence && !ids.has(x.id))
+    .map((sec) => ({ sec, bars: sec.barsManual ?? sec.barsEst ?? 0 })).filter((x) => x.bars > 0);
+  return [...manual, ...rest];
+}
+
 // 拍の位置の列と、それぞれが小節の頭か。最初の小節頭に最も近い拍から、拍子の数ごとに小節の頭にする。
-// 小節数を手で直した区間の中は、その小節数で等分した拍に置き換える
+// 区間の頭から等分する区間（evenSections）の中は、その小節数で等分した拍に置き換える
 function beatsWithBars(s: Song): { t: number; head: boolean }[] | null {
   const beats = beatGrid(s);
   if (!beats || beats.length < 2) return null;
@@ -230,13 +245,13 @@ function beatsWithBars(s: Song): { t: number; head: boolean }[] | null {
   for (let i = 1; i < beats.length; i++) if (Math.abs(beats[i] - origin) < Math.abs(beats[phase] - origin)) phase = i;
   const n = Math.max(1, s.beatsPerBar);
   const out = beats.map((t, i) => ({ t, head: (((i - phase) % n) + n) % n === 0 }));
-  const manual = manualTempoSections(s);
-  if (!manual.length) return out;
-  const inside = (t: number) => manual.some((x) => t >= x.start - 0.05 && t < x.end - 0.05);
+  const even = evenSections(s);
+  if (!even.length) return out;
+  const inside = (t: number) => even.some(({ sec }) => t >= sec.start - 0.05 && t < sec.end - 0.05);
   const res = out.filter((b) => !inside(b.t));
-  for (const x of manual) {
-    const k = x.barsManual! * n;
-    for (let i = 0; i < k; i++) res.push({ t: x.start + ((x.end - x.start) * i) / k, head: i % n === 0 });
+  for (const { sec, bars } of even) {
+    const k = bars * n;
+    for (let i = 0; i < k; i++) res.push({ t: sec.start + ((sec.end - sec.start) * i) / k, head: i % n === 0 });
   }
   return res.sort((a, b) => a.t - b.t);
 }

@@ -226,8 +226,11 @@ describe('編集ルール', () => {
   });
 
   it('小節の頭へのスナップと、区間の先頭から n 小節の位置', () => {
-    const s = normalize({ ...sample(), firstDownbeat: 0.5 }); // 1小節2秒、小節の頭は 0.5, 2.5, 4.5 …（区切りは小節の線に乗せない）
-    expect(snapToBar(s, 17.2)).toBeCloseTo(16.5);
+    // 1小節2秒、最初の区間の小節の頭は 0.5, 2.5, 4.5 …（区切りは通しの線に乗せない）。
+    // 等間隔の線では、2つ目以降の区間の線は区間の頭（16秒）から引き直す
+    const s = normalize({ ...sample(), firstDownbeat: 0.5 });
+    expect(snapToBar(s, 3.2)).toBeCloseTo(2.5);
+    expect(snapToBar(s, 17.2)).toBeCloseTo(18);
     expect(barPositionIn(s, s.sections[1], 4)).toBeCloseTo(24); // 区間B（16秒〜）の始まりから4小節
     const t = barPositionIn(s, s.sections[1], 4)!;
     expect(splitAt(s, t).sections.slice(1, 3).map((x) => x.barsEst)).toEqual([4, 12]);
@@ -268,6 +271,24 @@ describe('編集ルール', () => {
     expect(usesDetectedBeats(half)).toBe(true);
     expect(barLines(half)!.filter((t) => t >= 1).slice(0, 3)).toEqual([beats[0], beats[8], beats[16]]);
     expect(usesDetectedBeats(setTempo(s, { bpmManual: 120 }))).toBe(false);
+  });
+
+  it('等間隔の線では、演奏のテンポの揺れによるずれを区間の頭で合わせ直す（区間の中は小節数で等分）', () => {
+    // BPM 120（1小節2秒）と入れたが、実際の演奏は少し遅く 1小節 2.05秒。区切りは耳で合わせた実際の位置
+    const bar = 2.05, at = (n: number) => n * bar;
+    const s = setTempo(normalize({ ...emptySong(at(40)), bpmEst: null, firstDownbeat: 0,
+      sections: [newSection(0, at(8)), newSection(at(8), at(24)), newSection(at(24), at(40))] }), { bpmManual: 120 });
+    expect(usesDetectedBeats(s)).toBe(false);
+    expect(s.sections.map((x) => x.barsEst)).toEqual([8, 16, 16]);
+    const lines = barLines(s)!;
+    // 後ろの区間の頭にも小節の線がある（通しの等間隔なら 48秒で、区切りの 49.2秒から 1.2秒ずれる）
+    for (const n of [8, 24, 30]) expect(lines.some((t) => Math.abs(t - at(n)) < 1e-6)).toBe(true);
+    expect(snapToBar(s, at(24) + 0.4)).toBeCloseTo(at(24));
+    // メトロノームの小節の頭も同じ
+    expect(beatClicks(s)!.filter((b) => b.head).map((b) => b.t)).toEqual(lines.filter((t) => t >= 0));
+    // 小節数を手で直した区間は、手の小節数で等分（これまでどおり）
+    const m = patchSection(s, s.sections[2].id, { barsManual: 8 });
+    expect(barLines(m)!.filter((t) => t >= at(24) - 1e-6 && t < at(40) - 0.05)).toHaveLength(8);
   });
 
   it('途中に2拍だけの小節があっても、区間ごとに小節を数えるので後ろの区間がずれない', () => {

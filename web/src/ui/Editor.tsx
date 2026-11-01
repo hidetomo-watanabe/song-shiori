@@ -837,7 +837,7 @@ export function Editor({ mode }: { mode: Mode }) {
             </select>
           </label>
           <p class="sub">変えると小節数の数え方が変わります。</p>
-          {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM と最初の小節頭から等間隔に引いています。'}
+          {bar && <p class="sub">1小節 約{bar.toFixed(2)}秒。小節の線は{M.usesDetectedBeats(song) ? '、解析で見つけた拍に沿って引いています（テンポの揺れに追従）。' : '、BPM から求めた小節数で、区間ごとに区間の頭から等分して引いています（演奏のテンポの揺れは区間の頭で合わせ直します）。'}
             曲の途中でテンポが変わる区間は、その区間の小節数を入れると、小節の線とメトロノームをその小節数に合わせます。</p>}
         </details>
       </section>
